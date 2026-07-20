@@ -1101,7 +1101,9 @@ def test_single_file_preview_uses_backend_html_payload():
 def test_single_file_uses_binary_token_and_compact_result():
     app = read_app_js()
 
-    assert 'memoryGuard.assertImportCapacity(pendingSingleFile);' in app
+    assert app.count('MemoryGuard.assertImportCapacity(pendingSingleFile);') == 2
+    assert 'MemoryGuard.assertImportCapacity(file,state.files);' in app
+    assert 'memoryGuard.assertImportCapacity' not in app
     assert '"/files/import-binary"' in app
     assert 'fileToken,sheet:' in app
     assert 'compactResult:true,resultPageSize' in app

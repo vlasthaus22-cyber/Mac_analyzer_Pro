@@ -507,7 +507,7 @@
     root.innerHTML=(summary?.summaryHtml||"")+(result?.detectorHtml||"");
   }
   async function clientFileRecord(file,fileCreatedAt,onProgress=()=>{}){
-    memoryGuard.assertImportCapacity(file,state.files);
+    MemoryGuard.assertImportCapacity(file,state.files);
     const data=await clientReadTable(file,onProgress),rows=[data.headers||[],...(data.rows||[])];
     if(rows.length<2)throw new Error("файл не содержит строк данных");
     const headers=rows[0].map((name,index)=>({name:String(name||headerName(index)),index}));
@@ -651,7 +651,7 @@
     try{
       status.textContent="Чтение файла...";
       updateProcess(processId,15,"Подготовка "+pendingSingleFile.name);
-      memoryGuard.assertImportCapacity(pendingSingleFile);
+      MemoryGuard.assertImportCapacity(pendingSingleFile);
       updateProcess(processId,35,"Бинарная передача файла без Base64-копии");
       const data=await api("/files/import-binary",{method:"POST",headers:{"Content-Type":"application/octet-stream","X-File-Name":encodeURIComponent(pendingSingleFile.name),"X-Sheet-Name":encodeURIComponent($("#singleSheetInput")?.value||""),"X-Preview-Rows":"100"},body:pendingSingleFile});
       updateProcess(processId,82,"Построение предпросмотра");
@@ -677,7 +677,7 @@
     try{
       status.textContent="Анализ выполняется...";
       updateProcess(processId,15,"Подготовка файла");
-      memoryGuard.assertImportCapacity(pendingSingleFile);
+      MemoryGuard.assertImportCapacity(pendingSingleFile);
       let fileToken=pendingSingleFilePreview?.sourceName===pendingSingleFile.name?pendingSingleFilePreview.fileToken||"":"";
       if(!fileToken){
         const imported=await api("/files/import-binary",{method:"POST",headers:{"Content-Type":"application/octet-stream","X-File-Name":encodeURIComponent(pendingSingleFile.name),"X-Sheet-Name":encodeURIComponent($("#singleSheetInput")?.value||""),"X-Preview-Rows":"100"},body:pendingSingleFile});
