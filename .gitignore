@@ -16,9 +16,13 @@ data/legacy/*.db
 logs/*.log
 config/*.json
 .venv-portable/
-portable/
+portable/*
 !data/backups/.gitkeep
+!data/build/.gitkeep
+!data/databases/.gitkeep
 !data/exports/.gitkeep
 !data/imports/.gitkeep
+!data/legacy/.gitkeep
 !data/reference/.gitkeep
 !data/runtime/.gitkeep
+!portable/.gitkeep
