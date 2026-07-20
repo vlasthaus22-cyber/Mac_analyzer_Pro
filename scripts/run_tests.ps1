@@ -19,13 +19,20 @@ $nodeExecutable = if ($null -ne $nodeCommand) {
 $files = @(Get-ChildItem -LiteralPath $testsRoot -Filter $Filter -File | Sort-Object Name)
 $failed = [System.Collections.Generic.List[string]]::new()
 $passed = 0
+$testRuntimeRoot = Join-Path $root "data\runtime\tests"
+$testDataDirectory = Join-Path $testRuntimeRoot ([Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Force -Path $testDataDirectory | Out-Null
 
 if (-not $files.Count) {
     throw "No tests matched $Filter"
 }
 
 $previousPythonPath = $env:PYTHONPATH
+$previousDataDirectory = $env:MAC_ANALYZER_DATA_DIR
+$previousDatabasePath = $env:MAC_ANALYZER_DATABASE_PATH
 $env:PYTHONPATH = if ($previousPythonPath) { "$root;$previousPythonPath" } else { $root }
+$env:MAC_ANALYZER_DATA_DIR = $testDataDirectory
+$env:MAC_ANALYZER_DATABASE_PATH = Join-Path $testDataDirectory "databases\mac_analyzer_web.db"
 Push-Location $root
 try {
     foreach ($file in $files) {
@@ -57,6 +64,13 @@ try {
 } finally {
     Pop-Location
     $env:PYTHONPATH = $previousPythonPath
+    $env:MAC_ANALYZER_DATA_DIR = $previousDataDirectory
+    $env:MAC_ANALYZER_DATABASE_PATH = $previousDatabasePath
+    $resolvedTestData = [IO.Path]::GetFullPath($testDataDirectory)
+    $resolvedTestRoot = [IO.Path]::GetFullPath($testRuntimeRoot).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+    if ($resolvedTestData.StartsWith($resolvedTestRoot, [StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $resolvedTestData)) {
+        Remove-Item -LiteralPath $resolvedTestData -Recurse -Force
+    }
 }
 
 $testFunctions = (Select-String -Path $files.FullName -Pattern "^def test_" | Measure-Object).Count
