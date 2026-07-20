@@ -97,8 +97,8 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
 
     assert 'id="fileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
-    assert '<script src="frontend/memory-guard.js"></script>' in html
-    assert '<script src="frontend/file-readers.js"></script>' in html
+    assert '<script src="frontend/memory-guard.js?v=20260720.2"></script>' in html
+    assert '<script src="frontend/file-readers.js?v=20260720.2"></script>' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -898,7 +898,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260720.2"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
     assert 'async function storeLocalSnapshot(' in app
     assert 'devices:rows.slice(0,previewLimit)' in app
@@ -1099,15 +1099,26 @@ def test_single_file_preview_uses_backend_html_payload():
 
 
 def test_single_file_uses_binary_token_and_compact_result():
-    app = read_app_js()
+    app = Path("app.js").read_text(encoding="utf-8")
+    memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
     assert app.count('MemoryGuard.assertImportCapacity(pendingSingleFile);') == 2
     assert 'MemoryGuard.assertImportCapacity(file,state.files);' in app
     assert 'memoryGuard.assertImportCapacity' not in app
+    assert 'const memoryGuard = MemoryGuard;' in app
+    assert 'window.memoryGuard = publicApi;' in memory_guard
     assert '"/files/import-binary"' in app
     assert 'fileToken,sheet:' in app
     assert 'compactResult:true,resultPageSize' in app
     assert 'sourceBytes:pendingSingleFile.size||0,fileToken,rowCount:' in app
+
+
+def test_full_runner_isolates_sqlite_from_working_database():
+    runner = Path("scripts/run_tests.ps1").read_text(encoding="utf-8")
+
+    assert '$env:MAC_ANALYZER_DATA_DIR = $testDataDirectory' in runner
+    assert '$env:MAC_ANALYZER_DATABASE_PATH = Join-Path $testDataDirectory "databases\\mac_analyzer_web.db"' in runner
+    assert '$resolvedTestData.StartsWith($resolvedTestRoot, [StringComparison]::OrdinalIgnoreCase)' in runner
 
 
 def test_bootstrap_clears_deleted_server_snapshot_reference():
@@ -1929,7 +1940,7 @@ def test_role_aware_guide_is_a_separate_working_view():
         'data-guide-tab="large-files"',
         'data-guide-requires-engineering',
         'id="openGuideFromHelpButton"',
-        '<script src="frontend/guide.js"></script>',
+        '<script src="frontend/guide.js?v=20260720.2"></script>',
     ):
         assert marker in html
     for text in (
@@ -2032,6 +2043,9 @@ def test_oui_reference_import_and_safe_autodetection_are_wired_end_to_end():
 
 
 if __name__ == "__main__":
+    test_portable_two_file_import_is_local_first_and_race_safe()
+    test_single_file_uses_binary_token_and_compact_result()
+    test_full_runner_isolates_sqlite_from_working_database()
     test_global_process_progress_covers_file_analysis_compare_and_export()
     test_navigation_tabs_are_hash_routable_and_safe()
     test_migrated_controls_have_single_backend_binding()

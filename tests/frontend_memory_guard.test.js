@@ -8,6 +8,7 @@ require("../frontend/memory-guard.js");
 
 const guard = global.MacAnalyzerMemoryGuard;
 assert.ok(guard, "memory guard module must be exported");
+assert.equal(global.memoryGuard, guard, "legacy memoryGuard alias must use the same API");
 assert.equal(document.documentElement.dataset.memoryGuard, "ready");
 
 const rows = Array.from({ length: 100_000 }, (_, index) => ({ index, vendor: index % 2 ? "Cisco" : "Dell" }));

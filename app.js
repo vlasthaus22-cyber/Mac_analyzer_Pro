@@ -13,6 +13,7 @@
   const StatePersistence = window.MacAnalyzerStatePersistence;
   const BrowserSnapshots = window.MacAnalyzerBrowserSnapshots;
   const MemoryGuard = window.MacAnalyzerMemoryGuard;
+  const memoryGuard = MemoryGuard;
   const Guide = window.MacAnalyzerGuide;
   if(!MemoryGuard)throw new Error("Модуль frontend/memory-guard.js не загружен");
   if(!Guide)throw new Error("Модуль frontend/guide.js не загружен");

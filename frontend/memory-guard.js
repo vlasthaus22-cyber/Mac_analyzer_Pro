@@ -196,7 +196,7 @@
     return new Promise((resolve) => setTimeout(resolve, 0));
   }
 
-  window.MacAnalyzerMemoryGuard = Object.freeze({
+  const publicApi = Object.freeze({
     limits,
     capacityError,
     assertTableCapacity,
@@ -213,5 +213,8 @@
     collectPage,
     yieldToMainThread,
   });
+  window.MacAnalyzerMemoryGuard = publicApi;
+  // Compatibility for frontend copies cached before the MemoryGuard rename.
+  window.memoryGuard = publicApi;
   document.documentElement.dataset.memoryGuard = "ready";
 })();

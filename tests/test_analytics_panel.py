@@ -1,7 +1,8 @@
-from server import analytics_panel_payload, enrich_device
+from server import analytics_panel_payload, enrich_device, init_database
 
 
 def test_analytics_panel_payload_prepares_charts_and_clusters():
+    init_database()
     devices = [
         enrich_device({"mac": "AABBCC000101", "vendor": "Cisco", "model": "A", "room": "101", "switchIp": "10.0.0.1"}),
         enrich_device({"mac": "AABBCC000102", "vendor": "Cisco", "model": "A", "room": "101", "switchIp": "10.0.0.1"}),

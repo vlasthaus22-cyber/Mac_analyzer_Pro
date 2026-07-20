@@ -4128,11 +4128,19 @@ def dashboard_history_context() -> tuple[list[dict[str, Any]], list[dict[str, An
             "WHERE datetime(changed_at) >= datetime('now', '-30 days') "
             "ORDER BY changed_at DESC, id DESC LIMIT 5000"
         ).fetchall()]
-        history_devices = [dict(row) for row in conn.execute(
-            "SELECT h.* FROM mac_history h "
-            "JOIN (SELECT mac, MAX(id) AS latest_id FROM mac_history GROUP BY mac) latest "
-            "ON latest.latest_id = h.id ORDER BY h.id DESC LIMIT 5000"
+        recent_history = [dict(row) for row in conn.execute(
+            "SELECT * FROM mac_history ORDER BY id DESC LIMIT 20000"
         ).fetchall()]
+    history_devices = []
+    seen_macs: set[str] = set()
+    for row in recent_history:
+        mac = as_text(row.get("mac"))
+        if not mac or mac in seen_macs:
+            continue
+        seen_macs.add(mac)
+        history_devices.append(row)
+        if len(history_devices) >= 5000:
+            break
     return movements, history_devices
 
 

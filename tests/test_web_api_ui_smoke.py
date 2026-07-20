@@ -160,7 +160,8 @@ def test_rest_api_and_ui_controls_smoke():
         assert status == 200
         assert health["status"] == "ok"
         assert Path(health["databasePath"]).parent.name == "databases"
-        assert Path(health["dataDirectory"]).name == "data"
+        assert Path(health["dataDirectory"]).is_dir()
+        assert Path(health["databasePath"]).is_relative_to(Path(health["dataDirectory"]))
 
         status, storage = request_json(app.base_url, "GET", "/api/storage/structure")
         assert status == 200
