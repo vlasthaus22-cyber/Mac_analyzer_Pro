@@ -1,0 +1,931 @@
+{
+  "status": "complete",
+  "registry": {
+    "items": [
+      {
+        "line": 8,
+        "checked": true,
+        "text": "APICache и MACVendorAPI: кэш, выбор сервиса, rate-limit, тест API."
+      },
+      {
+        "line": 9,
+        "checked": true,
+        "text": "VendorDatabase и VendorDetector: OUI, MAC5, confidence, source,"
+      },
+      {
+        "line": 15,
+        "checked": true,
+        "text": "Внешний справочник PyQt `oui.txt`: корневой TXT/CSV безопасно переносится в `data/reference`,"
+      },
+      {
+        "line": 18,
+        "checked": true,
+        "text": "MACHistoryDatabase: все операции поиска, фильтра, удаления и статистики."
+      },
+      {
+        "line": 19,
+        "checked": true,
+        "text": "VendorModelHistory и HistoryEnricher: загрузки, обучение, статистика."
+      },
+      {
+        "line": 20,
+        "checked": true,
+        "text": "IPToAddressMapper: импорт, автоопределение, ручные правила и экспорт."
+      },
+      {
+        "line": 21,
+        "checked": true,
+        "text": "AutoColumnDetector, AIColumnDetector и ColumnConflictDialog: оценки уверенности, альтернативы, примеры данных, ручное подтверждение/отмена, автовыбор и обязательная колонка MAC."
+      },
+      {
+        "line": 22,
+        "checked": true,
+        "text": "StatisticsDatabase: snapshots, trends, history, performance metrics."
+      },
+      {
+        "line": 23,
+        "checked": true,
+        "text": "SettingsManager, AppLogger, AutoSaveManager, SignalHandler."
+      },
+      {
+        "line": 24,
+        "checked": true,
+        "text": "Структурированное хранение: основная SQLite-база, legacy-базы истории,"
+      },
+      {
+        "line": 27,
+        "checked": true,
+        "text": "Структура сопровождения проекта: документированная карта каталогов,"
+      },
+      {
+        "line": 31,
+        "checked": true,
+        "text": "Аналитический backend структурирован в `backend/services/analytics`:"
+      },
+      {
+        "line": 35,
+        "checked": true,
+        "text": "Интеграционные сервисы структурированы в `backend/services/integrations`:"
+      },
+      {
+        "line": 38,
+        "checked": true,
+        "text": "Сравнение и экспорт структурированы в `backend/services/comparison` и"
+      },
+      {
+        "line": 41,
+        "checked": true,
+        "text": "Системные сервисы структурированы в `backend/services/system`: единая"
+      },
+      {
+        "line": 44,
+        "checked": true,
+        "text": "Браузерный импорт структурирован в `frontend/file-readers.js`: чтение"
+      },
+      {
+        "line": 49,
+        "checked": true,
+        "text": "Пакетное ускорение обогащения: правила, история vendor/model и IP-адреса"
+      },
+      {
+        "line": 54,
+        "checked": true,
+        "text": "ColumnManager: видимость, порядок, пользовательские столбцы, ручная ширина,"
+      },
+      {
+        "line": 56,
+        "checked": true,
+        "text": "ExportManager: Excel, CSV, TXT, HTML, PDF, JSON, YAML. CSV, TXT,"
+      },
+      {
+        "line": 62,
+        "checked": true,
+        "text": "Обогащение: основной/дополнительные файлы с явными ролями и раздельными"
+      },
+      {
+        "line": 71,
+        "checked": true,
+        "text": "Сопоставление колонок, поля обогащения, OUI-форматы."
+      },
+      {
+        "line": 72,
+        "checked": true,
+        "text": "Поиск по БД, результаты, двойной клик по устройству."
+      },
+      {
+        "line": 73,
+        "checked": true,
+        "text": "История MAC и расширенная история изменений: отдельные PyQt-таблицы"
+      },
+      {
+        "line": 77,
+        "checked": true,
+        "text": "История производителей, моделей и загрузок."
+      },
+      {
+        "line": 78,
+        "checked": true,
+        "text": "Управление SQLite-базой и удаление выгрузок: структурные фильтры истории по MAC, файлу, vendor/model, помещению и датам, выбор строк, удаление по ID и по фильтру."
+      },
+      {
+        "line": 79,
+        "checked": true,
+        "text": "Анализ одного файла."
+      },
+      {
+        "line": 83,
+        "checked": true,
+        "text": "Сравнение двух файлов: added/removed/modified, Excel/CSV/TXT export."
+      },
+      {
+        "line": 84,
+        "checked": true,
+        "text": "Сравнение нескольких файлов до 10 с отдельным mapping каждого файла."
+      },
+      {
+        "line": 85,
+        "checked": true,
+        "text": "Временная статистика."
+      },
+      {
+        "line": 86,
+        "checked": true,
+        "text": "Графики и диаграммы, отдельный текстовый AnalyticsDialog-отчёт с"
+      },
+      {
+        "line": 89,
+        "checked": true,
+        "text": "DashboardWidget и DashboardSettingsDialog: сохранение настроек, фильтры производителя/помещения и статусов"
+      },
+      {
+        "line": 99,
+        "checked": true,
+        "text": "Сетевая топология."
+      },
+      {
+        "line": 100,
+        "checked": true,
+        "text": "Кластеризация."
+      },
+      {
+        "line": 101,
+        "checked": true,
+        "text": "Аналитика одного устройства и модели/префиксы: точный текстовый отчёт"
+      },
+      {
+        "line": 108,
+        "checked": true,
+        "text": "Внешнее API-обогащение с выбором устройств и настройкой сервисов:"
+      },
+      {
+        "line": 111,
+        "checked": true,
+        "text": "Уведомления: Email, Telegram, Slack, тесты и события анализа."
+      },
+      {
+        "line": 112,
+        "checked": true,
+        "text": "Планировщик реальных задач и очереди файлов."
+      },
+      {
+        "line": 113,
+        "checked": true,
+        "text": "AI-анализ качества данных."
+      },
+      {
+        "line": 114,
+        "checked": true,
+        "text": "Быстрое обогащение больших XLSX: серверный кэш импортов с токенами,"
+      },
+      {
+        "line": 117,
+        "checked": true,
+        "text": "Защита больших анализов от Out of Memory: результаты выводятся страницами по 25-1000 строк,"
+      },
+      {
+        "line": 148,
+        "checked": true,
+        "text": "Светлая/тёмная тема: отдельный ThemeSelectionDialog, немедленное применение,"
+      },
+      {
+        "line": 150,
+        "checked": true,
+        "text": "Инженерный/пользовательский режим как в PyQt: пользователь видит только безопасные"
+      },
+      {
+        "line": 155,
+        "checked": true,
+        "text": "Контекстные действия таблиц: выбор строки, копирование MAC/строки/таблицы,"
+      },
+      {
+        "line": 157,
+        "checked": true,
+        "text": "Полная справка и горячие клавиши PyQt: Ctrl+O/S/E/A/H/F,"
+      },
+      {
+        "line": 162,
+        "checked": true,
+        "text": "Самодиагностика web-системы: read-only проверка файлов frontend/backend,"
+      },
+      {
+        "line": 166,
+        "checked": true,
+        "text": "Переносимый Windows-backend: автономная PyInstaller-сборка с frontend,"
+      },
+      {
+        "line": 175,
+        "checked": true,
+        "text": "Все пункты выше реализованы."
+      },
+      {
+        "line": 176,
+        "checked": true,
+        "text": "Импортированы текущие SQLite-данные Python-версии."
+      },
+      {
+        "line": 177,
+        "checked": true,
+        "text": "Все операции проверены через UI и REST API."
+      },
+      {
+        "line": 178,
+        "checked": true,
+        "text": "Не осталось функций PyQt, для которых нет web-эквивалента."
+      }
+    ],
+    "checked": 50,
+    "total": 50,
+    "unchecked": []
+  },
+  "equivalents": [
+    {
+      "name": "Database management",
+      "pyqtMarker": "class DatabaseManagementDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/database/summary"
+        },
+        {
+          "file": "server.py",
+          "marker": "/api/database/maintenance"
+        },
+        {
+          "file": "index.html",
+          "marker": "databaseMaintenanceButton"
+        },
+        {
+          "file": "index.html",
+          "marker": "legacyImportButton"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Enhanced MAC history",
+      "pyqtMarker": "class EnhancedHistoryDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/history/search"
+        },
+        {
+          "file": "server.py",
+          "marker": "/api/history/statistics"
+        },
+        {
+          "file": "index.html",
+          "marker": "sqliteHistoryBody"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "MAC history dialog",
+      "pyqtMarker": "class MACHistoryDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/history"
+        },
+        {
+          "file": "app.js",
+          "marker": "showDevice"
+        },
+        {
+          "file": "index.html",
+          "marker": "deviceHistoryBody"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Column conflict review",
+      "pyqtMarker": "class ColumnConflictDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/columns/detect"
+        },
+        {
+          "file": "app.js",
+          "marker": "columnDetection"
+        },
+        {
+          "file": "index.html",
+          "marker": "columnDetectionSummary"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Vendor detector settings",
+      "pyqtMarker": "class VendorDetectorSettingsDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "backend/services/detection/vendor_detector_service.py",
+          "marker": "def detect_vendor"
+        },
+        {
+          "file": "server.py",
+          "marker": "/api/oui/settings"
+        },
+        {
+          "file": "index.html",
+          "marker": "ouiLengthSelect"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "History enrichment settings",
+      "pyqtMarker": "class HistoryEnrichmentSettingsDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/vendor-model-history/learn"
+        },
+        {
+          "file": "index.html",
+          "marker": "learnVendorModelButton"
+        },
+        {
+          "file": "app.js",
+          "marker": "renderVendorModelHistory"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Vendor/model history",
+      "pyqtMarker": "class VendorModelHistoryDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/vendor-model-history"
+        },
+        {
+          "file": "server.py",
+          "marker": "/api/vendor-model-history/uploads"
+        },
+        {
+          "file": "index.html",
+          "marker": "vendorModelHistoryBody"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "IP address mapping",
+      "pyqtMarker": "class IPAddressMappingDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/ip-mappings"
+        },
+        {
+          "file": "server.py",
+          "marker": "/api/ip-mappings/import"
+        },
+        {
+          "file": "index.html",
+          "marker": "ipMappingList"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Column mapping",
+      "pyqtMarker": "class ColumnMappingDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/mapping/summary"
+        },
+        {
+          "file": "index.html",
+          "marker": "mappingGrid"
+        },
+        {
+          "file": "app.js",
+          "marker": "detectColumnsWithBackend"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Column manager",
+      "pyqtMarker": "class ColumnManagerDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/columns/preferences"
+        },
+        {
+          "file": "index.html",
+          "marker": "columnPreferenceList"
+        },
+        {
+          "file": "app.js",
+          "marker": "renderColumnPreferences"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "OUI format selection",
+      "pyqtMarker": "class OUIFormatSelectionDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/oui/format"
+        },
+        {
+          "file": "index.html",
+          "marker": "ouiStyleSelect"
+        },
+        {
+          "file": "app.js",
+          "marker": "ouiSettings"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Comparison file mapping",
+      "pyqtMarker": "class ComparisonFileMappingDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/compare"
+        },
+        {
+          "file": "index.html",
+          "marker": "baselineSelect"
+        },
+        {
+          "file": "index.html",
+          "marker": "comparisonSelect"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Multi-file comparison",
+      "pyqtMarker": "class MultiFileComparisonDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/compare/many"
+        },
+        {
+          "file": "index.html",
+          "marker": "multiCompareButton"
+        },
+        {
+          "file": "app.js",
+          "marker": "multiCompare"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Comparison fields",
+      "pyqtMarker": "class FieldsSelectionDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/compare"
+        },
+        {
+          "file": "index.html",
+          "marker": "comparisonFilters"
+        },
+        {
+          "file": "index.html",
+          "marker": "compareButton"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "File comparison",
+      "pyqtMarker": "class FileComparisonDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/compare"
+        },
+        {
+          "file": "server.py",
+          "marker": "export_comparison"
+        },
+        {
+          "file": "index.html",
+          "marker": "comparisonBody"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Time statistics",
+      "pyqtMarker": "class TimeStatsDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/statistics/temporal"
+        },
+        {
+          "file": "index.html",
+          "marker": "temporalStatisticsChart"
+        },
+        {
+          "file": "app.js",
+          "marker": "renderTemporalStatistics"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Notifications",
+      "pyqtMarker": "class NotificationSettingsDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/notifications"
+        },
+        {
+          "file": "server.py",
+          "marker": "/api/notifications/event"
+        },
+        {
+          "file": "index.html",
+          "marker": "notificationChannel"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Scheduler",
+      "pyqtMarker": "class SchedulerDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/tasks"
+        },
+        {
+          "file": "server.py",
+          "marker": "/api/tasks/queue"
+        },
+        {
+          "file": "index.html",
+          "marker": "taskList"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "API enrichment",
+      "pyqtMarker": "class APIEnrichmentDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/external-enrichment/run"
+        },
+        {
+          "file": "server.py",
+          "marker": "/api/external-enrichment/test"
+        },
+        {
+          "file": "index.html",
+          "marker": "apiEnrichButton"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Clustering",
+      "pyqtMarker": "class ClusteringDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/clusters"
+        },
+        {
+          "file": "index.html",
+          "marker": "clusterChart"
+        },
+        {
+          "file": "app.js",
+          "marker": "renderBackendClusters"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Single file analysis",
+      "pyqtMarker": "class SingleFileAnalysisDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/single-file/analyze"
+        },
+        {
+          "file": "index.html",
+          "marker": "singleFileAnalyzeButton"
+        },
+        {
+          "file": "app.js",
+          "marker": "renderSingleReport"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Export dialog",
+      "pyqtMarker": "class ExportDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/export"
+        },
+        {
+          "file": "server.py",
+          "marker": "/api/xlsx/export"
+        },
+        {
+          "file": "server.py",
+          "marker": "/api/pdf/export"
+        },
+        {
+          "file": "index.html",
+          "marker": "exportCsvButton"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Analytics dialog",
+      "pyqtMarker": "class AnalyticsDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/dashboard"
+        },
+        {
+          "file": "server.py",
+          "marker": "/api/charts"
+        },
+        {
+          "file": "index.html",
+          "marker": "analyticsView"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Single device analytics",
+      "pyqtMarker": "class SingleDeviceAnalyticsDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/device/analytics"
+        },
+        {
+          "file": "app.js",
+          "marker": "exportDeviceAnalytics"
+        },
+        {
+          "file": "index.html",
+          "marker": "deviceDialog"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Model prefixes",
+      "pyqtMarker": "class ModelPrefixesDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/model/analytics"
+        },
+        {
+          "file": "app.js",
+          "marker": "showModelAnalytics"
+        },
+        {
+          "file": "index.html",
+          "marker": "modelDialog"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Theme selection",
+      "pyqtMarker": "class ThemeSelectionDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/theme"
+        },
+        {
+          "file": "index.html",
+          "marker": "themeButton"
+        },
+        {
+          "file": "app.js",
+          "marker": "saveThemePreference"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "API settings",
+      "pyqtMarker": "class APISettingsDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/external-enrichment/settings"
+        },
+        {
+          "file": "index.html",
+          "marker": "externalProviderSelect"
+        },
+        {
+          "file": "app.js",
+          "marker": "externalApiSettings"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Dashboard settings",
+      "pyqtMarker": "class DashboardSettingsDialog",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/dashboard/settings"
+        },
+        {
+          "file": "index.html",
+          "marker": "saveDashboardSettingsButton"
+        },
+        {
+          "file": "app.js",
+          "marker": "saveDashboardSettings"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Topology",
+      "pyqtMarker": "show_topology",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/topology"
+        },
+        {
+          "file": "index.html",
+          "marker": "topologyGraph"
+        },
+        {
+          "file": "app.js",
+          "marker": "renderBackendTopology"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Data quality analysis",
+      "pyqtMarker": "def analyze_data_quality",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/quality/analyze"
+        },
+        {
+          "file": "index.html",
+          "marker": "qualityAnalysisButton"
+        },
+        {
+          "file": "backend/services/analytics/data_quality_service.py",
+          "marker": "def analyze_data_quality"
+        }
+      ],
+      "missingMarkers": []
+    },
+    {
+      "name": "Legacy SQLite migration",
+      "pyqtMarker": "mac_history.db",
+      "pyqtPresent": true,
+      "webComplete": true,
+      "presentMarkers": [
+        {
+          "file": "server.py",
+          "marker": "/api/legacy/import"
+        },
+        {
+          "file": "backend/services/system/legacy_migration_service.py",
+          "marker": "def migrate_legacy_sqlite"
+        },
+        {
+          "file": "index.html",
+          "marker": "legacyImportButton"
+        }
+      ],
+      "missingMarkers": []
+    }
+  ],
+  "summary": {
+    "pyqtBlocks": 31,
+    "webComplete": 31,
+    "missingEquivalents": 0,
+    "registryUnchecked": 0
+  },
+  "missingEquivalents": [],
+  "summaryHtml": "<div class=\"bar-label\"><span>Status</span><strong>complete</strong></div><div class=\"bar-label\"><span>PyQt blocks</span><strong>31/31</strong></div><div class=\"bar-label\"><span>Missing equivalents</span><strong>0</strong></div><div class=\"bar-label\"><span>Registry unchecked</span><strong>0</strong></div><div class=\"bar-label\"><span>Registry checked</span><strong>50/50</strong></div>",
+  "detailsHtml": "<div class=\"mapping-row\"><span><strong>Database management</strong><small>class DatabaseManagementDialog · complete · markers 4</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Enhanced MAC history</strong><small>class EnhancedHistoryDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>MAC history dialog</strong><small>class MACHistoryDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Column conflict review</strong><small>class ColumnConflictDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Vendor detector settings</strong><small>class VendorDetectorSettingsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>History enrichment settings</strong><small>class HistoryEnrichmentSettingsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Vendor/model history</strong><small>class VendorModelHistoryDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>IP address mapping</strong><small>class IPAddressMappingDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Column mapping</strong><small>class ColumnMappingDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Column manager</strong><small>class ColumnManagerDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>OUI format selection</strong><small>class OUIFormatSelectionDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Comparison file mapping</strong><small>class ComparisonFileMappingDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Multi-file comparison</strong><small>class MultiFileComparisonDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Comparison fields</strong><small>class FieldsSelectionDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>File comparison</strong><small>class FileComparisonDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Time statistics</strong><small>class TimeStatsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Notifications</strong><small>class NotificationSettingsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Scheduler</strong><small>class SchedulerDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>API enrichment</strong><small>class APIEnrichmentDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Clustering</strong><small>class ClusteringDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Single file analysis</strong><small>class SingleFileAnalysisDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Export dialog</strong><small>class ExportDialog · complete · markers 4</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Analytics dialog</strong><small>class AnalyticsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Single device analytics</strong><small>class SingleDeviceAnalyticsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Model prefixes</strong><small>class ModelPrefixesDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Theme selection</strong><small>class ThemeSelectionDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>API settings</strong><small>class APISettingsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Dashboard settings</strong><small>class DashboardSettingsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Topology</strong><small>show_topology · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Data quality analysis</strong><small>def analyze_data_quality · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Legacy SQLite migration</strong><small>mac_history.db · complete · markers 3</small></span><span class=\"muted\">OK</span></div>",
+  "emptyDetailsHtml": "<p class=\"muted\">Нет данных parity.</p>"
+}

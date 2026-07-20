@@ -1,0 +1,8 @@
+# XLSX import/export for the web backend.
+openpyxl>=3.1
+xlrd>=2.0
+pillow>=10.0
+
+# Planned formats.
+# pyyaml>=6.0
+reportlab>=4.0

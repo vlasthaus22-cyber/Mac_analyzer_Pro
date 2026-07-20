@@ -1,0 +1,383 @@
+(() => {
+  "use strict";
+
+  const memoryGuard = window.MacAnalyzerMemoryGuard;
+  if (!memoryGuard) throw new Error("Модуль frontend/memory-guard.js не загружен");
+
+  function textScore(text) {
+    return [...text].reduce(
+      (score, char) => score
+        + (char.charCodeAt(0) > 31 || "\r\n\t".includes(char) ? 1 : -20)
+        + (/[А-Яа-яЁё]/.test(char) ? 4 : 0)
+        + (",;\t|".includes(char) ? 8 : 0),
+      0,
+    );
+  }
+
+  async function readClientTextFile(file) {
+    const buffer = await file.arrayBuffer();
+    const encodings = ["utf-8", "windows-1251", "utf-16le", "utf-16be"];
+    let best = { score: -Infinity, text: "" };
+    for (const encoding of encodings) {
+      try {
+        const text = new TextDecoder(encoding).decode(buffer).replace(/\0/g, "");
+        const score = textScore(text);
+        if (text.trim() && score > best.score) best = { score, text };
+      } catch {
+        // Try the next supported encoding.
+      }
+    }
+    if (!best.text.trim()) throw new Error("Файл пустой или кодировка не распознана");
+    return best.text;
+  }
+
+  function clientDelimiter(text, filename) {
+    if (/\.tsv$/i.test(filename)) return "\t";
+    const sample = text.split(/\r?\n/).slice(0, 20).join("\n");
+    const counts = [",", ";", "\t", "|"].map((delimiter) => [
+      delimiter,
+      sample.split(delimiter).length - 1,
+    ]);
+    const best = counts.sort((left, right) => right[1] - left[1])[0];
+    return best[1] ? best[0] : ",";
+  }
+
+  function clientTableRows(text, delimiter) {
+    const rows = [];
+    let row = [];
+    let cell = "";
+    let quoted = false;
+    for (let index = 0; index < text.length; index += 1) {
+      const char = text[index];
+      const next = text[index + 1];
+      if (char === '"' && quoted && next === '"') {
+        cell += '"';
+        index += 1;
+      } else if (char === '"') {
+        quoted = !quoted;
+      } else if (char === delimiter && !quoted) {
+        row.push(cell.trim());
+        cell = "";
+      } else if ((char === "\n" || char === "\r") && !quoted) {
+        if (char === "\r" && next === "\n") index += 1;
+        row.push(cell.trim());
+        if (row.some(Boolean)) rows.push(row);
+        row = [];
+        cell = "";
+      } else {
+        cell += char;
+      }
+    }
+    row.push(cell.trim());
+    if (row.some(Boolean)) rows.push(row);
+    return rows;
+  }
+
+  function clientJsonTable(text) {
+    const data = JSON.parse(text);
+    const items = Array.isArray(data) ? data : (data.devices || data.rows || data.data || []);
+    if (!Array.isArray(items) || !items.every((item) => item && typeof item === "object" && !Array.isArray(item))) {
+      throw new Error("JSON должен содержать массив объектов или devices/rows/data");
+    }
+    const headers = [...new Set(items.flatMap((item) => Object.keys(item)))];
+    return { headers, rows: items.map((item) => headers.map((header) => item[header] ?? "")) };
+  }
+
+  async function inflateRaw(bytes) {
+    if (!("DecompressionStream" in window)) {
+      throw new Error("Браузер не поддерживает распаковку XLSX");
+    }
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+
+  function clientZipDirectory(buffer) {
+    const bytes = new Uint8Array(buffer);
+    const view = new DataView(buffer);
+    let endOfDirectory = -1;
+    for (let index = bytes.length - 22; index >= Math.max(0, bytes.length - 66000); index -= 1) {
+      if (view.getUint32(index, true) === 0x06054b50) {
+        endOfDirectory = index;
+        break;
+      }
+    }
+    if (endOfDirectory < 0) throw new Error("XLSX не содержит ZIP-каталог");
+
+    const total = view.getUint16(endOfDirectory + 10, true);
+    const offset = view.getUint32(endOfDirectory + 16, true);
+    const entries = new Map();
+    let position = offset;
+    for (let index = 0; index < total; index += 1) {
+      if (view.getUint32(position, true) !== 0x02014b50) break;
+      const method = view.getUint16(position + 10, true);
+      const size = view.getUint32(position + 20, true);
+      const uncompressedSize = view.getUint32(position + 24, true);
+      const nameLength = view.getUint16(position + 28, true);
+      const extraLength = view.getUint16(position + 30, true);
+      const commentLength = view.getUint16(position + 32, true);
+      const localOffset = view.getUint32(position + 42, true);
+      const name = new TextDecoder()
+        .decode(bytes.slice(position + 46, position + 46 + nameLength))
+        .replace(/\\/g, "/");
+      const localNameLength = view.getUint16(localOffset + 26, true);
+      const localExtraLength = view.getUint16(localOffset + 28, true);
+      const start = localOffset + 30 + localNameLength + localExtraLength;
+      entries.set(name, { method, size, uncompressedSize, start });
+      position += 46 + nameLength + extraLength + commentLength;
+    }
+    memoryGuard.assertZipDirectoryCapacity(entries);
+    return { bytes, entries };
+  }
+
+  async function clientZipEntryBytes(directory, path, maximumBytes = memoryGuard.limits.worksheetBytes) {
+    const entry = directory.entries.get(path);
+    if (!entry) return null;
+    memoryGuard.assertEntryCapacity(`Слишком большой раздел XLSX (${path})`, entry.uncompressedSize, maximumBytes);
+    const compressed = directory.bytes.subarray(entry.start, entry.start + entry.size);
+    if (entry.method === 0) return compressed;
+    if (entry.method === 8) return inflateRaw(compressed);
+    throw new Error(`XLSX использует неподдерживаемый ZIP-метод ${entry.method}`);
+  }
+
+  async function clientZipEntries(buffer, onProgress = () => {}) {
+    const directory = clientZipDirectory(buffer);
+    const entries = new Map();
+    const names = [...directory.entries.keys()];
+    for (let index = 0; index < names.length; index += 1) {
+      const name = names[index];
+      entries.set(name, await clientZipEntryBytes(directory, name));
+      onProgress(names.length ? Math.round(((index + 1) / names.length) * 100) : 100, `Распаковка XLSX: ${index + 1} / ${names.length}`);
+    }
+    return entries;
+  }
+
+  function xlsxXml(entries, path) {
+    const bytes = entries.get(path);
+    if (!bytes) return null;
+    return new DOMParser().parseFromString(new TextDecoder("utf-8").decode(bytes), "application/xml");
+  }
+
+  function xlsxSharedStrings(documentNode) {
+    if (!documentNode) return [];
+    return Array.from(documentNode.getElementsByTagName("si")).map((item) => (
+      Array.from(item.getElementsByTagName("t")).map((text) => text.textContent || "").join("")
+    ));
+  }
+
+  function decodeXmlText(value) {
+    return String(value || "").replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (match, entity) => {
+      if (entity === "amp") return "&";
+      if (entity === "lt") return "<";
+      if (entity === "gt") return ">";
+      if (entity === "quot") return '"';
+      if (entity === "apos") return "'";
+      const numeric = entity.toLowerCase().startsWith("#x")
+        ? Number.parseInt(entity.slice(2), 16)
+        : Number.parseInt(entity.slice(1), 10);
+      return Number.isFinite(numeric) ? String.fromCodePoint(numeric) : match;
+    });
+  }
+
+  function xlsxSharedStringsFromXml(xml) {
+    const strings = [];
+    const itemPattern = /<si\b[^>]*>([\s\S]*?)<\/si>/gi;
+    let itemMatch;
+    while ((itemMatch = itemPattern.exec(xml))) {
+      let value = "";
+      const textPattern = /<t\b[^>]*>([\s\S]*?)<\/t>/gi;
+      let textMatch;
+      while ((textMatch = textPattern.exec(itemMatch[1]))) value += decodeXmlText(textMatch[1]);
+      strings.push(value);
+      if (strings.length > memoryGuard.limits.sharedStrings) {
+        throw memoryGuard.capacityError("Слишком много общих строк XLSX", strings.length, memoryGuard.limits.sharedStrings);
+      }
+    }
+    return strings;
+  }
+
+  function xlsxColumnIndex(reference) {
+    const letters = (String(reference || "").match(/[A-Z]+/i) || [""])[0].toUpperCase();
+    let index = 0;
+    for (const char of letters) index = index * 26 + char.charCodeAt(0) - 64;
+    return Math.max(0, index - 1);
+  }
+
+  function xlsxCellValue(cell, sharedStrings) {
+    const type = cell.getAttribute("t") || "";
+    const value = cell.getElementsByTagName("v")[0]?.textContent ?? "";
+    if (type === "s") return sharedStrings[Number(value)] ?? "";
+    if (type === "inlineStr") {
+      return Array.from(cell.getElementsByTagName("t")).map((text) => text.textContent || "").join("");
+    }
+    if (type === "b") return value === "1" ? "TRUE" : "FALSE";
+    return value;
+  }
+
+  function xlsxRowFromXml(rowXml, sharedStrings) {
+    const row = [];
+    const cellPattern = /<c\b([^>]*?)(?:\/\s*>|>([\s\S]*?)<\/c>)/gi;
+    let cellMatch;
+    let sequentialIndex = 0;
+    let cellCount = 0;
+    while ((cellMatch = cellPattern.exec(rowXml))) {
+      const attributes = cellMatch[1] || "";
+      const body = cellMatch[2] || "";
+      const reference = /\br="([^"]+)"/i.exec(attributes)?.[1] || "";
+      const type = /\bt="([^"]+)"/i.exec(attributes)?.[1] || "";
+      const columnIndex = reference ? xlsxColumnIndex(reference) : sequentialIndex;
+      const rawValue = /<v\b[^>]*>([\s\S]*?)<\/v>/i.exec(body)?.[1] ?? "";
+      let value = decodeXmlText(rawValue);
+      if (type === "s") value = sharedStrings[Number(rawValue)] ?? "";
+      else if (type === "inlineStr") {
+        value = "";
+        const textPattern = /<t\b[^>]*>([\s\S]*?)<\/t>/gi;
+        let textMatch;
+        while ((textMatch = textPattern.exec(body))) value += decodeXmlText(textMatch[1]);
+      } else if (type === "b") value = rawValue === "1" ? "TRUE" : "FALSE";
+      row[columnIndex] = value;
+      sequentialIndex = columnIndex + 1;
+      cellCount += 1;
+    }
+    const values = Array.from({ length: row.length }, (_item, index) => row[index] ?? "");
+    return { values, cellCount, populated: values.some((value) => String(value).trim()) };
+  }
+
+  function normalizedZipPath(path) {
+    const parts = [];
+    for (const part of String(path || "").replace(/\\/g, "/").split("/")) {
+      if (!part || part === ".") continue;
+      if (part === "..") parts.pop();
+      else parts.push(part);
+    }
+    return parts.join("/");
+  }
+
+  function zipEntryStream(directory, entry) {
+    const compressed = directory.bytes.subarray(entry.start, entry.start + entry.size);
+    let stream = new Blob([compressed]).stream();
+    if (entry.method === 8) stream = stream.pipeThrough(new DecompressionStream("deflate-raw"));
+    else if (entry.method !== 0) throw new Error(`XLSX использует неподдерживаемый ZIP-метод ${entry.method}`);
+    return stream;
+  }
+
+  async function xlsxWorksheetRows(directory, sheetPath, sharedStrings, onProgress = () => {}) {
+    const entry = directory.entries.get(sheetPath);
+    if (!entry) throw new Error("XLSX лист не найден");
+    memoryGuard.assertEntryCapacity("Слишком большой XML-лист XLSX", entry.uncompressedSize, memoryGuard.limits.worksheetBytes);
+    const reader = zipEntryStream(directory, entry).getReader();
+    const decoder = new TextDecoder("utf-8");
+    const rows = [];
+    let pending = "";
+    let cellCount = 0;
+    let processedBytes = 0;
+    const drainRows = () => {
+      while (true) {
+        const rowStart = pending.search(/<row\b/i);
+        if (rowStart < 0) {
+          if (pending.length > 32) pending = pending.slice(-32);
+          return;
+        }
+        if (rowStart > 0) pending = pending.slice(rowStart);
+        const rowEnd = pending.search(/<\/row\s*>/i);
+        if (rowEnd < 0) return;
+        const closing = pending.slice(rowEnd).match(/^<\/row\s*>/i)?.[0] || "</row>";
+        const rowXml = pending.slice(0, rowEnd + closing.length);
+        pending = pending.slice(rowEnd + closing.length);
+        const parsed = xlsxRowFromXml(rowXml, sharedStrings);
+        cellCount += parsed.cellCount;
+        if (parsed.populated) rows.push(parsed.values);
+        memoryGuard.assertTableCapacity(rows.length, cellCount);
+      }
+    };
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      processedBytes += chunk.value.byteLength;
+      pending += decoder.decode(chunk.value, { stream: true });
+      drainRows();
+      if (rows.length && rows.length % 2000 === 0) {
+        const ratio = entry.uncompressedSize ? Math.min(1, processedBytes / entry.uncompressedSize) : 0;
+        onProgress(78 + ratio * 20, `Строки XLSX: ${rows.length.toLocaleString("ru-RU")}`);
+        await memoryGuard.yieldToMainThread();
+      }
+    }
+    pending += decoder.decode();
+    drainRows();
+    return rows;
+  }
+
+  async function clientXlsxTable(file, onProgress = () => {}) {
+    memoryGuard.assertImportCapacity(file);
+    onProgress(3, "Чтение XLSX с диска");
+    const buffer = await file.arrayBuffer();
+    onProgress(10, "Проверка структуры XLSX");
+    const directory = clientZipDirectory(buffer);
+    onProgress(20, "Чтение структуры книги без распаковки лишних разделов");
+    const workbookBytes = await clientZipEntryBytes(directory, "xl/workbook.xml", 16 * 1024 * 1024);
+    const relationshipBytes = await clientZipEntryBytes(directory, "xl/_rels/workbook.xml.rels", 16 * 1024 * 1024);
+    const workbook = workbookBytes ? new DOMParser().parseFromString(new TextDecoder("utf-8").decode(workbookBytes), "application/xml") : null;
+    const relationships = relationshipBytes ? new DOMParser().parseFromString(new TextDecoder("utf-8").decode(relationshipBytes), "application/xml") : null;
+    const sharedStringBytes = await clientZipEntryBytes(directory, "xl/sharedStrings.xml", memoryGuard.limits.sharedStringBytes);
+    const sharedStrings = sharedStringBytes ? xlsxSharedStringsFromXml(new TextDecoder("utf-8").decode(sharedStringBytes)) : [];
+    if (!workbook) throw new Error("XLSX workbook.xml не найден");
+    const firstSheet = workbook.getElementsByTagName("sheet")[0];
+    if (!firstSheet) throw new Error("XLSX не содержит листов");
+
+    const relationshipId = firstSheet.getAttribute("r:id") || firstSheet.getAttribute("id");
+    let target = "";
+    if (relationships && relationshipId) {
+      const relationship = Array.from(relationships.getElementsByTagName("Relationship"))
+        .find((node) => node.getAttribute("Id") === relationshipId);
+      target = relationship?.getAttribute("Target") || "";
+    }
+    let sheetPath = target ? normalizedZipPath(target.startsWith("/") ? target.slice(1) : `xl/${target}`) : "";
+    if (!directory.entries.has(sheetPath)) {
+      sheetPath = [...directory.entries.keys()].find((name) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(name)) || "";
+    }
+    onProgress(78, `Чтение строк листа ${firstSheet.getAttribute("name") || "1"}`);
+    const rows = await xlsxWorksheetRows(directory, sheetPath, sharedStrings, onProgress);
+    if (!rows.length) throw new Error("XLSX не содержит строк");
+    if (!rows[0].some(Boolean)) throw new Error("Первая строка XLSX не содержит заголовков");
+    onProgress(100, `XLSX прочитан: ${Math.max(0, rows.length - 1)} строк`);
+    const headers = rows.shift();
+    return { headers, rows, sheet: firstSheet.getAttribute("name") || "" };
+  }
+
+  async function clientReadTable(file, onProgress = () => {}) {
+    if (/\.(xlsx|xlsm)$/i.test(file.name)) return clientXlsxTable(file, onProgress);
+    memoryGuard.assertImportCapacity(file);
+    if (/\.xls$/i.test(file.name)) {
+      throw new Error("Старый XLS не поддерживается в браузере, сохраните файл как XLSX");
+    }
+    onProgress(10, "Чтение текстового файла");
+    const text = await readClientTextFile(file);
+    onProgress(55, "Разбор строк и колонок");
+    if (/\.json$/i.test(file.name) || text.trim().startsWith("[") || text.trim().startsWith("{")) {
+      const table = clientJsonTable(text);
+      onProgress(100, `JSON прочитан: ${table.rows.length} строк`);
+      return table;
+    }
+    const rows = clientTableRows(text, clientDelimiter(text, file.name));
+    if (!rows.length) throw new Error("Файл не содержит строк");
+    if (!rows[0].some(Boolean)) throw new Error("Первая строка файла не содержит заголовков");
+    onProgress(100, `Файл прочитан: ${Math.max(0, rows.length - 1)} строк`);
+    const headers = rows.shift();
+    return { headers, rows };
+  }
+
+  window.MacAnalyzerFileReaders = Object.freeze({
+    readClientTextFile,
+    clientDelimiter,
+    clientTableRows,
+    clientJsonTable,
+    clientZipDirectory,
+    clientZipEntryBytes,
+    clientZipEntries,
+    xlsxSharedStringsFromXml,
+    xlsxRowFromXml,
+    xlsxWorksheetRows,
+    clientXlsxTable,
+    clientReadTable,
+  });
+  document.documentElement.dataset.fileReaders = "ready";
+})();

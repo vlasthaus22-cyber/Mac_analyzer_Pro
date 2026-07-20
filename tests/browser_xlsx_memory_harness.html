@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Browser XLSX memory harness</title>
+</head>
+<body>
+  <pre id="result">running</pre>
+  <script src="../frontend/memory-guard.js"></script>
+  <script src="../frontend/file-readers.js"></script>
+  <script>
+    (async () => {
+      const output = document.querySelector("#result");
+      const filename = new URLSearchParams(location.search).get("file") || "/data/imports/oom-browser-test.xlsx";
+      try {
+        const response = await fetch(filename);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const blob = await response.blob();
+        const started = performance.now();
+        let progressUpdates = 0;
+        const table = await window.MacAnalyzerFileReaders.clientXlsxTable(
+          new File([blob], filename.split("/").pop() || "test.xlsx"),
+          () => { progressUpdates += 1; },
+        );
+        output.dataset.status = "complete";
+        output.textContent = JSON.stringify({
+          rows: table.rows.length,
+          headers: table.headers,
+          firstMac: table.rows[0]?.[0] || "",
+          lastMac: table.rows.at(-1)?.[0] || "",
+          sheet: table.sheet,
+          progressUpdates,
+          elapsedMs: Math.round(performance.now() - started),
+        });
+      } catch (error) {
+        output.dataset.status = "error";
+        output.textContent = JSON.stringify({ error: error.message, code: error.code || "" });
+      }
+    })();
+  </script>
+</body>
+</html>

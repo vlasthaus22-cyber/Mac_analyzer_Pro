@@ -1,0 +1,2279 @@
+﻿(() => {
+  "use strict";
+  const fieldList = [["mac","MAC-адрес"],["vendor","Производитель"],["model","Модель"],["ip","IP"],["address","Адрес"],["room","Помещение"],["switchIp","IP коммутатора"],["switchPort","Порт"]];
+  const labels = {...Object.fromEntries(fieldList),macFormatted:"MAC",oui:"OUI",switchIp:"IP коммутатора",switchPort:"Порт",source:"Источник",vendorSource:"Источник вендора",vendorConfidence:"Уверенность вендора",vendorMatchedPrefix:"Префикс вендора",modelSource:"Источник модели",modelConfidence:"Уверенность модели",modelMatchedPrefix:"Префикс модели"};
+  const builtinVendorMappings={"00037F":"Apple Inc.","001A11":"Apple Inc.","18FE34":"Apple Inc.","001B44":"Intel Corporation","00A0C9":"Intel Corporation","ACDE48":"Samsung Electronics","002590":"Samsung Electronics","001122":"Cisco Systems","00055D":"Cisco Systems","0050B6":"Dell Inc.","00155F":"Hewlett Packard","0050C2":"Microsoft Corp.","005A39":"Google LLC","0025D3":"Huawei Technologies","002128":"Xiaomi Corporation","0022B0":"TP-Link Technologies","001E52":"Netgear Inc.","F832E4":"ASUSTeK Computer","B827EB":"Raspberry Pi Foundation","002314":"Lenovo Group","0022BD":"Acer Inc.","0024B2":"LG Electronics","001E58":"Sony Corporation","000E58":"Cisco-Linksys","001E13":"Nintendo","000C29":"VMware","0050F2":"Microsoft","00107B":"Dell","001EC9":"Huawei","0017C8":"Apple","00236C":"Xiaomi","001AA9":"Samsung"};
+  const builtinModelMappings={"00112233":"Cisco Catalyst 2960","00112244":"Cisco Catalyst 3560","00112255":"Cisco Catalyst 3750","00112266":"Cisco Catalyst 4500","00112277":"Cisco Catalyst 6500","00112288":"Cisco ASR 1000","00112299":"Cisco ISR 4000","005055AA":"Cisco Nexus 3000","005055BB":"Cisco Nexus 5000","005055CC":"Cisco Nexus 7000","0010B5AA":"Dell PowerEdge R740","0010B5BB":"Dell PowerEdge R640","0010B5CC":"Dell PowerEdge T340","0010B5DD":"Dell OptiPlex 7070","0010B5EE":"Dell Latitude 5400","0010B5FF":"Dell XPS 15","00215AAB":"HP ProLiant DL380","00215ACC":"HP ProLiant DL360","00215ADD":"HP EliteBook 840","00215AEE":"HP ZBook 15","00215AFF":"HP LaserJet Pro","00215A11":"HP OfficeJet Pro","001A1101":"iPhone 13","001A1102":"iPhone 14","001A1103":"iPhone 15","001A1120":"iPad Pro","001A1121":"iPad Air","001A1130":"MacBook Pro","001A1131":"MacBook Air","001A1140":"iMac 24\"","001A1150":"Mac Studio","00259001":"Samsung Galaxy S23","00259002":"Samsung Galaxy S22","00259010":"Samsung Galaxy Tab","00259020":"Samsung SSD 980 Pro","00259030":"Samsung Smart Monitor","00259040":"Samsung M7","001EC901":"Huawei Mate 50","001EC902":"Huawei P60","001EC910":"Huawei MateBook X","001EC920":"Huawei Watch GT","00236C01":"Xiaomi Mi 11","00236C02":"Xiaomi 12T","00236C10":"Xiaomi Mi Band","00236C20":"Xiaomi Robot Vacuum","0022B001":"TP-Link Archer AX73","0022B002":"TP-Link Deco X60","0022B010":"TP-Link Tapo C200","0022B020":"TP-Link Kasa KP115","001E5201":"Netgear Nighthawk RAX200","001E5202":"Netgear Orbi RBK852","001E5210":"Netgear GS308","001E5220":"Netgear ReadyNAS","F832E401":"ASUS ROG Zephyrus","F832E402":"ASUS TUF Gaming","F832E410":"ASUS RT-AX88U","F832E420":"ASUS ZenBook","00231401":"Lenovo ThinkPad X1","00231402":"Lenovo ThinkPad T14","00231410":"Lenovo Legion 5","00231420":"Lenovo Yoga 9i"};
+  const defaultColumnWidths = {macFormatted:180,oui:110,vendor:150,model:150,ip:130,address:200,room:120,switchIp:150,switchPort:100,source:150};
+  const key = "mac-analyzer-web-state-v1";
+  const browserStateDbName = "mac-analyzer-browser-storage-v1";
+  const browserStateStoreName = "workspaces";
+  const browserStateRecordId = "main-v2";
+  const browserStateSavedAtKey = key+"-saved-at";
+  const StatePersistence = window.MacAnalyzerStatePersistence;
+  const BrowserSnapshots = window.MacAnalyzerBrowserSnapshots;
+  const MemoryGuard = window.MacAnalyzerMemoryGuard;
+  const Guide = window.MacAnalyzerGuide;
+  if(!MemoryGuard)throw new Error("Модуль frontend/memory-guard.js не загружен");
+  if(!Guide)throw new Error("Модуль frontend/guide.js не загружен");
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => Array.from(document.querySelectorAll(s));
+  const networkUnavailable = (error) => error instanceof TypeError || /Failed to fetch|NetworkError|Load failed|fetch failed/i.test(error?.message||"");
+  const backendCandidates = [...new Set([
+    location.protocol === "file:" ? "http://127.0.0.1:8080/api" : "/api",
+    "http://127.0.0.1:8080/api",
+    "http://localhost:8080/api"
+  ])];
+  let backendBase = backendCandidates[0];
+  let backendAvailable = false;
+  let resultPage=1,resultPageSize=250,resultRenderRevision=0;
+  const engineeringPermissionList=["delete:history","delete:snapshots","delete:mappings","delete:tasks","delete:ip-mappings","delete:api-cache","write:settings","write:migration"];
+  const engineeringPermissionLabels={"delete:history":"Удаление истории","delete:snapshots":"Удаление снимков","delete:mappings":"Удаление справочников","delete:tasks":"Управление задачами","delete:ip-mappings":"Удаление IP-маппинга","delete:api-cache":"Очистка API-кэша","write:settings":"Изменение настроек","write:migration":"Миграция Python/SQLite"};
+  const engineeringOnlyViews=new Set(["workspace","single","compare","data","automation","settings"]);
+  const empty = () => ({files:[],devices:[],invalid:[],snapshots:[],movementHistory:[],importErrors:[],ipMappings:[],localVendorMappings:{},localModelMappings:{},activeMappingFileId:"",mappingDisplayMode:"name",theme:"light",engineeringMode:false,engineeringToken:"",engineeringExpiresAt:"",engineeringPermissions:[],ouiLength:3,ouiStyle:"plain",vendorDetectorSettings:{enabled:true,useOui3:true,useMac5:true,useText:true,useInference:true,confidenceThreshold:0.6},historyEnrichmentSettings:{enabled:true,priorityHistory:true,useOuiMatch:true,useMac5Match:true},externalApiSettings:{enabled:false,provider:"macvendors",endpoint:"",rateLimit:25,cacheTtlDays:30,onlyUnknown:true},dashboardSettings:{vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true},autoRefresh:true,refreshInterval:60,changeMode:"period",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},customColumns:[],customColumnMappings:{},columnWidths:{...defaultColumnWidths},visibleColumns:["macFormatted","oui","vendor","model","ip","address","room","switchIp","switchPort","source"],columnOrder:["macFormatted","oui","vendor","model","ip","address","room","switchIp","switchPort","source"],resultSnapshotId:"",resultBrowserSnapshotId:"",resultBrowserSnapshotDirty:false,resultDeviceCount:0,resultInvalidCount:0,resultSummary:null,lastAnalysis:null});
+  let state;
+  try { const old = JSON.parse(localStorage.getItem(key)); state = {...empty(),...old}; } catch { state = empty(); }
+  function normalizeFileRoles(files=[]){
+    const normalized=(Array.isArray(files)?files:[]).filter((file)=>file&&typeof file==="object").map((file)=>({...file}));
+    if(!normalized.length)return normalized;
+    let primaryIndex=normalized.findIndex((file)=>file.role==="primary");
+    if(primaryIndex<0)primaryIndex=0;
+    normalized.forEach((file,index)=>{file.role=index===primaryIndex?"primary":"enrichment";});
+    return [normalized[primaryIndex],...normalized.filter((_file,index)=>index!==primaryIndex)];
+  }
+  state.files=normalizeFileRoles(state.files);
+  state.movementHistory=Array.isArray(state.movementHistory)?state.movementHistory:[];
+  state.ipMappings=Array.isArray(state.ipMappings)?state.ipMappings:[];
+  state.localVendorMappings=state.localVendorMappings&&typeof state.localVendorMappings==="object"?state.localVendorMappings:{};
+  state.localModelMappings=state.localModelMappings&&typeof state.localModelMappings==="object"?state.localModelMappings:{};
+  state.externalApiSettings=state.externalApiSettings&&typeof state.externalApiSettings==="object"?state.externalApiSettings:empty().externalApiSettings;
+  state.dashboardSettings=normalizeDashboardSettings(state.dashboardSettings);
+  state.columnWidths=normalizeColumnWidths(state.columnWidths);
+  BrowserSnapshots?.removeLegacyWorkspace?.().catch(()=>{});
+  let browserStateSaveTimer=null,browserStateSaveRevision=0,browserStateQueuedRevision=0,browserStatePersistedRevision=0,browserStateSavePromise=Promise.resolve(),browserStatePendingSavedAt="";
+  function openBrowserStateDb(){
+    return new Promise((resolve,reject)=>{
+      if(!("indexedDB" in window))return reject(new Error("IndexedDB недоступна"));
+      const request=indexedDB.open(browserStateDbName,2);
+      request.onupgradeneeded=()=>{const db=request.result;if(!db.objectStoreNames.contains(browserStateStoreName))db.createObjectStore(browserStateStoreName,{keyPath:"id"});if(!db.objectStoreNames.contains("snapshots"))db.createObjectStore("snapshots",{keyPath:"id"});};
+      request.onsuccess=()=>resolve(request.result);
+      request.onerror=()=>reject(request.error||new Error("Не удалось открыть IndexedDB"));
+    });
+  }
+  async function writeBrowserStateRecord(snapshot,savedAt){
+    const db=await openBrowserStateDb();
+    return new Promise((resolve,reject)=>{const transaction=db.transaction(browserStateStoreName,"readwrite");transaction.objectStore(browserStateStoreName).put({id:browserStateRecordId,savedAt,state:snapshot});transaction.oncomplete=()=>{db.close();resolve(true);};transaction.onerror=()=>{const error=transaction.error;db.close();reject(error||new Error("Не удалось сохранить IndexedDB"));};});
+  }
+  async function readBrowserStateRecord(){
+    const db=await openBrowserStateDb();
+    return new Promise((resolve,reject)=>{const transaction=db.transaction(browserStateStoreName,"readonly"),request=transaction.objectStore(browserStateStoreName).get(browserStateRecordId);request.onsuccess=()=>resolve(request.result||null);request.onerror=()=>reject(request.error||new Error("Не удалось прочитать IndexedDB"));transaction.oncomplete=()=>db.close();});
+  }
+  function compactBrowserState(source){
+    return StatePersistence.compactLocalState(source);
+  }
+  function browserStateSnapshot(){
+    return StatePersistence.compactIndexedState(state);
+  }
+  function persistLatestBrowserState(){
+    if(browserStateSaveTimer){clearTimeout(browserStateSaveTimer);browserStateSaveTimer=null;}
+    if(browserStateQueuedRevision>=browserStateSaveRevision)return browserStateSavePromise;
+    const revision=browserStateSaveRevision,savedAt=browserStatePendingSavedAt||new Date().toISOString(),snapshot=browserStateSnapshot();
+    browserStateQueuedRevision=revision;
+    browserStateSavePromise=browserStateSavePromise.catch(()=>{}).then(()=>writeBrowserStateRecord(snapshot,savedAt)).then(()=>{browserStatePersistedRevision=Math.max(browserStatePersistedRevision,revision);if(browserStateSaveRevision>browserStateQueuedRevision)armBrowserStateSave(0);});
+    return browserStateSavePromise;
+  }
+  function armBrowserStateSave(delay){clearTimeout(browserStateSaveTimer);browserStateSaveTimer=setTimeout(()=>{persistLatestBrowserState().catch(()=>{});},Math.max(0,delay));}
+  function scheduleBrowserStateSave(savedAt,delay=250){
+    browserStateSaveRevision++;
+    browserStatePendingSavedAt=savedAt;
+    armBrowserStateSave(delay);
+  }
+  async function flushBrowserStateSave(){
+    if(browserStatePersistedRevision>=browserStateSaveRevision&&!browserStateSaveTimer)return true;
+    await persistLatestBrowserState();
+    return true;
+  }
+  const save = (options={}) => {
+    const savedAt=new Date().toISOString();
+    let localCopy=true;
+    try{localStorage.setItem(key,JSON.stringify(compactBrowserState(state)));}
+    catch{localCopy=false;}
+    try{localStorage.setItem(browserStateSavedAtKey,savedAt);}catch{}
+    scheduleBrowserStateSave(savedAt,options.immediate?0:250);
+    return localCopy;
+  };
+  async function restoreBrowserStateFromIndexedDb(){
+    try{
+      const record=await readBrowserStateRecord();
+      if(!record?.state)return false;
+      const localSavedAt=Date.parse(localStorage.getItem(browserStateSavedAtKey)||"")||0,indexedSavedAt=Date.parse(record.savedAt||"")||0;
+      if(!state.browserStateInIndexedDb&&localSavedAt>indexedSavedAt)return false;
+      state=normalizeRestoredState(record.state);
+      if(state.resultBrowserSnapshotId&&!state.devices.length&&BrowserSnapshots){
+        const stored=await BrowserSnapshots.load(state.resultBrowserSnapshotId).catch(()=>null);
+        if(stored){state.devices=stored.devices||[];state.invalid=stored.invalid||[];state.resultDeviceCount=Number(stored.deviceCount||state.devices.length);state.resultInvalidCount=state.invalid.length;state.resultBrowserSnapshotDirty=false;}
+        else{const metadata=(state.snapshots||[]).find((item)=>item.id===state.resultBrowserSnapshotId);state.devices=metadata?.devices||[];state.invalid=[];state.resultBrowserSnapshotId="";state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=state.devices.length;state.resultInvalidCount=0;}
+      }
+      return true;
+    }catch{return false;}
+  }
+  function normalizeColumnWidths(widths={}){const next={...defaultColumnWidths};if(widths&&typeof widths==="object")Object.entries(widths).forEach(([column,value])=>{const width=Number(value);if(column&&Number.isFinite(width))next[column]=Math.max(64,Math.min(600,Math.round(width)));});return next;}
+  function syncThemeControls(theme){$$('[data-theme-choice],[data-theme-dialog-choice]').forEach((button)=>{const active=(button.dataset.themeChoice||button.dataset.themeDialogChoice)===theme;button.setAttribute("aria-pressed",String(active));button.classList.toggle("active-theme",active);});}
+  function applyTheme(theme){state.theme=theme==="dark"?"dark":"light";document.body.classList.toggle("dark",state.theme==="dark");const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.content=state.theme==="dark"?"#1e1e1e":"#f5f5f5";syncThemeControls(state.theme);save();}
+  function showThemeSelection(){syncThemeControls(state.theme);if(!$("#themeDialog").open)$("#themeDialog").showModal();}
+  async function saveThemePreference(theme){try{const result=await api("/theme",{method:"POST",body:JSON.stringify({theme})});applyTheme(result.theme);toast("Theme saved to SQLite.");}catch(error){applyTheme(theme);toast("Тема переключена локально.");}}
+  async function loadThemePreference(){try{const result=await api("/theme");applyTheme(result.theme);}catch{applyTheme(state.theme);}}
+  async function loadOuiPreference(){try{const result=await api("/oui/settings");applyOuiPreference(result.settings||{});}catch{}}
+  function applyOuiPreference(settings){state.ouiLength=settings.length||state.ouiLength;state.ouiStyle=settings.style||state.ouiStyle;$("#ouiLengthSelect").value=String(state.ouiLength||3);$("#ouiStyleSelect").value=state.ouiStyle||"plain";state.devices.forEach((device)=>{device.oui=formatOuiValue(device.mac||device.macFormatted||device.oui);});save();renderResults();if(document.querySelector("#analyticsView.active"))renderAnalytics();}
+  async function saveOuiPreference(settings){try{const result=await api("/oui/settings",{method:"POST",body:JSON.stringify({settings})});applyOuiPreference(result.settings);toast("OUI settings saved to SQLite.");}catch(error){applyOuiPreference(settings);toast("OUI settings saved locally.");}}
+  function normalizeVendorDetectorSettings(settings={}){return{enabled:settings.enabled!==false,useOui3:settings.useOui3!==false,useMac5:settings.useMac5!==false,useText:settings.useText!==false,useInference:settings.useInference!==false,confidenceThreshold:Math.max(0,Math.min(Number(settings.confidenceThreshold??0.6),1))};}
+  function vendorDetectorSettingsFromUi(){return normalizeVendorDetectorSettings({enabled:$("#vendorDetectorEnabled")?.checked,useOui3:$("#vendorDetectorOui3")?.checked,useMac5:$("#vendorDetectorMac5")?.checked,useText:$("#vendorDetectorText")?.checked,useInference:$("#vendorDetectorInference")?.checked,confidenceThreshold:Number($("#vendorDetectorThreshold")?.value||60)/100});}
+  function applyVendorDetectorSettings(settings={}){state.vendorDetectorSettings=normalizeVendorDetectorSettings(settings);const s=state.vendorDetectorSettings;if($("#vendorDetectorEnabled"))$("#vendorDetectorEnabled").checked=s.enabled;if($("#vendorDetectorOui3"))$("#vendorDetectorOui3").checked=s.useOui3;if($("#vendorDetectorMac5"))$("#vendorDetectorMac5").checked=s.useMac5;if($("#vendorDetectorText"))$("#vendorDetectorText").checked=s.useText;if($("#vendorDetectorInference"))$("#vendorDetectorInference").checked=s.useInference;if($("#vendorDetectorThreshold"))$("#vendorDetectorThreshold").value=String(Math.round(s.confidenceThreshold*100));if($("#vendorDetectorThresholdLabel"))$("#vendorDetectorThresholdLabel").textContent=Math.round(s.confidenceThreshold*100)+"%";save();}
+  async function loadVendorDetectorSettings(){try{const result=await api("/vendor-detector/settings");applyVendorDetectorSettings(result.settings||{});}catch{applyVendorDetectorSettings(state.vendorDetectorSettings||{});}}
+  async function saveVendorDetectorSettings(){const settings=vendorDetectorSettingsFromUi();try{const result=await api("/vendor-detector/settings",{method:"POST",body:JSON.stringify({settings})});applyVendorDetectorSettings(result.settings||settings);toast("Настройки автоопределения сохранены в SQLite.");}catch(error){applyVendorDetectorSettings(settings);toast("Настройки автоопределения сохранены локально.");}}
+  function normalizeHistoryEnrichmentSettings(settings={}){return{enabled:settings.enabled!==false,priorityHistory:settings.priorityHistory!==false,useOuiMatch:settings.useOuiMatch!==false,useMac5Match:settings.useMac5Match!==false};}
+  function historyEnrichmentSettingsFromUi(){return normalizeHistoryEnrichmentSettings({enabled:$("#historyEnrichmentEnabled")?.checked,priorityHistory:$("#historyEnrichmentPriority")?.checked,useOuiMatch:$("#historyEnrichmentOui")?.checked,useMac5Match:$("#historyEnrichmentMac5")?.checked});}
+  function applyHistoryEnrichmentSettings(settings={}){state.historyEnrichmentSettings=normalizeHistoryEnrichmentSettings(settings);const s=state.historyEnrichmentSettings;if($("#historyEnrichmentEnabled"))$("#historyEnrichmentEnabled").checked=s.enabled;if($("#historyEnrichmentPriority"))$("#historyEnrichmentPriority").checked=s.priorityHistory;if($("#historyEnrichmentOui"))$("#historyEnrichmentOui").checked=s.useOuiMatch;if($("#historyEnrichmentMac5"))$("#historyEnrichmentMac5").checked=s.useMac5Match;save();}
+  async function loadHistoryEnrichmentSettings(){try{const result=await api("/history-enrichment/settings");applyHistoryEnrichmentSettings(result.settings||{});}catch{applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});}}
+  async function saveHistoryEnrichmentSettings(){const settings=historyEnrichmentSettingsFromUi();try{const result=await api("/history-enrichment/settings",{method:"POST",body:JSON.stringify({settings})});applyHistoryEnrichmentSettings(result.settings||settings);toast("Настройки исторического обогащения сохранены в SQLite.");}catch(error){applyHistoryEnrichmentSettings(settings);toast("Настройки исторического обогащения сохранены локально.");}}
+  function engineeringSessionActive(){if(!state.engineeringMode||!state.engineeringToken)return false;const expires=Date.parse(state.engineeringExpiresAt||"");return !Number.isFinite(expires)||expires>Date.now();}
+  function engineeringHasPermission(permission=""){return engineeringSessionActive()&&(!permission||(state.engineeringPermissions||[]).includes(permission));}
+  function clearEngineeringSession(){state.engineeringMode=false;state.engineeringToken="";state.engineeringExpiresAt="";state.engineeringPermissions=[];}
+  function renderEngineeringState({redirect=true}={}){
+    if(state.engineeringMode&&!engineeringSessionActive())clearEngineeringSession();
+    const active=engineeringSessionActive(),expires=active&&state.engineeringExpiresAt?new Date(state.engineeringExpiresAt).toLocaleString("ru-RU"):"-",permissions=active?(state.engineeringPermissions||[]):[];
+    document.body.dataset.mode=active?"engineering":"user";
+    document.title="MAC Analyzer Pro Web - "+(active?"Инженерный режим":"Пользовательский режим");
+    $$('[data-engineering-only]').forEach((element)=>{element.hidden=!active;element.setAttribute("aria-hidden",active?"false":"true");});
+    $$('[data-engineering-permission]').forEach((element)=>{const allowed=engineeringHasPermission(element.dataset.engineeringPermission||"");element.hidden=!allowed;element.disabled=!allowed;});
+    const badge=$("#appModeButton");if(badge){badge.classList.toggle("engineering-mode",active);badge.classList.toggle("user-mode",!active);badge.setAttribute("aria-pressed",active?"true":"false");}
+    if($("#appModeIcon"))$("#appModeIcon").textContent=active?"ENG":"USER";
+    if($("#appModeLabel"))$("#appModeLabel").textContent=active?"Инженерный режим":"Пользовательский режим";
+    if($("#appModeHint"))$("#appModeHint").textContent=active?"Полный доступ до "+expires:"Просмотр и поиск";
+    const context=$("#modeContext");if(context){context.classList.toggle("engineering-mode",active);context.classList.toggle("user-mode",!active);}
+    if($("#modeContextTitle"))$("#modeContextTitle").textContent=active?"Инженерный режим":"Пользовательский режим";
+    if($("#modeContextText"))$("#modeContextText").textContent=active?"Доступны загрузка и обогащение файлов, настройки, автоматизация и управление SQLite.":"Доступны универсальный поиск, история и аналитика. Для загрузки файлов и настроек войдите в инженерный режим.";
+    if($("#modeContextAction"))$("#modeContextAction").textContent=active?"Выйти":"Войти";
+    if($("#engineeringStatus"))$("#engineeringStatus").textContent=active?"Инженерная сессия активна до "+expires:"Пользовательский режим: инженерные операции заблокированы";
+    if($("#engineeringLoginButton"))$("#engineeringLoginButton").textContent=active?"Выйти в пользовательский режим":"Войти в инженерный режим";
+    if($("#engineeringRole"))$("#engineeringRole").textContent=active?"engineer":"user";
+    if($("#engineeringPermissionCount"))$("#engineeringPermissionCount").textContent=String(permissions.length);
+    if($("#engineeringExpires"))$("#engineeringExpires").textContent=expires;
+    if($("#engineeringPermissions"))$("#engineeringPermissions").innerHTML=permissions.length?permissions.map((permission)=>`<span>${esc(engineeringPermissionLabels[permission]||permission)}</span>`).join(""):'<span class="muted">Инженерные разрешения не выданы.</span>';
+    if($("#brandModeButton"))$("#brandModeButton").title=active?"Выйти в пользовательский режим":"Войти в инженерный режим";
+    Guide.syncMode(active,state.engineeringExpiresAt,document);
+    save();
+    const current=$(".view.active")?.id?.replace(/View$/,"")||viewFromHash();
+    if(redirect&&!active&&engineeringOnlyViews.has(current))activateView("history",{updateHash:true,render:true});
+  }
+  function openEngineeringDialog(){if(engineeringSessionActive())return logoutEngineering();const dialog=$("#engineeringDialog");if(!dialog)return;$("#engineeringPasswordInput").value="";$("#engineeringLoginResult").textContent="Введите пароль инженерного режима.";$("#engineeringLoginResult").className="engineering-login-result muted";dialog.showModal();setTimeout(()=>$("#engineeringPasswordInput")?.focus(),0);}
+  async function loginEngineering(password,ttlMinutes=480){
+    if(!String(password||"").trim())throw new Error("Пароль инженерного режима не указан.");
+    try{const session=await api("/engineering/login",{method:"POST",body:JSON.stringify({password,ttlMinutes})});state.engineeringMode=true;state.engineeringToken=session.token||"";state.engineeringExpiresAt=session.expiresAt||"";state.engineeringPermissions=session.permissions||[];}
+    catch(error){if(!networkUnavailable(error))throw error;if(password!=="admin123")throw new Error("Неверный пароль инженерного режима.");state.engineeringMode=true;state.engineeringToken="local-"+crypto.randomUUID();state.engineeringExpiresAt=new Date(Date.now()+Math.max(1,Math.min(Number(ttlMinutes)||480,1440))*60000).toISOString();state.engineeringPermissions=[...engineeringPermissionList];}
+    save();renderEngineeringState({redirect:false});$("#engineeringDialog")?.close();view("workspace");toast("Инженерный режим включён.");
+  }
+  async function logoutEngineering(){if(!engineeringSessionActive()){clearEngineeringSession();renderEngineeringState();return;}try{if(!String(state.engineeringToken||"").startsWith("local-"))await api("/engineering/logout",{method:"POST",body:JSON.stringify({})});}catch{}clearEngineeringSession();save();renderEngineeringState({redirect:false});view("history");toast("Включён пользовательский режим.");}
+  async function loadEngineeringSession(){if(state.engineeringToken&&String(state.engineeringToken).startsWith("local-")){if(Date.parse(state.engineeringExpiresAt||"")>Date.now()){state.engineeringMode=true;save();renderEngineeringState();return;}clearEngineeringSession();save();renderEngineeringState();return;}if(!state.engineeringToken){clearEngineeringSession();save();renderEngineeringState();return;}try{const result=await api("/engineering/session");if(result.active&&result.session){state.engineeringMode=true;state.engineeringExpiresAt=result.session.expiresAt||state.engineeringExpiresAt;state.engineeringPermissions=result.session.permissions||[];}else clearEngineeringSession();save();renderEngineeringState();}catch{clearEngineeringSession();save();renderEngineeringState();}}
+  let enrichmentController = null;
+  let currentEnrichmentJobId = null;
+  let pendingSingleFile = null;
+  let pendingSingleFilePreview = null;
+  let columnConflictContext = null;
+  let dashboardFilteredDevices = null;
+  let dashboardRefreshTimer = null;
+  let dashboardChangeAnalysis = {summary:{total:0,critical:0,added:0,removed:0,modified:0},changes:[],snapshotOptions:[]};
+  let historyPanelPromise = null;
+  let analyticsPanelPromise = null;
+  let contextTableRow = null;
+  let resultColumnResize = null;
+  let enhancedMovementIds = [];
+  let movementColumnSettings = {visible:["mac","count","dates","vendor","model","room","field","before","after","source"],widths:{mac:180,count:100,dates:170,vendor:160,model:160,room:120,field:120,before:240,after:240,source:160}};
+  let movementColumnResize = null;
+  let fileRenderVersion = 0;
+  let mappingRenderVersion = 0;
+  let pendingFileImports = [];
+  const sourceFilesById = new Map();
+  let activeProcessId = "";
+  let processHideTimer = null;
+  function processPercent(value){return Math.max(0,Math.min(100,Math.round(Number(value)||0)));}
+  function beginProcess(title,detail="Подготовка операции...",value=0){
+    const id="process-"+(Date.now())+"-"+(Math.random().toString(16).slice(2));
+    activeProcessId=id;
+    clearTimeout(processHideTimer);
+    const panel=$("#processProgressPanel");
+    if(panel){panel.hidden=false;panel.classList.remove("complete","warning","error");}
+    const bar=$("#processProgressBar");if(bar)bar.value=0;
+    updateProcess(id,value,detail,title);
+    return id;
+  }
+  function updateProcess(id,value,detail="",title=""){
+    if(!id||id!==activeProcessId)return false;
+    const bar=$("#processProgressBar"),percent=Math.max(Number(bar?.value||0),processPercent(value));
+    if(title)$("#processProgressTitle").textContent=title;
+    if(detail)$("#processProgressDetail").textContent=detail;
+    if(bar){bar.value=percent;bar.textContent=percent+"%";bar.setAttribute("aria-valuenow",String(percent));}
+    $("#processProgressPercent").textContent=percent+"%";
+    return true;
+  }
+  function finishProcess(id,detail="Готово",status="complete"){
+    if(!updateProcess(id,100,detail))return;
+    const panel=$("#processProgressPanel");
+    panel?.classList.add(status);
+    clearTimeout(processHideTimer);
+    processHideTimer=setTimeout(()=>{if(activeProcessId===id&&panel){panel.hidden=true;activeProcessId="";}},status==="error"?6000:2600);
+  }
+  function failProcess(id,error){const message=error instanceof Error?error.message:String(error||"Неизвестная ошибка");if(updateProcess(id,100,"Ошибка: "+message))$("#processProgressPanel")?.classList.add("error");clearTimeout(processHideTimer);processHideTimer=setTimeout(()=>{const panel=$("#processProgressPanel");if(activeProcessId===id&&panel){panel.hidden=true;activeProcessId="";}},6000);}
+  function cancelProcess(id,detail="Операция отменена"){finishProcess(id,detail,"warning");}
+  const api = async (path, options = {}) => {
+    const authHeaders=state.engineeringToken?{"Authorization":"Bearer "+state.engineeringToken}:{};
+    const {headers:optionHeaders={},...fetchOptions}=options;
+    const candidates=[backendBase,...backendCandidates.filter((item)=>item!==backendBase)];
+    let lastError=null;
+    for(const base of candidates){
+      try{
+        const response = await fetch(base + path, {
+          ...fetchOptions,
+          headers: {"Content-Type": "application/json", ...authHeaders, ...optionHeaders}
+        });
+        const responseText=await response.text();
+        let data={};
+        try{data=responseText?JSON.parse(responseText):{};}catch{throw new Error("Backend вернул некорректный ответ (HTTP "+response.status+")");}
+        if (!response.ok){const apiError=new Error(data.error||"Ошибка API");apiError.status=response.status;throw apiError;}
+        backendBase=base;
+        backendAvailable=true;
+        return data;
+      }catch(error){
+        lastError=error;
+        if(!networkUnavailable(error))throw error;
+      }
+    }
+    backendAvailable=false;
+    throw lastError||new TypeError("Backend недоступен");
+  };
+  function compactAnalysisAutosaveState(){
+    const activeSnapshot=state.snapshots?.[0];
+    return {...state,activeSnapshotId:activeSnapshot?.id||"",files:(state.files||[]).map((file)=>({...file,rows:[]})),devices:[],invalid:[],snapshots:(state.snapshots||[]).map((snapshot)=>({...snapshot,devices:[]}))};
+  }
+  async function persistAutosave(reason="manual") {
+    const autosaveState=compactAnalysisAutosaveState();
+    const result=await api("/autosave",{method:"POST",body:JSON.stringify({slot:"main",reason,state:autosaveState})});
+    const status=$("#autosaveStatus");
+    if(status)status.textContent=result.statusText||"Autosaved.";
+    return result;
+  }
+  async function restoreAutosave() {
+    const data=await api("/autosave?slot=main");
+    if(!data.autosave?.state)throw new Error("Autosave is empty");
+    state=normalizeRestoredState(data.autosave.state);
+    applyVendorDetectorSettings(state.vendorDetectorSettings||{});
+    applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});
+    save();
+    renderAll();
+    const status=$("#autosaveStatus");
+    if(status)status.textContent=data.autosave.statusText||"Autosave restored.";
+    return data.autosave;
+  }
+  async function deleteAutosave() {
+    const result=await api("/autosave?slot=main",{method:"DELETE"});
+    const status=$("#autosaveStatus");
+    if(status)status.textContent=result.statusText||"Autosave slot updated.";
+    return result;
+  }
+  function currentWorkspaceIsEmpty(){
+    return !currentDeviceCount()&&!state.files.length&&!state.invalid.length&&!(state.lastAnalysis);
+  }
+  function normalizeRestoredState(restored={}){
+    const merged={...empty(),...restored};
+    merged.files=normalizeFileRoles(merged.files);
+    merged.movementHistory=Array.isArray(merged.movementHistory)?merged.movementHistory:[];
+    merged.ipMappings=Array.isArray(merged.ipMappings)?merged.ipMappings:[];
+    merged.localVendorMappings=merged.localVendorMappings&&typeof merged.localVendorMappings==="object"?merged.localVendorMappings:{};
+    merged.localModelMappings=merged.localModelMappings&&typeof merged.localModelMappings==="object"?merged.localModelMappings:{};
+    merged.columnWidths=normalizeColumnWidths(merged.columnWidths);
+    merged.vendorDetectorSettings=normalizeVendorDetectorSettings(merged.vendorDetectorSettings||{});
+    merged.historyEnrichmentSettings=normalizeHistoryEnrichmentSettings(merged.historyEnrichmentSettings||{});
+    return merged;
+  }
+  function restoreBootstrapAutosave(autosave){
+    if(!autosave?.state||!currentWorkspaceIsEmpty())return false;
+    const restored=normalizeRestoredState(autosave.state);
+    if(!restored.devices.length&&!restored.files.length&&!restored.snapshots.length&&!restored.movementHistory.length)return false;
+    state={...state,...restored,bootstrapAutosaveRestoredAt:autosave.updatedAt||new Date().toISOString()};
+    applyVendorDetectorSettings(state.vendorDetectorSettings||{});
+    applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});
+    const status=$("#autosaveStatus");
+    if(status)status.textContent=autosave.statusText||"Autosave restored from SQLite.";
+    return true;
+  }
+  function setBackendStatus(available,message=""){
+    backendAvailable=Boolean(available);
+    const status=$("#storageStatus"),dot=$("#backendStatusDot"),button=$("#reconnectBackendButton");
+    if(status)status.textContent=message||(backendAvailable?"SQLite подключена":"Автономный HTML-режим готов · данные сохраняются в браузере");
+    if(dot){dot.classList.remove("offline");dot.classList.toggle("standalone",!backendAvailable);dot.classList.toggle("online",backendAvailable);}
+    if(button){button.hidden=backendAvailable;button.disabled=false;}
+  }
+  async function checkBackendConnection(){
+    const button=$("#reconnectBackendButton");
+    if(button)button.disabled=true;
+    try{const health=await api("/health");setBackendStatus(true,"Backend и SQLite подключены");return health;}
+    catch(error){setBackendStatus(false,"Автономный HTML-режим готов · XLSX и история сохраняются в браузере");throw error;}
+    finally{if(button)button.disabled=false;}
+  }
+  async function syncFromBackend() {
+    try {
+      const data = await api("/bootstrap");
+      const restoredFromAutosave=restoreBootstrapAutosave(data.autosave);
+      if (data.snapshots?.length) {
+        const restoredSnapshots=Array.isArray(state.snapshots)?state.snapshots:[];
+        const snapshotMap=new Map(restoredSnapshots.map((item)=>[item.id,item]));
+        data.snapshots.forEach((item)=>snapshotMap.set(item.id,item));
+        state.snapshots=[...snapshotMap.values()];
+      }
+      if(state.resultSnapshotId){
+        try{
+          const opened=await api("/snapshots/open",{method:"POST",body:JSON.stringify({id:state.resultSnapshotId,compactResult:true,resultPageSize})});
+          const reference=opened.resultReference||{};
+          state.resultDeviceCount=Number(reference.deviceCount||0);
+          state.resultInvalidCount=Number(reference.invalidCount||0);
+          state.resultSummary=opened.resultSummary||opened.resultPage?.summary||null;
+          state.devices=opened.resultPage?.items||opened.devices||state.devices||[];
+          state.invalid=opened.invalid||[];
+        }catch(error){
+          if(error.status!==404)throw error;
+          const staleId=state.resultSnapshotId;
+          state.snapshots=(state.snapshots||[]).filter((item)=>item.id!==staleId);
+          clearResultReference();
+        }
+      }
+      if (data.columns) {
+        state.visibleColumns = data.columns.visible || state.visibleColumns;
+        state.columnOrder = data.columns.order || state.columnOrder || state.visibleColumns;
+        state.columnWidths = normalizeColumnWidths(data.columns.widths || state.columnWidths);
+        state.customColumns = data.customColumns || [];
+        state.customColumnMappings = data.customColumnMappings || {};
+        Object.assign(labels, data.customLabels || {});
+      }
+      save(); renderAll(); setBackendStatus(true,restoredFromAutosave?"SQLite подключена, autosave восстановлен":"Backend и SQLite подключены");
+    } catch {
+      setBackendStatus(false,"Автономный HTML-режим готов · XLSX и история сохраняются в браузере");
+    }
+  }
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
+  let toastTimer;
+  const toast = (msg) => { const el=$("#toast"); el.textContent=msg; el.classList.add("show"); clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove("show"),2600); };
+  const normalize = (value) => { let v=String(value ?? "").toUpperCase().replace(/[^0-9A-F]/g,""); if(v.length===10)v="00"+v; if(v.length===11)v="0"+v; if(v.length===8)v="0000"+v; return v.length===12?v:null; };
+  const formatMac = (mac) => mac ? mac.match(/.{1,2}/g).join(":") : "";
+  function formatDisplayDateTime(value){return value?new Date(value).toLocaleString("ru-RU"):"";}
+  function fileInfoDate(file){const value=Number(file?.lastModified||0);return value>0?new Date(value).toISOString():new Date().toISOString();}
+  function primaryFileCreatedAt(){return state.files[0]?.createdAt||state.files[0]?.fileDate||new Date().toISOString();}
+  function normalizePrefix(value){return String(value??"").toUpperCase().replace(/[^0-9A-F]/g,"");}
+  function formatOuiValue(mac,length=state.ouiLength,style=state.ouiStyle){const hex=normalize(mac||"")||normalizePrefix(mac),bytes=Math.max(3,Math.min(Number(length||3),6)),prefix=hex.slice(0,bytes*2);if(prefix.length<bytes*2)return"";const pairs=prefix.match(/../g)||[];if(style==="colon")return pairs.join(":");if(style==="dash")return pairs.join("-");if(style==="dot"||style==="cisco-dot")return prefix.match(/.{1,4}/g).join(".");return prefix;}
+  const headerName = (i) => "Колонка "+(i+1);
+  const fileReaders=window.MacAnalyzerFileReaders;
+  if(!fileReaders)throw new Error("Модуль frontend/file-readers.js не загружен");
+  const {readClientTextFile,clientDelimiter,clientTableRows,clientJsonTable,clientZipEntries,clientXlsxTable,clientReadTable}=fileReaders;
+  function localAutoMapping(headers){const find=(patterns)=>{const index=headers.findIndex(header=>patterns.some(pattern=>pattern.test(String(header).toLowerCase())));return index>=0?index:"";};return{mac:find([/mac/,/мак/]),vendor:find([/vendor/,/производ/,/вендор/]),model:find([/model/,/модель/]),ip:find([/^ip/,/ip address/,/адрес ip/]),address:find([/address/,/адрес/]),room:find([/room/,/помещ/,/кабин/]),switchIp:find([/switch.*ip/,/коммутатор.*ip/]),switchPort:find([/port/,/порт/])};}
+  function localMappingSummary(file){const mapped=Object.entries(file.mapping||{}).filter(([,value])=>value!==""&&value!==undefined).length;file.mappingSummary={summaryHtml:`<div class="bar-item"><div class="bar-label"><span>Сопоставлено полей</span><strong>${mapped}</strong></div><div class="bar-track"><div class="bar-fill" style="width:${Math.min(100,mapped/fieldList.length*100)}%"></div></div></div>`};file.columnDetection={detectorHtml:'<p class="muted">Колонки определены в браузере, потому что backend недоступен.</p>'};renderColumnDetectionSummary(file);}
+  function columnLetter(index){let n=Number(index)+1,letters="";while(n>0){const mod=(n-1)%26;letters=String.fromCharCode(65+mod)+letters;n=Math.floor((n-1)/26);}return letters||String(Number(index)+1);}
+  function mappingOptionLabel(header,mode=state.mappingDisplayMode){const letter=columnLetter(header.index),name=header.name||headerName(header.index);return mode==="letter"?letter+" · "+name:name;}
+  function selectedMappingFile(){return state.files.find((file)=>file.id===state.activeMappingFileId)||state.files[0]||null;}
+  function ensureMappingSelection(){if(!state.files.some((file)=>file.id===state.activeMappingFileId))state.activeMappingFileId=state.files[0]?.id||"";}
+  function fileRole(file,index=0){return file?.role==="enrichment"?"enrichment":index===0?"primary":"enrichment";}
+  function insertImportedFile(fileRecord,requestedRole="auto",batchIndex=0){
+    state.files=normalizeFileRoles(state.files);
+    let role=requestedRole;
+    if(role==="primary"&&batchIndex>0)role="enrichment";
+    if(role==="auto")role=state.files.some((file)=>file.role==="primary")?"enrichment":"primary";
+    fileRecord.role=role;
+    if(role==="primary"){
+      state.files.forEach((file)=>{if(file.role==="primary")file.role="enrichment";});
+      state.files.unshift(fileRecord);
+    }else state.files.push(fileRecord);
+    state.files=normalizeFileRoles(state.files);
+  }
+  function renderMappingControls(){ensureMappingSelection();const select=$("#mappingFileSelect"),mode=$("#mappingDisplayMode");if(select){select.innerHTML=state.files.length?state.files.map((file,index)=>`<option value="${esc(file.id)}" ${file.id===state.activeMappingFileId?"selected":""}>${fileRole(file,index)==="primary"?"Основной":"Обогащение "+Math.max(1,state.files.slice(0,index+1).filter((item,itemIndex)=>fileRole(item,itemIndex)==="enrichment").length)}: ${esc(file.name)}</option>`).join(""):'<option value="">Основной файл</option>';select.disabled=!state.files.length;}if(mode){mode.value=state.mappingDisplayMode||"name";mode.disabled=!state.files.length;}$("#copyMappingToAllButton").disabled=state.files.length<2;}
+  function localMappingGrid(file){if(!file)return'<p class="muted">Добавьте основной файл, чтобы настроить колонки.</p>';const options=['<option value="">Не использовать</option>'].concat(file.headers.map(h=>`<option value="${h.index}">${esc(mappingOptionLabel(h))}</option>`)).join("");return fieldList.map(([field,title])=>`<label>${esc(title)}<select data-map="${field}">${options.replace(`value="${file.mapping?.[field]}"`,`value="${file.mapping?.[field]}" selected`)}</select></label>`).join("");}
+  function compileLocalRuleIndex(rules){const byPrefix=new Map(),compatible=new Map();Object.entries(rules||{}).forEach(([rawPrefix,value])=>{const prefix=normalizePrefix(rawPrefix);if(!value||![6,8,10].includes(prefix.length))return;byPrefix.set(prefix,value);if(prefix.length>=10){const key=prefix.slice(0,8),items=compatible.get(key)||[];items.push([prefix,value]);items.sort((a,b)=>b[0].length-a[0].length);compatible.set(key,items);}});return{byPrefix,lengths:[...new Set([...byPrefix.keys()].map((prefix)=>prefix.length))].sort((a,b)=>b-a),compatible};}
+  function localRuleValue(mac,rules){const normalized=normalize(mac)||normalizePrefix(mac),index=rules?.byPrefix instanceof Map?rules:compileLocalRuleIndex(rules);for(const length of index.lengths){const value=index.byPrefix.get(normalized.slice(0,length));if(value)return value;}return"";}
+  function localDetectorSettings(){return normalizeVendorDetectorSettings(state.vendorDetectorSettings||{});}
+  let activeLocalDetectionContext=null;
+  function createLocalDetectionContext(){const settings=localDetectorSettings(),allowPrefix=(prefix)=>normalizePrefix(prefix).length<=6?settings.useOui3:settings.useMac5,vendorRules={...Object.fromEntries(Object.entries(builtinVendorMappings).filter(([prefix])=>allowPrefix(prefix))),...Object.fromEntries(Object.entries(state.localVendorMappings||{}).filter(([prefix])=>allowPrefix(prefix)))},modelRules={...builtinModelMappings,...state.localModelMappings};return{settings,vendorRules:compileLocalRuleIndex(vendorRules),modelRules:compileLocalRuleIndex(modelRules)};}
+  function localCompatibleRuleValue(mac,rules){const settings=activeLocalDetectionContext?.settings||localDetectorSettings();if(!settings.enabled||!settings.useMac5)return"";const normalized=normalize(mac)||normalizePrefix(mac),index=rules?.byPrefix instanceof Map?rules:compileLocalRuleIndex(rules);return index.compatible.get(normalized.slice(0,8))?.[0]?.[1]||"";}
+  const localVendorKeywords={Apple:["apple","iphone","ipad","macbook","imac","mac","ios","ipod","airport"],Samsung:["samsung","galaxy","note","s series","gear","odyssey","ssd"],Huawei:["huawei","honor","mate","p series","mediapad","ascend"],Xiaomi:["xiaomi","mi ","redmi","poco","black shark","mijia"],Lenovo:["lenovo","thinkpad","ideapad","yoga","legion","thinkcentre"],Dell:["dell","xps","latitude","inspiron","precision","alienware","poweredge"],HP:["hp","hewlett packard","elitebook","probook","spectre","envy","pavilion","laserjet"],Acer:["acer","aspire","predator","nitro","swift","travelmate"],ASUS:["asus","rog","zenbook","vivobook","tuf","prime","expertbook"],Microsoft:["microsoft","surface","xbox","hololens","windows","lumia"],Cisco:["cisco","catalyst","meraki","asa","nexus","router","switch","firepower"],Juniper:["juniper","mx","ex","srx","qfx","netscreen"],"TP-Link":["tp-link","tplink","archer","deco","kasa","tapo"],Netgear:["netgear","orbi","nighthawk","prosafe","insight"],Intel:["intel","core i","xeon","pentium","celeron","ethernet"],AMD:["amd","ryzen","threadripper","epyc","radeon","athlon"],NVIDIA:["nvidia","geforce","quadro","tesla","rtx","gtx"],"Raspberry Pi":["raspberry","rpi","pi 3","pi 4","pi 5","pico"],Arduino:["arduino","uno","mega","nano","esp"],ESP32:["esp32","esp8266","espressif"]};
+  function localVendorFromText(...values){const settings=activeLocalDetectionContext?.settings||localDetectorSettings();if(!settings.enabled||!settings.useText)return"";let best={vendor:"",score:0};values.map((value)=>String(value||"").toLowerCase()).forEach((text)=>{Object.entries(localVendorKeywords).forEach(([vendor,keywords])=>{const matches=keywords.filter((keyword)=>text.includes(keyword)).length,score=Math.min(matches/Math.max(1,keywords.length)*2,1)*0.8;if(score>best.score)best={vendor,score};});});return best.score>=settings.confidenceThreshold?best.vendor:"";}
+  function localVendor(mac){const context=activeLocalDetectionContext||createLocalDetectionContext();if(!context.settings.enabled)return"Unknown";return localRuleValue(mac,context.vendorRules)||"Unknown";}
+  function localModel(mac){const context=activeLocalDetectionContext||createLocalDetectionContext();if(!context.settings.enabled||!context.settings.useMac5)return"";return localRuleValue(mac,context.modelRules)||localCompatibleRuleValue(mac,context.modelRules);}
+  function inferSwitchAddressMappings(devices=state.devices, source="analysis"){
+    let imported=0;
+    (devices||[]).forEach((device)=>{if(device.switchIp&&device.address&&upsertLocalIpMapping(device.switchIp,device.address,source))imported++;});
+    const map=Object.fromEntries(localIpMappingRows().map((item)=>[item.switchIp,item.address]));
+    (devices||[]).forEach((device)=>{const address=map[normalizeIp(device.switchIp)];if(address&&!device.address)device.address=address;});
+    return imported;
+  }
+  function applyLocalVendorModelMappings(devices=state.devices){
+    let changed=false;const previousContext=activeLocalDetectionContext;activeLocalDetectionContext=previousContext||createLocalDetectionContext();try{(devices||[]).forEach((device)=>{const mac=device.mac||device.macFormatted,vendor=localVendor(mac),model=localModel(mac);if((!device.vendor||device.vendor==="Unknown"||device.vendor==="Не определено")&&vendor!=="Unknown"){device.vendor=vendor;changed=true;}if(!device.model&&model){device.model=model;changed=true;}});}finally{activeLocalDetectionContext=previousContext;}if(changed&&devices===state.devices)state.resultBrowserSnapshotDirty=true;
+  }
+  function learnLocalRulesFromDevices(rows=[],minCount=2){const threshold=Math.max(1,Number(minCount||2)),vendorCounts=new Map(),modelCounts=new Map(),count=(map,prefix,value)=>{if(!prefix||!value)return;const key=prefix+"\u0000"+value;map.set(key,(map.get(key)||0)+1);};for(const device of rows||[]){const mac=normalize(device.mac||device.macFormatted),vendor=String(device.vendor||"").trim(),model=String(device.model||"").trim();if(!mac)continue;for(const length of [6,8,10])if(vendor&&vendor!=="Unknown"&&vendor!=="Не определено")count(vendorCounts,mac.slice(0,length),vendor);if(model)count(modelCounts,mac.slice(0,10),model);}const learn=(target,counts)=>{let learned=0;const best=new Map();counts.forEach((total,key)=>{const[prefix,value]=key.split("\u0000");if(total<threshold||target[prefix])return;const current=best.get(prefix);if(!current||total>current.total)best.set(prefix,{value,total});});best.forEach((item,prefix)=>{target[prefix]=item.value;learned++;});return learned;};return{vendors:learn(state.localVendorMappings,vendorCounts),models:learn(state.localModelMappings,modelCounts)};}
+  function localDeviceFromRow(file,row,rowIndex,fields){const pick=(field)=>{const index=file.mapping?.[field];return index===""||index===undefined?"":String(row[Number(index)]??"").trim();};const mac=normalize(pick("mac"));if(!mac)return{invalid:{row:rowIndex+2,source:file.name,raw:row.join(" | "),error:"Некорректный MAC"}};const model=fields.model?(pick("model")||localModel(mac)):"";const vendor=fields.vendor?(pick("vendor")||localVendorFromText(model,pick("name"),row.join(" "))||localVendor(mac)):"Не определено";return{device:{mac,macFormatted:formatMac(mac),oui:formatOuiValue(mac),vendor,model,ip:fields.ip?pick("ip"):"",address:fields.address?pick("address"):"",room:fields.room?pick("room"):"",switchIp:fields.switchIp?pick("switchIp"):"",switchPort:fields.switchPort?pick("switchPort"):"",source:file.name,row:rowIndex+2,valid:true}};}
+  async function localAnalyzeFiles(fields,strategy,onProgress=()=>{}){MemoryGuard.assertEnrichmentCapacity(state.files);const deviceMap=new Map(),invalid=[],previousContext=activeLocalDetectionContext,totalRows=state.files.reduce((total,file)=>total+Math.max(0,(file.rows?.length||1)-1),0);let processed=0,invalidCount=0;activeLocalDetectionContext=createLocalDetectionContext();try{for(let fileIndex=0;fileIndex<state.files.length;fileIndex++){const file=state.files[fileIndex],rows=file.rows||[];for(let rowIndex=1;rowIndex<rows.length;rowIndex++){const result=localDeviceFromRow(file,rows[rowIndex],rowIndex-1,fields);processed++;if(result.invalid){if(fileIndex===0){invalidCount++;if(invalid.length<MemoryGuard.limits.invalidRows)invalid.push(result.invalid);}}else{const previous=deviceMap.get(result.device.mac);if(!(fileIndex>0&&strategy==="primary"&&!previous)){const merged=previous||{};for(const [field,value] of Object.entries(result.device)){if(value!==""&&value!==undefined)merged[field]=value;}deviceMap.set(result.device.mac,merged);}}if(processed%2000===0){onProgress(totalRows?processed/totalRows*100:100,`Обработано строк: ${processed.toLocaleString("ru-RU")} / ${totalRows.toLocaleString("ru-RU")}`);await MemoryGuard.yieldToMainThread();}}}const devices=Array.from(deviceMap.values());inferSwitchAddressMappings(devices,"current-file");learnLocalRulesFromDevices(devices,2);activeLocalDetectionContext=createLocalDetectionContext();applyLocalVendorModelMappings(devices);onProgress(100,`Обработано устройств: ${devices.length.toLocaleString("ru-RU")}`);return{devices,invalid,invalidCount};}finally{activeLocalDetectionContext=previousContext;}}
+  function renderLocalResultsHeader(){const columns=(state.visibleColumns||empty().visibleColumns).filter(Boolean);$("#resultsHeader").innerHTML=columns.map(column=>`<th>${esc(labels[column]||column)}</th>`).join("");return columns;}
+  function updateResultPager(total=0,page=1,pages=1){const status=$("#resultPageStatus"),previous=$("#resultPreviousPageButton"),next=$("#resultNextPageButton"),size=$("#resultPageSizeSelect");if(status)status.textContent=`${page} / ${pages}`;if(previous)previous.disabled=page<=1;if(next)next.disabled=page>=pages;if(size)size.value=String(resultPageSize);resultPage=Math.max(1,Math.min(page,pages));}
+  function localResultsTable(){const columns=renderLocalResultsHeader(),query=$("#searchInput")?.value.trim().toLowerCase()||"",vendor=$("#vendorFilter")?.value||"",vendors=new Set();for(const item of state.devices||[]){if(item.vendor)vendors.add(item.vendor);}const pageData=MemoryGuard.collectPage(state.devices,item=>(!vendor||item.vendor===vendor)&&(!query||Object.values(item).join(" ").toLowerCase().includes(query)),resultPage,resultPageSize);resultPage=pageData.page;$("#vendorFilter").innerHTML='<option value="">Все вендоры</option>'+Array.from(vendors).sort().map(v=>`<option value="${esc(v)}" ${v===vendor?"selected":""}>${esc(v)}</option>`).join("");$("#resultCount").textContent=pageData.total+" записей";updateResultPager(pageData.total,pageData.page,pageData.pages);return pageData.items.length?pageData.items.map(item=>`<tr data-mac="${esc(item.mac||normalize(item.macFormatted)||"")}">${columns.map(column=>`<td>${esc(column==="oui"?formatOuiValue(item.mac||item.macFormatted||item.oui):item[column]||"")}</td>`).join("")}</tr>`).join(""):'<tr><td colspan="'+columns.length+'" class="empty-state">Нет записей.</td></tr>';}
+  function devicesSignature(devices=[]){return MemoryGuard.datasetSignature(devices,["vendor","model","ip","address","room","switchIp","switchPort"],normalize);}
+  async function storeLocalSnapshot(name,source,devices,invalid=[],createdAt=new Date().toISOString(),kind="analysis"){
+    const rows=Array.isArray(devices)?devices:[],snapshotId=crypto.randomUUID(),signature=devicesSignature(rows);
+    const record={id:snapshotId,name,source,createdAt,deviceCount:rows.length,devices:rows,invalid:Array.isArray(invalid)?invalid:[],signature,kind};
+    let browserStored=false;
+    try{if(!BrowserSnapshots)throw new Error("Хранилище локальных снимков недоступно");await BrowserSnapshots.save(record);browserStored=true;}catch{}
+    const previewLimit=MemoryGuard.limits.snapshotPreviewRows||500;
+    const metadata={id:snapshotId,name,source,createdAt,deviceCount:rows.length,devices:rows.slice(0,previewLimit),invalidCount:record.invalid.length,signature,kind,browserStored,devicesTruncated:rows.length>previewLimit,backendStored:false};
+    state.snapshots.unshift(metadata);
+    state.snapshots=state.snapshots.slice(0,25);
+    if(browserStored&&kind!=="before-analysis"){state.resultSnapshotId="";state.resultBrowserSnapshotId=snapshotId;state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=rows.length;state.resultInvalidCount=record.invalid.length;state.resultSummary=null;}
+    if(browserStored)BrowserSnapshots.prune(state.snapshots.filter((item)=>item.browserStored).map((item)=>item.id)).catch(()=>{});
+    return metadata;
+  }
+  async function loadLocalSnapshotRecord(snapshot){
+    if(!snapshot)return null;
+    if(snapshot.browserStored&&BrowserSnapshots){const stored=await BrowserSnapshots.load(snapshot.id);if(stored)return stored;}
+    return snapshot;
+  }
+  function createLocalComparisonIndex(devices=[]){const fields=["vendor","model","ip","address","room","switchIp","switchPort"],index=new Map();for(const device of devices||[]){const mac=normalize(device.mac||device.macFormatted);if(!mac)continue;const values=[];for(const field of fields)values.push(String(device[field]??""));index.set(mac,JSON.stringify(values));}return{fields,index};}
+  function recordLocalMovementsFromIndex(previous,afterDevices=[],source="analysis",changedAt=new Date().toISOString()){
+    if(!previous?.index)return recordLocalMovements([],afterDevices,source,changedAt);
+    const entries=[],limit=MemoryGuard.limits.movementRows;
+    for(const device of afterDevices||[]){const mac=normalize(device.mac||device.macFormatted);if(!mac)continue;const encoded=previous.index.get(mac);if(encoded===undefined){if(entries.length<limit)entries.push({mac,type:"Добавлено",field:"-",before:"",after:device.macFormatted||formatMac(mac)});continue;}previous.index.delete(mac);const before=JSON.parse(encoded);for(let fieldIndex=0;fieldIndex<previous.fields.length&&entries.length<limit;fieldIndex++){const field=previous.fields[fieldIndex],next=String(device[field]??"");if(before[fieldIndex]!==next)entries.push({mac,type:"Изменено",field:labels[field]||field,before:before[fieldIndex],after:next});}}
+    if(entries.length<limit)for(const mac of previous.index.keys()){entries.push({mac,type:"Удалено",field:"-",before:formatMac(mac),after:""});if(entries.length>=limit)break;}
+    for(const item of entries){item.changedAt=changedAt;item.source=source;}
+    state.movementHistory=entries.concat((state.movementHistory||[]).slice(0,Math.max(0,limit-entries.length)));
+    return entries.length;
+  }
+  async function preserveCurrentBeforeAnalysis(source){
+    if(!state.devices.length)return false;
+    if(backendAvailable)return false;
+    const currentSignature=devicesSignature(state.devices),latest=state.snapshots?.[0];
+    if(latest&&latest.signature===currentSignature)return false;
+    await storeLocalSnapshot("До анализа: "+(source||"текущие данные"),source||"browser-before-analysis",state.devices,state.invalid,new Date().toISOString(),"before-analysis");
+    return true;
+  }
+  function localComparisonBetweenDevices(beforeDevices=[], afterDevices=[], fields=["vendor","model","ip","address","room","switchIp","switchPort"],limit=MemoryGuard.limits.movementRows){
+    const before=localDeviceMap(beforeDevices),after=localDeviceMap(afterDevices),items=[];
+    for(const [mac,device] of after.entries()){if(items.length>=limit)break;if(!before.has(mac)){items.push({mac,type:"Добавлено",field:"-",before:"",after:device.macFormatted||formatMac(mac)});continue;}const previous=before.get(mac);for(const field of fields){const oldValue=String(previous[field]??""),newValue=String(device[field]??"");if(oldValue!==newValue)items.push({mac,type:"Изменено",field:labels[field]||field,before:oldValue,after:newValue});if(items.length>=limit)break;}}
+    if(items.length<limit)for(const [mac,device] of before.entries()){if(items.length>=limit)break;if(!after.has(mac))items.push({mac,type:"Удалено",field:"-",before:device.macFormatted||formatMac(mac),after:""});}
+    return items;
+  }
+  function recordLocalMovements(beforeDevices=[], afterDevices=[], source="analysis", changedAt=new Date().toISOString()){
+    const entries=localComparisonBetweenDevices(beforeDevices,afterDevices);for(const item of entries){item.changedAt=changedAt;item.source=source;}
+    if(!entries.length)return 0;
+    state.movementHistory=entries.concat((state.movementHistory||[]).slice(0,Math.max(0,MemoryGuard.limits.movementRows-entries.length)));
+    return entries.length;
+  }
+  function defaultColumnMapping(){return Object.fromEntries(fieldList.map(([field])=>[field,""]));}
+  async function detectColumnsWithBackend(file, options={}) {
+    const mode=options.mode||"ai", ai=options.ai!==undefined?Boolean(options.ai):mode==="ai";
+    const result=await api("/columns/detect",{method:"POST",body:JSON.stringify({headers:file.headers.map((h)=>h.name),rows:file.rows.slice(1,101),ai,mode})});
+    const mapping={...defaultColumnMapping(),...(result.mapping||{})};
+    file.columnDetection=result;
+    if(ai&&options.review!==false){const reviewed=await showColumnConflictReview(file,result);return reviewed?{...defaultColumnMapping(),...reviewed}:null;}
+    return mapping;
+  }
+  function columnConflictMapping(){const mapping={};$$('[data-conflict-column]').forEach((select)=>{if(select.value!=="")mapping[select.dataset.conflictColumn]=Number(select.value);});return mapping;}
+  function resolveColumnConflict(mapping){const context=columnConflictContext;if(!context)return;columnConflictContext=null;$("#columnConflictDialog").close();context.resolve(mapping);}
+  function showColumnConflictReview(file,result){
+    const review=result.review||{},dialog=$("#columnConflictDialog"),body=$("#columnConflictBody"),status=$("#columnConflictStatus");
+    if(!dialog||!body||!review.rowsHtml)return Promise.resolve(result.mapping||{});
+    if(columnConflictContext)resolveColumnConflict(null);
+    body.innerHTML=review.rowsHtml||review.emptyRowsHtml;const conflicts=(review.conflicts||[]).length,warnings=(review.warnings||[]).length;
+    $("#columnConflictSubtitle").textContent=`${file.name}: конфликтов ${conflicts}, предупреждений ${warnings}.`;
+    status.textContent="MAC-адрес является обязательным полем. Изменения применятся только после подтверждения.";
+    dialog.showModal();
+    return new Promise((resolve)=>{columnConflictContext={file,result,resolve};});
+  }
+  function autoSelectConflictColumns(){$$('[data-conflict-field]').forEach((row)=>{const select=row.querySelector('[data-conflict-column]'),index=row.dataset.aiIndex;if(select)select.value=index!==""?index:"";});$("#columnConflictStatus").textContent="Рекомендации AI выбраны. Проверьте MAC и нажмите «Применить».";}
+  function applyColumnConflictSelection(){const mapping=columnConflictMapping();if(mapping.mac===undefined){$("#columnConflictStatus").textContent="Выберите обязательную колонку MAC-адреса.";const macSelect=$('[data-conflict-column="mac"]');macSelect?.focus();return;}resolveColumnConflict(mapping);}
+  async function refreshMappingSummary(file) {
+    if(!file)return null;
+    const fields=Object.fromEntries($$("[data-field]").map((input)=>[input.dataset.field,input.checked]));
+    const result=await api("/mapping/summary",{method:"POST",body:JSON.stringify({headers:file.headers.map((h)=>h.name),mapping:file.mapping||{},fields})});
+    file.mappingSummary=result;
+    renderColumnDetectionSummary(file);
+    return result;
+  }  function renderColumnDetectionSummary(file) {
+    const root=$("#columnDetectionSummary");
+    if(!root)return;
+    const result=file?.columnDetection, summary=file?.mappingSummary;
+    if(!file){root.innerHTML="";return;}
+    root.innerHTML=(summary?.summaryHtml||"")+(result?.detectorHtml||"");
+  }
+  async function clientFileRecord(file,fileCreatedAt,onProgress=()=>{}){
+    memoryGuard.assertImportCapacity(file,state.files);
+    const data=await clientReadTable(file,onProgress),rows=[data.headers||[],...(data.rows||[])];
+    if(rows.length<2)throw new Error("файл не содержит строк данных");
+    const headers=rows[0].map((name,index)=>({name:String(name||headerName(index)),index}));
+    const fileRecord={id:crypto.randomUUID(),name:file.name,sheet:data.sheet||"",rows,headers,mapping:localAutoMapping(rows[0]),createdAt:fileCreatedAt,fileLastModified:file.lastModified||0,sourceBytes:file.size||0,clientImported:true,rowCount:Math.max(0,rows.length-1)};
+    localMappingSummary(fileRecord);
+    return fileRecord;
+  }
+  async function backendFileRecord(file,fileCreatedAt,onProgress=()=>{}){
+    onProgress(5,"Передача файла в backend без копии Base64");
+    const data=await api("/files/import-binary",{method:"POST",headers:{"Content-Type":"application/octet-stream","X-File-Name":encodeURIComponent(file.name),"X-Sheet-Name":"","X-Preview-Rows":"100"},body:file});
+    onProgress(75,"Backend прочитал таблицу");
+    const rows=[data.headers||[],...(data.rows||[])];
+    if(rows.length<2)throw new Error("файл не содержит строк данных");
+    const headers=rows[0].map((name,index)=>({name:String(name||headerName(index)),index}));
+    const fileRecord={id:crypto.randomUUID(),name:file.name,sheet:data.sheet||"",rows,headers,mapping:defaultColumnMapping(),createdAt:fileCreatedAt,fileLastModified:file.lastModified||0,sourceBytes:file.size||0,fileToken:data.fileToken||"",rowCount:Number(data.rowCount??data.rows?.length??0),rowsComplete:data.compactResult!==true};
+    try{onProgress(85,"Автоопределение колонок");fileRecord.mapping=await detectColumnsWithBackend(fileRecord,{mode:"auto",ai:false});await refreshMappingSummary(fileRecord);}catch(error){fileRecord.columnDetection={mapping:fileRecord.mapping,warnings:[{field:"backend",message:error.message}]};}
+    onProgress(100,"Файл обработан backend");
+    return fileRecord;
+  }
+  async function loadFiles(input, sourceInput=null, requestedRole="auto") {
+    const files=Array.from(input||[]);
+    if(!files.length)return;
+    state.files=normalizeFileRoles(state.files);
+    if(requestedRole==="enrichment"&&!state.files.some((file)=>file.role==="primary")){
+      const message="Сначала добавьте основной файл, затем выберите файл обогащения.";
+      if($("#analysisStatus"))$("#analysisStatus").textContent=message;
+      if($("#fileImportStatus"))$("#fileImportStatus").textContent=message;
+      if(sourceInput)sourceInput.value="";
+      toast(message);
+      return;
+    }
+    state.importErrors=[];
+    const processId=beginProcess("Загрузка файлов","Подготовка списка файлов",2);
+    const status=$("#analysisStatus");
+    const importStatus=$("#fileImportStatus");
+    if(status)status.textContent="Загрузка файлов...";
+    if(importStatus)importStatus.textContent="Чтение файлов: "+files.map((file)=>file.name).join(", ");
+    const primaryAlreadySelected=state.files.some((file)=>file.role==="primary");
+    const pendingBatch=files.map((file,fileIndex)=>({id:"pending-"+crypto.randomUUID(),name:file.name,role:requestedRole==="enrichment"||requestedRole==="primary"&&fileIndex>0||requestedRole==="auto"&&(primaryAlreadySelected||fileIndex>0)?"enrichment":"primary"}));
+    pendingFileImports=[...pendingFileImports,...pendingBatch];
+    renderFiles();
+    let imported=0;
+    for (const [fileIndex,file] of files.entries()) {
+      const pendingId=pendingBatch[fileIndex]?.id;
+      const fileCreatedAt=fileInfoDate(file);
+      let fileRecord=null,backendError=null;
+      const fileProgress=(value,detail)=>updateProcess(processId,((fileIndex+processPercent(value)/100)/files.length)*100,file.name+": "+detail);
+      try {
+        fileProgress(1,"начало чтения");
+        if(backendAvailable)try{fileRecord=await backendFileRecord(file,fileCreatedAt,fileProgress);}catch(error){backendError=error;if(networkUnavailable(error))setBackendStatus(false,"Автономный HTML-режим · файлы обрабатываются в браузере");}
+        if(!fileRecord)fileRecord=await clientFileRecord(file,fileCreatedAt,fileProgress);
+        insertImportedFile(fileRecord,requestedRole,fileIndex);
+        if(fileRecord.fileToken)sourceFilesById.set(fileRecord.id,file);
+        imported++;
+        ensureMappingSelection();
+        pendingFileImports=pendingFileImports.filter((item)=>item.id!==pendingId);
+        renderFiles();
+        renderMapping();
+        save();
+        if(fileRecord.clientImported&&!backendAvailable)setBackendStatus(false,"Автономный HTML-режим · XLSX/CSV обрабатываются в браузере");
+        if(importStatus)importStatus.textContent=`Загружен ${fileRecord.role==="primary"?"основной файл":"файл обогащения"}: ${file.name} · строк: ${fileRecord.rowCount}`;
+        fileProgress(100,"загружен, строк: "+fileRecord.rowCount);
+      } catch(localError) {
+        const details=backendError&&!networkUnavailable(backendError)?` (backend: ${backendError.message})`:"";
+        const message="Не удалось прочитать "+file.name+": "+localError.message+details;
+        state.importErrors.push({filename:file.name,message});
+        pendingFileImports=pendingFileImports.filter((item)=>item.id!==pendingId);
+        renderFiles();
+        toast(message);
+        fileProgress(100,"ошибка чтения");
+      }
+    }
+    ensureMappingSelection();
+    if(sourceInput)sourceInput.value="";
+    if(status)status.textContent=imported?"Загружено файлов: "+imported+(state.importErrors.length?", ошибок: "+state.importErrors.length:""):"Файл не загружен";
+    if(importStatus)importStatus.textContent=imported?"Загружено файлов: "+imported+(state.importErrors.length?", ошибок: "+state.importErrors.length:""):"Файл не загружен. "+((state.importErrors||[])[0]?.message||"Проверьте формат файла.");
+    save({immediate:true}); await flushBrowserStateSave().catch(()=>{}); renderAll();
+    const resultText=imported?"Загружено файлов: "+imported+(state.importErrors.length?", ошибок: "+state.importErrors.length:""):"Файлы не загружены";
+    if(imported)finishProcess(processId,resultText,state.importErrors.length?"warning":"complete");else failProcess(processId,(state.importErrors||[])[0]?.message||"Проверьте формат файлов");
+  }
+  async function fileToBase64(file){
+    const bytes=new Uint8Array(await file.arrayBuffer());
+    let binary="",chunkSize=0x8000;
+    for(let offset=0;offset<bytes.length;offset+=chunkSize)binary+=String.fromCharCode(...bytes.subarray(offset,offset+chunkSize));
+    return btoa(binary);
+  }
+  async function renderSingleMappingGrid(){
+    const root=$("#singleMappingGrid");
+    if(!root)return;
+    const headers=pendingSingleFilePreview?.headers||[];
+    try{
+      const data=await api("/workspace/single-mapping-grid",{method:"POST",body:JSON.stringify({headers})});
+      root.innerHTML=data.singleMappingGridHtml||'<p class="muted">Колонки появятся после выбора файла.</p>';
+    }catch(error){
+      root.innerHTML='<p class="muted">Сопоставление одного файла недоступно: '+esc(error.message)+'</p>';
+    }
+  }
+  function singleManualMapping(){
+    if(!$("#singleManualMappingToggle")?.checked)return null;
+    const mapping={};
+    $$("[data-single-map]").forEach((select)=>{if(select.value!=="")mapping[select.dataset.singleMap]=Number(select.value);});
+    return mapping;
+  }
+  async function renderSinglePreview(headers=[],rows=[],invalid=[]){
+    const head=$("#singlePreviewHead"),body=$("#singlePreviewBody"),count=$("#singlePreviewCount");
+    if(!head||!body)return;
+    try{
+      const data=await api("/single-file/preview",{method:"POST",body:JSON.stringify({headers,rows,invalid})});
+      head.innerHTML=data.previewHeadHtml||"";
+      body.innerHTML=data.previewBodyHtml||"";
+      if(count)count.textContent=data.previewCountText||"";
+    }catch(error){
+      head.innerHTML="<tr><th>Ошибка</th></tr>";
+      body.innerHTML='<tr><td class="empty-state">Предпросмотр недоступен: '+esc(error.message)+'</td></tr>';
+      if(count)count.textContent="";
+    }
+  }
+  function renderSingleReport(result){
+    const summary=result?.summary||{},mode=$("#singleFileMode");
+    if(mode)mode.textContent=result?.mappingMode==="manual"?"Ручное":"Авто";
+    const root=$("#singleFileSummary");
+    if(root){
+      root.innerHTML=result?.summaryHtml||"";
+    }
+    const detected=$("#singleDetectedColumns");
+    if(detected){
+      detected.innerHTML=result?.detectedColumnsHtml||'<p class="muted">Колонки не определены.</p>';
+    }
+    if(result?.previewHeadHtml&&result?.previewBodyHtml){
+      $("#singlePreviewHead").innerHTML=result.previewHeadHtml;
+      $("#singlePreviewBody").innerHTML=result.previewBodyHtml;
+      const count=$("#singlePreviewCount"); if(count)count.textContent=result.previewCountText||"";
+    }else{
+      renderSinglePreview(result?.preview?.headers||result?.headers||[],result?.preview?.rows||result?.rows||[],result?.invalid||[]);
+    }
+  }
+  async function inspectSingleFile(){
+    if(!pendingSingleFile){pendingSingleFilePreview=null;renderSingleMappingGrid();renderSinglePreview();return;}
+    const status=$("#singleFileStatus");
+    const processId=beginProcess("Чтение одного файла",pendingSingleFile.name,5);
+    try{
+      status.textContent="Чтение файла...";
+      updateProcess(processId,15,"Подготовка "+pendingSingleFile.name);
+      memoryGuard.assertImportCapacity(pendingSingleFile);
+      updateProcess(processId,35,"Бинарная передача файла без Base64-копии");
+      const data=await api("/files/import-binary",{method:"POST",headers:{"Content-Type":"application/octet-stream","X-File-Name":encodeURIComponent(pendingSingleFile.name),"X-Sheet-Name":encodeURIComponent($("#singleSheetInput")?.value||""),"X-Preview-Rows":"100"},body:pendingSingleFile});
+      updateProcess(processId,82,"Построение предпросмотра");
+      pendingSingleFilePreview={...data,sourceName:pendingSingleFile.name,sourceBytes:pendingSingleFile.size||0};
+      renderSingleMappingGrid();
+      renderSinglePreview(data.headers||[],data.rows||[],[]);
+      status.textContent="Файл выбран: "+pendingSingleFile.name+" · строк: "+((data.rows||[]).length);
+      finishProcess(processId,"Файл прочитан, строк: "+((data.rows||[]).length));
+    }catch(error){
+      pendingSingleFilePreview=null;
+      renderSingleMappingGrid();
+      status.textContent="Ошибка чтения: "+error.message;
+      toast(error.message);
+      failProcess(processId,error);
+    }
+  }
+  async function analyzeSingleFile(){
+    if(!pendingSingleFile)return toast("Сначала выберите файл.");
+    const status=$("#singleFileStatus");
+    let previousDevices=state.devices||[];
+    const fileCreatedAt=fileInfoDate(pendingSingleFile);
+    const processId=beginProcess("Анализ одного файла",pendingSingleFile.name,5);
+    try{
+      status.textContent="Анализ выполняется...";
+      updateProcess(processId,15,"Подготовка файла");
+      memoryGuard.assertImportCapacity(pendingSingleFile);
+      let fileToken=pendingSingleFilePreview?.sourceName===pendingSingleFile.name?pendingSingleFilePreview.fileToken||"":"";
+      if(!fileToken){
+        const imported=await api("/files/import-binary",{method:"POST",headers:{"Content-Type":"application/octet-stream","X-File-Name":encodeURIComponent(pendingSingleFile.name),"X-Sheet-Name":encodeURIComponent($("#singleSheetInput")?.value||""),"X-Preview-Rows":"100"},body:pendingSingleFile});
+        pendingSingleFilePreview={...imported,sourceName:pendingSingleFile.name,sourceBytes:pendingSingleFile.size||0};
+        fileToken=imported.fileToken||"";
+      }
+      updateProcess(processId,30,"Определение колонок и MAC-адресов");
+      const result=await api("/single-file/analyze",{method:"POST",body:JSON.stringify({filename:pendingSingleFile.name,fileToken,sheet:$("#singleSheetInput")?.value||"",mapping:singleManualMapping(),createdAt:fileCreatedAt,saveHistory:true,saveSnapshot:true,compactResult:true,resultPageSize})});
+      updateProcess(processId,76,"Сохранение результатов и истории");
+      const headers=result.headers.map((name,index)=>({name,index}));
+      state.files=[{id:crypto.randomUUID(),name:pendingSingleFile.name,role:"primary",rows:[result.headers,...result.rows],headers,mapping:result.mapping,createdAt:fileCreatedAt,fileLastModified:pendingSingleFile.lastModified||0,sourceBytes:pendingSingleFile.size||0,fileToken,rowCount:Number(result.rowCount??result.rows?.length??0),rowsComplete:result.rowsComplete!==false,columnDetection:result.detection}];
+      clearResultReference();
+      state.devices=result.devices||[];
+      state.invalid=result.invalid||[];
+      state.lastAnalysis=fileCreatedAt;
+      const resultReference=result.resultReference||{};
+      if(result.compactResult){state.resultSnapshotId=String(resultReference.snapshotId||result.snapshot?.id||"");state.resultDeviceCount=Number(resultReference.deviceCount||0);state.resultInvalidCount=Number(resultReference.invalidCount||0);state.resultSummary=result.resultSummary||result.resultPage?.summary||null;}
+      if(!state.resultSnapshotId)recordLocalMovements(previousDevices,state.devices,pendingSingleFile.name,state.lastAnalysis);
+      if(result.snapshot?.id){state.snapshots.unshift({id:result.snapshot.id,name:"Single file: "+pendingSingleFile.name,source:pendingSingleFile.name,createdAt:result.snapshot.createdAt||state.lastAnalysis,deviceCount:Number(resultReference.deviceCount||state.devices.length),devices:[],backendStored:true});state.snapshots=state.snapshots.slice(0,25);}
+      else await storeLocalSnapshot("Single file: "+pendingSingleFile.name,pendingSingleFile.name,state.devices,state.invalid,state.lastAnalysis,"single-file");
+      save();persistAutosave("single-file-analysis").catch(()=>{});renderAll();renderSingleReport(result);view("single");
+      status.textContent="Готово: "+(result.progress?.valid||state.devices.length)+" устройств, ошибок: "+(result.progress?.invalid||state.invalid.length);
+      finishProcess(processId,"Проанализировано устройств: "+state.devices.length);
+      toast("Один файл проанализирован.");
+    }catch(error){
+      status.textContent="Ошибка: "+error.message;
+      toast(error.message);
+      failProcess(processId,error);
+    }
+  }
+  function localFileListHtml(){
+    const grouped=(role,title)=>{const files=state.files.filter((file,index)=>fileRole(file,index)===role),pending=pendingFileImports.filter((file)=>file.role===role);return `<section class="file-group" data-file-group="${role}"><div class="file-group-head"><strong>${title}</strong><span>${files.length+pending.length}</span></div>${files.map(file=>`<div class="file-row" data-file-id="${esc(file.id)}" data-file-role="${role}"><span><strong>${esc(file.name)}</strong><small>${Number(file.rowCount??Math.max(0,(file.rows?.length||1)-1))} строк · ${file.clientImported?"браузер":"backend"} · дата файла: ${esc(file.createdAt?new Date(file.createdAt).toLocaleString("ru-RU"):"")}</small></span><button data-remove-file="${esc(file.id)}">×</button></div>`).join("")}${pending.map(file=>`<div class="file-row file-row-pending" data-file-role="${role}" aria-busy="true"><span><strong>${esc(file.name)}</strong><small>Чтение Excel в браузере...</small></span><span class="file-loading-indicator">...</span></div>`).join("")||(!files.length?'<span class="muted">'+(role==="primary"?'Основной файл не выбран':'Файлы обогащения не добавлены')+'</span>':"")}</section>`;};
+    const errors=(state.importErrors||[]).map((item)=>'<div class="import-error"><strong>'+esc(item.filename||"Файл")+'</strong><span>'+esc(item.message||"Ошибка импорта")+'</span></div>').join("");
+    return grouped("primary","Основной файл")+grouped("enrichment","Файлы обогащения")+errors;
+  }
+  function workspaceFileSummary(file){return{id:file.id,name:file.name,role:file.role,createdAt:file.createdAt||"",fileDate:file.fileDate||"",sourceBytes:Number(file.sourceBytes||0),rowCount:Number(file.rowCount??Math.max(0,(file.rows?.length||1)-1)),fileToken:file.fileToken||""};}
+  function workspaceMappingPayload(file){if(!file)return null;return{id:file.id,name:file.name,role:file.role,headers:file.headers||[],mapping:file.mapping||{},mappingDisplayMode:file.mappingDisplayMode||state.mappingDisplayMode||"name"};}
+  function paintLocalFileList(root){root.innerHTML=localFileListHtml();root.querySelectorAll("[data-file-id]").forEach((row)=>row.classList.toggle("active-file",row.dataset.fileId===state.activeMappingFileId));}
+  async function renderFiles() {
+    const root=$("#fileList"); if(!root)return;
+    const renderVersion=++fileRenderVersion;
+    state.files=normalizeFileRoles(state.files);
+    const primaryCount=state.files.filter((file,index)=>fileRole(file,index)==="primary").length;
+    const enrichmentCount=state.files.filter((file,index)=>fileRole(file,index)==="enrichment").length;
+    if($("#primaryFileSummary"))$("#primaryFileSummary").textContent=primaryCount?"Основной файл выбран":"Основной файл не выбран";
+    if($("#enrichmentFileSummary"))$("#enrichmentFileSummary").textContent="Файлов обогащения: "+enrichmentCount;
+    paintLocalFileList(root);
+    if(pendingFileImports.length||!backendAvailable)return;
+    try{
+      const data=await api("/workspace/files",{method:"POST",body:JSON.stringify({files:state.files.map(workspaceFileSummary)})});
+      if(renderVersion!==fileRenderVersion)return;
+      const errors=(state.importErrors||[]).map((item)=>'<div class="import-error"><strong>'+esc(item.filename||"Файл")+'</strong><span>'+esc(item.message||"Ошибка импорта")+'</span></div>').join("");
+      root.innerHTML=(data.fileRowsHtml||data.emptyFilesHtml||'<span class="muted">Файлы пока не добавлены</span>')+errors;
+    }catch(error){
+      if(renderVersion===fileRenderVersion)paintLocalFileList(root);
+    }
+    root.querySelectorAll("[data-file-id]").forEach((row)=>row.classList.toggle("active-file",row.dataset.fileId===state.activeMappingFileId));
+  }
+  async function renderMapping() {
+    renderMappingControls();
+    const root=$("#mappingGrid"),file=selectedMappingFile()||state.files[0];
+    const renderVersion=++mappingRenderVersion;
+    if(file)file.mappingDisplayMode=state.mappingDisplayMode||"name";
+    root.innerHTML=localMappingGrid(file);
+    const source=$("#customColumnSource");
+    if(source)source.innerHTML=file?'<option value="">Колонка файла</option>'+file.headers.map((header)=>`<option value="${header.index}">${esc(mappingOptionLabel(header))}</option>`).join(""):'<option value="">Колонка файла</option>';
+    if(file)localMappingSummary(file);else renderColumnDetectionSummary(null);
+    if(!backendAvailable)return;
+    try{
+      const data=await api("/workspace/mapping-grid",{method:"POST",body:JSON.stringify({file:workspaceMappingPayload(file)})});
+      if(renderVersion!==mappingRenderVersion)return;
+      root.innerHTML=data.mappingGridHtml||'<p class="muted">Добавьте основной файл, чтобы настроить колонки.</p>';
+      $("#customColumnSource").innerHTML=data.customColumnOptionsHtml||'<option value="">Колонка файла</option>';
+      renderColumnDetectionSummary(file||null);
+    }catch(error){
+      if(renderVersion===mappingRenderVersion){root.innerHTML=localMappingGrid(file);if(file)localMappingSummary(file);else renderColumnDetectionSummary(null);}
+    }
+  }
+  function enrichmentFilesPayload(compact=true){
+    return state.files.map((file)=>{
+      if(!compact||!file.fileToken)return file;
+      return {id:file.id,name:file.name,role:file.role,sheet:file.sheet||"",mapping:file.mapping||{},createdAt:file.createdAt||"",sourceBytes:Number(file.sourceBytes||0),fileToken:file.fileToken,rowCount:Number(file.rowCount??Math.max(0,(file.rows?.length||1)-1))};
+    });
+  }
+  async function refreshWorkspaceFileCache(onProgress=()=>{}){
+    const tokenFiles=state.files.filter((file)=>file.fileToken);
+    for(const [index,fileRecord] of tokenFiles.entries()){
+      const sourceFile=sourceFilesById.get(fileRecord.id);
+      if(!sourceFile)throw new Error(`Кэш файла «${fileRecord.name}» недоступен. Выберите этот файл снова.`);
+      onProgress(Math.round((index/tokenFiles.length)*100),`Повторная загрузка ${fileRecord.name}`);
+      const data=await api("/files/import-binary",{method:"POST",headers:{"Content-Type":"application/octet-stream","X-File-Name":encodeURIComponent(sourceFile.name),"X-Sheet-Name":encodeURIComponent(fileRecord.sheet||""),"X-Preview-Rows":"100"},body:sourceFile});
+      fileRecord.fileToken=data.fileToken||"";
+      fileRecord.rows=[data.headers||[],...(data.rows||[])];
+      fileRecord.headers=(data.headers||[]).map((name,columnIndex)=>({name:String(name||headerName(columnIndex)),index:columnIndex}));
+      fileRecord.rowCount=Number(data.rowCount??data.rows?.length??0);
+      fileRecord.rowsComplete=data.compactResult!==true;
+    }
+    save({immediate:true});
+    onProgress(100,"Кэш файлов восстановлен");
+  }
+  async function hydrateWorkspaceFilesForBrowser(onProgress=()=>{}){
+    const compactFiles=state.files.filter((file)=>file.rowsComplete===false);
+    for(const [index,fileRecord] of compactFiles.entries()){
+      const sourceFile=sourceFilesById.get(fileRecord.id);
+      if(!sourceFile)throw new Error(`Для автономного анализа повторно выберите файл «${fileRecord.name}»: в памяти осталось только backend-превью.`);
+      const data=await clientReadTable(sourceFile,(value,detail)=>onProgress((index+value/100)/compactFiles.length*100,`${fileRecord.name}: ${detail}`));
+      fileRecord.rows=[data.headers||[],...(data.rows||[])];
+      fileRecord.headers=(data.headers||[]).map((name,columnIndex)=>({name:String(name||headerName(columnIndex)),index:columnIndex}));
+      fileRecord.rowCount=Number(data.rows?.length||0);
+      fileRecord.rowsComplete=true;
+      fileRecord.clientImported=true;
+    }
+    onProgress(100,"Полные строки подготовлены для автономного анализа");
+  }
+  function currentDeviceCount(){return state.resultSnapshotId?Number(state.resultDeviceCount||0):(state.devices||[]).length;}
+  function currentDevicePayload(extra={}){return state.resultSnapshotId?{...extra,snapshotId:state.resultSnapshotId,devices:[]}:{...extra,devices:state.devices||[]};}
+  function clearResultReference(){state.resultSnapshotId="";state.resultBrowserSnapshotId="";state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=0;state.resultInvalidCount=0;state.resultSummary=null;}
+  function applyRefreshedFileTokens(fileTokens=[]){
+    (Array.isArray(fileTokens)?fileTokens:[]).forEach((item)=>{const file=state.files.find((entry)=>entry.id===item.id);if(file&&item.fileToken)file.fileToken=item.fileToken;});
+  }
+  async function analyze() {
+    if(!state.files.length){toast("Сначала добавьте файл.");return;}
+    const enrich=Object.fromEntries($$("[data-field]").map((input)=>[input.dataset.field,input.checked]));
+    const strategy=$("#strategySelect").value,progress=$("#enrichmentProgress"),cancelButton=$("#cancelAnalyzeButton");
+    const previousDevices=state.devices||[];
+    const processId=beginProcess("Обогащение MAC-адресов","Подготовка основного файла и файлов обогащения",5);
+    try{
+      updateProcess(processId,10,"Запуск сервиса обогащения");
+      const startProgress=await api("/enrichment/progress",{method:"POST",body:JSON.stringify({status:"starting"})});
+      progress.innerHTML=startProgress.progressHtml||'<p class="muted">Обогащение запускается...</p>';
+    }catch{
+      progress.innerHTML='<p class="muted">Обогащение запускается...</p>';
+    }
+    cancelButton.disabled=false;
+    enrichmentController=new AbortController();
+    currentEnrichmentJobId=crypto.randomUUID();
+    const source = state.files[0].name;
+    const sourceCreatedAt = primaryFileCreatedAt();
+    await preserveCurrentBeforeAnalysis(source);
+    try {
+      updateProcess(processId,30,"Сопоставление файлов и обработка MAC-адресов");
+      const requestPayload={jobId:currentEnrichmentJobId,files:enrichmentFilesPayload(true),strategy,fields:enrich,source,createdAt:sourceCreatedAt,saveHistory:enrich.history,saveSnapshot:true,snapshotName:"Анализ: "+source,compactResult:true,resultPageSize:resultPageSize};
+      let serverResult;
+      try{
+        serverResult=await api("/enrichment/run",{method:"POST",signal:enrichmentController.signal,body:JSON.stringify(requestPayload)});
+      }catch(cacheError){
+        if(cacheError.status!==409)throw cacheError;
+        updateProcess(processId,38,"Обновление кэша импортированных файлов после перезапуска backend");
+        await refreshWorkspaceFileCache((value,detail)=>updateProcess(processId,38+Math.round(value*0.12),detail));
+        serverResult=await api("/enrichment/run",{method:"POST",signal:enrichmentController.signal,body:JSON.stringify({...requestPayload,files:enrichmentFilesPayload(true)})});
+      }
+      applyRefreshedFileTokens(serverResult.fileTokens);
+      updateProcess(processId,75,"Определение производителей, моделей и адресов");
+      const resultReference=serverResult.resultReference||{};
+      state.resultSnapshotId=serverResult.compactResult?String(resultReference.snapshotId||serverResult.snapshot?.id||""):"";
+      state.resultBrowserSnapshotId="";
+      state.resultBrowserSnapshotDirty=false;
+      state.resultDeviceCount=serverResult.compactResult?Number(resultReference.deviceCount||0):0;
+      state.resultInvalidCount=serverResult.compactResult?Number(resultReference.invalidCount||0):0;
+      state.resultSummary=serverResult.resultSummary||serverResult.resultPage?.summary||null;
+      state.devices = serverResult.devices||[];
+      state.lastAnalysis=sourceCreatedAt;
+      if(!state.resultSnapshotId){
+        if(!enrich.vendor)state.devices.forEach((item)=>{item.vendor="Не определено";});
+        if(!enrich.model)state.devices.forEach((item)=>{item.model="";});
+        ["ip","address","room","switchIp","switchPort"].forEach((field)=>{if(!enrich[field])state.devices.forEach((item)=>{item[field]="";});});
+        inferSwitchAddressMappings(state.devices,source);
+        applyLocalVendorModelMappings(state.devices);
+      }
+      state.invalid = serverResult.invalid || [];
+      if(!state.resultSnapshotId)recordLocalMovements(previousDevices,state.devices,source,state.lastAnalysis);
+      progress.innerHTML=serverResult.progressHtml||'<p class="muted">Обогащение завершено.</p>';
+      updateProcess(processId,90,"Сохранение снимка и истории изменений");
+      const snapshotResult = serverResult.snapshot||await api("/snapshots", {method:"POST", body:JSON.stringify(currentDevicePayload({name:"Анализ: "+source,source,createdAt:sourceCreatedAt}))});
+      state.snapshots.unshift({id:snapshotResult.id,name:snapshotResult.name||"Анализ: "+source,source,createdAt:snapshotResult.createdAt||sourceCreatedAt,deviceCount:snapshotResult.deviceCount??state.devices.length,devices:[],backendStored:true});
+      $("#storageStatus").textContent = "SQLite подключена";
+    } catch(error) {
+      if(error.name==="AbortError"){progress.innerHTML='<p class="muted">Обогащение отменено.</p>';toast("Обогащение отменено.");cancelProcess(processId,"Обогащение отменено пользователем");cancelButton.disabled=true;return;}
+      if(networkUnavailable(error)){
+        updateProcess(processId,45,"Backend недоступен: локальное обогащение в браузере");
+        let local,previousComparisonIndex=null;
+        try{
+          if(previousDevices.length>(MemoryGuard.limits.inlineComparisonRows||20000)){
+            updateProcess(processId,48,"Освобождение памяти предыдущего результата");
+            previousComparisonIndex=createLocalComparisonIndex(previousDevices);
+            previousDevices=[];
+            state.devices=[];
+            await MemoryGuard.yieldToMainThread();
+          }
+          await hydrateWorkspaceFilesForBrowser((value,detail)=>updateProcess(processId,45+Math.round(value*0.15),detail));
+          local=await localAnalyzeFiles(enrich,strategy,(value,detail)=>updateProcess(processId,60+Math.round(value*0.25),detail));
+        }catch(localError){progress.innerHTML='<p class="muted">Автономный анализ остановлен безопасно: '+esc(localError.message)+'</p>';toast(localError.message);failProcess(processId,localError);return;}
+        clearResultReference();
+        state.devices=local.devices;
+        state.invalid=local.invalid;
+        state.resultInvalidCount=local.invalidCount;
+        state.lastAnalysis=sourceCreatedAt;
+        if(previousComparisonIndex)recordLocalMovementsFromIndex(previousComparisonIndex,state.devices,source,state.lastAnalysis);else recordLocalMovements(previousDevices,state.devices,source,state.lastAnalysis);
+        await storeLocalSnapshot("Анализ: "+source,source,state.devices,state.invalid,sourceCreatedAt,"analysis");
+        progress.innerHTML='<div class="bar-item"><div class="bar-label"><span>Обогащение в браузере</span><strong>'+state.devices.length+' устройств</strong></div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><p class="muted">Backend не ответил, поэтому выполнена базовая обработка текущих файлов.</p></div>';
+        updateProcess(processId,90,"Сохранение локального снимка и истории");
+        $("#storageStatus").textContent="Backend недоступен: данные сохранены в браузере";
+      }else{
+        progress.innerHTML='<p class="muted">Backend analysis error: '+esc(error.message)+'</p>';
+        toast("Backend analysis error: "+error.message);
+        failProcess(processId,error);
+        return;
+      }
+    } finally {
+      cancelButton.disabled=true;
+      enrichmentController=null;
+      currentEnrichmentJobId=null;
+    }
+    state.snapshots=state.snapshots.slice(0,25);
+    save({immediate:true});await flushBrowserStateSave().catch(()=>{});persistAutosave("enrichment-analysis").catch(()=>{});renderAll();toast("Анализ завершён: "+currentDeviceCount()+" устройств.");
+    finishProcess(processId,"Обогащение завершено: "+currentDeviceCount()+" устройств");
+  }
+  async function loadFilteredResults() {
+    const filters={query:$("#searchInput").value.trim(),vendor:$("#vendorFilter").value,validity:$("#validityFilter").value,ouiLength:state.ouiLength,ouiStyle:state.ouiStyle,offset:(resultPage-1)*resultPageSize,limit:resultPageSize};
+    const columns=(state.visibleColumns||empty().visibleColumns).filter(Boolean);
+    const labelMap=Object.fromEntries(columns.map((column)=>[column,labels[column]||column]));
+    return api("/results/filter",{method:"POST",body:JSON.stringify(currentDevicePayload({invalid:state.invalid,filters,columns,labels:labelMap}))});
+  }
+  async function renderResults() {
+    const renderRevision=++resultRenderRevision;
+    const body=$("#resultsBody");
+    const columns=(state.visibleColumns||empty().visibleColumns).filter(Boolean);
+    const labelMap=Object.fromEntries(columns.map((column)=>[column,labels[column]||column]));
+    try{
+      const header=await api("/results/header",{method:"POST",body:JSON.stringify({columns,labels:labelMap})});
+      $("#resultsHeader").innerHTML=header.headerHtml||"";
+    }catch{renderLocalResultsHeader();}
+    try{
+      const data=await loadFilteredResults();
+      if(renderRevision!==resultRenderRevision)return;
+      $("#resultsHeader").innerHTML=data.headerHtml||"";
+      body.innerHTML=data.tableRowsHtml||data.emptyTableRowsHtml||'<tr><td colspan="'+columns.length+'" class="empty-state">Нет записей по заданному фильтру.</td></tr>';
+      $("#vendorFilter").innerHTML=data.vendorOptionsHtml||'<option value="">Все вендоры</option>';
+      $("#resultCount").textContent=data.summaryText||"0 записей";
+      updateResultPager(data.pagination?.total||0,data.pagination?.page||1,data.pagination?.pages||1);
+    }catch(error){
+      if(state.devices.length&&networkUnavailable(error)){
+        body.innerHTML=localResultsTable();
+      }else{
+        renderLocalResultsHeader();
+        body.innerHTML='<tr><td colspan="'+columns.length+'" class="empty-state">'+esc(error.message||"Backend unavailable")+'</td></tr>';
+        $("#resultCount").textContent="0 записей";
+        updateResultPager(0,1,1);
+      }
+    }
+    $("#analysisStatus").textContent=state.lastAnalysis?"Последний анализ: "+new Date(state.lastAnalysis).toLocaleString("ru-RU"):"Готов к работе";
+    applyResultColumnWidths();
+    renderAnalysisDashboard();
+  }
+  async function renderMetrics() {
+    try{
+      const data=await api("/dashboard/metrics",{method:"POST",body:JSON.stringify(currentDevicePayload({invalid:state.invalid,snapshots:state.snapshots,settings:{vendor:"",room:"",chartLimit:8,showUnknown:true}}))});
+      const metrics=data.metrics||{};
+      $("#metricDevices").textContent=metrics.devices||0;
+      $("#metricVendors").textContent=metrics.vendors||0;
+      renderAnalysisHeaderMetrics();
+      $("#metricKnown").textContent=(metrics.knownPercent||0)+"%";
+      $("#metricInvalid").textContent=metrics.invalid||0;
+    }catch(error){
+      const summary=state.resultSummary||{},vendors=new Set(state.devices.map(item=>item.vendor).filter(v=>v&&v!=="Unknown"&&v!=="Не определено"));
+      $("#metricDevices").textContent=summary.devices??state.devices.length??0;
+      $("#metricVendors").textContent=summary.vendors??vendors.size??0;
+      renderAnalysisHeaderMetrics();
+      $("#metricKnown").textContent=(summary.knownPercent??(state.devices.length?Math.round(state.devices.filter(item=>item.vendor&&item.vendor!=="Unknown"&&item.vendor!=="Не определено").length/state.devices.length*100):0))+"%";
+      $("#metricInvalid").textContent=summary.invalid??state.resultInvalidCount??(state.invalid||[]).length??0;
+    }
+  }
+  async function showDevice(mac){
+    try{
+      const analytics=await api("/device/analytics",{method:"POST",body:JSON.stringify(currentDevicePayload({mac,snapshots:state.snapshots}))});
+      const device=analytics.current||{};
+      $("#deviceDialogTitle").textContent=analytics.macFormatted||formatMac(analytics.mac||mac);
+      $("#deviceDialog").dataset.mac=analytics.mac||mac;
+      $("#deviceDialogSubtitle").textContent=(device.vendor||"Unknown")+(device.model?" · "+device.model:"");
+      $("#deviceMetrics").innerHTML=analytics.metricsHtml||"";
+      $("#deviceFields").innerHTML=analytics.fieldsHtml||"";
+      $("#deviceDetailedReport").textContent=analytics.detailedReportText||localDeviceDetailedReport(device,analytics.mac||mac);
+      $("#deviceChronologySummary").innerHTML=analytics.chronologySummaryHtml||"";
+      $("#deviceChronologyBody").innerHTML=analytics.chronologyRowsHtml||analytics.emptyChronologyRowsHtml||'<tr><td colspan="6" class="empty-state">Хронология MAC-адреса пока пуста.</td></tr>';
+      $("#macHistoryStats").innerHTML=analytics.macHistoryStatsHtml||"";
+      $("#deviceHistoryRecordsBody").innerHTML=analytics.historyRecordsRowsHtml||analytics.emptyHistoryRecordsRowsHtml||'<tr><td colspan="7" class="empty-state">История появлений MAC пока пуста.</td></tr>';
+      $("#deviceHistoryBody").innerHTML=analytics.movementRowsHtml||analytics.emptyMovementRowsHtml||'<tr><td colspan="5" class="empty-state">Изменения параметров MAC пока отсутствуют.</td></tr>';
+      $("#deviceDialog").showModal();
+    }catch(error){showLocalDevice(mac);}
+  }
+  function showLocalDevice(mac){
+    const normalized=normalize(mac)||normalize((state.devices.find((item)=>item.mac===mac||item.macFormatted===mac)||{}).macFormatted),device=state.devices.find((item)=>normalize(item.mac||item.macFormatted)===normalized)||{};
+    if(!normalized&&!device.mac){toast("MAC не найден.");return;}
+    const title=device.macFormatted||formatMac(normalized)||mac;
+    $("#deviceDialogTitle").textContent=title;
+    $("#deviceDialog").dataset.mac=normalized||device.mac||mac;
+    $("#deviceDialogSubtitle").textContent=(device.vendor||"Unknown")+(device.model?" · "+device.model:"");
+    const fields=["vendor","model","ip","address","room","switchIp","switchPort","source"].map((field)=>`<div class="summary-line"><strong>${esc(labels[field]||field)}</strong><span>${esc(device[field]||"")}</span></div>`).join("");
+    $("#deviceMetrics").innerHTML=`<div class="bar-item"><div class="bar-label"><span>Локальная история</span><strong>${localMacHistoryRows(normalized).count}</strong></div></div>`;
+    $("#deviceFields").innerHTML=fields||'<p class="muted">Нет локальных полей устройства.</p>';
+    $("#deviceDetailedReport").textContent=localDeviceDetailedReport(device,normalized||mac);
+    $("#deviceChronologySummary").innerHTML=localMacChronology(normalized).summaryHtml;
+    $("#deviceChronologyBody").innerHTML=localMacChronology(normalized).html;
+    const localHistory=localMacHistoryRows(normalized),localMovements=localMacMovementRows(normalized);
+    $("#macHistoryStats").innerHTML=localHistory.statsHtml;
+    $("#deviceHistoryRecordsBody").innerHTML=localHistory.html;
+    $("#deviceHistoryBody").innerHTML=localMovements.html;
+    $("#deviceDialog").showModal();
+  }
+  function localDeviceDetailedReport(device={},mac=""){const value=(fallback,...keys)=>{for(const key of keys){if(Object.prototype.hasOwnProperty.call(device,key)){const result=String(device[key]??"").trim();return result||fallback;}}return fallback;};return["=== ДЕТАЛЬНАЯ ИНФОРМАЦИЯ ОБ УСТРОЙСТВЕ ===","",`MAC-адрес: ${value(formatMac(mac),"macFormatted","mac_formatted","mac")}`,`Производитель: ${value("Unknown","vendor")}`,`Модель: ${value("Не указана","model")}`,`IP-адрес: ${value("Не указан","ip")}`,`Физический адрес: ${value("Не указан","address")}`,`Помещение: ${value("Не указано","room")}`,`Коммутатор: ${value("Не указан","switchIp","switch_ip")}`,`Порт: ${value("Не указан","switchPort","switch_port")}`,"","Источники данных:",`  Производитель: ${value("Неизвестен","vendorSource","vendor_source")}`,`  Модель: ${value("Неизвестен","modelSource","model_source")}`,"",`Примечания: ${value("Нет","matchDetails","match_details")}`].join("\n");}
+  function localMacHistoryRows(mac){
+    const normalized=normalize(mac),rows=(state.snapshots||[]).flatMap((snapshot)=>(snapshot.devices||[]).filter((device)=>normalize(device.mac||device.macFormatted)===normalized).map((device)=>({snapshot,device})));
+    const dates=rows.map(({snapshot})=>snapshot.createdAt||"").filter(Boolean).sort(),sources=new Set(rows.map(({snapshot,device})=>snapshot.source||device.source||snapshot.name).filter(Boolean)),movements=(state.movementHistory||[]).filter((item)=>normalize(item.mac||item.macFormatted)===normalized);
+    const statsHtml=`<div class="bar-label"><span>Всего появлений</span><strong>${rows.length}</strong></div><div class="bar-label"><span>Первое появление</span><strong>${esc(dates[0]?formatDisplayDateTime(dates[0]):"-")}</strong></div><div class="bar-label"><span>Последнее появление</span><strong>${esc(dates.length?formatDisplayDateTime(dates[dates.length-1]):"-")}</strong></div><div class="bar-label"><span>Файлов</span><strong>${sources.size}</strong></div><div class="bar-label"><span>Изменений</span><strong>${movements.length}</strong></div>`;
+    return{count:rows.length,statsHtml,html:rows.length?rows.sort((a,b)=>String(b.snapshot.createdAt||"").localeCompare(String(a.snapshot.createdAt||""))).map(({snapshot,device})=>`<tr><td>${esc(formatDisplayDateTime(snapshot.createdAt||""))}</td><td>${esc(snapshot.source||device.source||snapshot.name||"snapshot")}</td><td>${esc(device.vendor||"-")}</td><td>${esc(device.model||"-")}</td><td>${esc(device.ip||"-")}</td><td>${esc(device.address||"-")}</td><td>${esc(device.room||"-")}</td></tr>`).join(""):'<tr><td colspan="7" class="empty-state">Локальная история появлений MAC пока пуста.</td></tr>'};
+  }
+  function localMacMovementRows(mac){const normalized=normalize(mac),rows=(state.movementHistory||[]).filter((item)=>normalize(item.mac||item.macFormatted)===normalized).sort((a,b)=>String(b.changedAt||b.changed_at||"").localeCompare(String(a.changedAt||a.changed_at||"")));return{count:rows.length,html:rows.length?rows.map((item)=>`<tr><td>${esc(formatDisplayDateTime(item.changedAt||item.changed_at||""))}</td><td>${esc(item.field||item.field_name||"-")}</td><td>${esc(item.before??item.from_value??"-")}</td><td>${esc(item.after??item.to_value??"-")}</td><td>${esc(item.source||"-")}</td></tr>`).join(""):'<tr><td colspan="5" class="empty-state">Локальные изменения параметров MAC отсутствуют.</td></tr>'};}
+  function localMacChronology(mac){
+    const normalized=normalize(mac),events=[];
+    (state.snapshots||[]).forEach((snapshot)=>(snapshot.devices||[]).forEach((device)=>{if(normalize(device.mac||device.macFormatted)===normalized)events.push({date:snapshot.createdAt||"",event:"Появление в снимке",field:"snapshot",before:"",after:[device.vendor,device.model,device.ip,device.address].filter(Boolean).join(" / "),source:snapshot.name||snapshot.source||device.source||"snapshot"});}));
+    (state.movementHistory||[]).forEach((item)=>{if(normalize(item.mac||item.macFormatted)===normalized)events.push({date:item.changedAt||item.changed_at||"",event:item.type||"Изменение поля",field:item.field||item.field_name||"",before:item.before??item.from_value??"",after:item.after??item.to_value??"",source:item.source||""});});
+    events.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+    const summaryHtml=`<div class="bar-label"><span>Chronology events</span><strong>${events.length}</strong></div><div class="bar-label"><span>Snapshot appearances</span><strong>${events.filter((item)=>item.field==="snapshot").length}</strong></div><div class="bar-label"><span>Field changes</span><strong>${events.filter((item)=>item.field!=="snapshot").length}</strong></div>`;
+    const html=events.length?events.slice(0,500).map((item)=>`<tr><td>${esc(formatDisplayDateTime(item.date))}</td><td>${esc(item.event)}</td><td>${esc(item.field)}</td><td>${esc(item.before||"-")}</td><td>${esc(item.after||"-")}</td><td>${esc(item.source||"-")}</td></tr>`).join(""):'<tr><td colspan="6" class="empty-state">Хронология MAC-адреса пока пуста.</td></tr>';
+    return{events,summaryHtml,html};
+  }
+  async function exportDeviceAnalytics(){
+    const mac=$("#deviceDialog").dataset.mac;
+    if(!mac)return;
+    try{
+      const data=await api("/device/analytics",{method:"POST",body:JSON.stringify(currentDevicePayload({mac,snapshots:state.snapshots,exportFormat:"html"}))});
+      if(!data.export)throw new Error("Device analytics export is empty");
+      download(data.export.filename||"mac-device-analytics.html",data.export.content,data.export.mimeType||"text/html");
+      toast("Аналитика устройства экспортирована.");
+    }catch(error){toast(error.message);}
+  }
+  function formatModelPrefix(prefix){const value=normalizePrefix(prefix);return value.match(/.{1,2}/g)?.join(":")||"";}
+  function localModelAnalytics(model){
+    const query=String(model||"").trim().toLowerCase(),custom=state.localModelMappings||{},rules={...builtinModelMappings,...custom};
+    const prefixes=Object.entries(rules).filter(([,value])=>query&&(String(value).toLowerCase()===query||String(value).toLowerCase().includes(query))).sort((a,b)=>String(a[1]).localeCompare(String(b[1]),"ru")||a[0].localeCompare(b[0])).map(([prefix,value])=>({prefix,formattedPrefix:formatModelPrefix(prefix),model:value,sourceLabel:Object.prototype.hasOwnProperty.call(custom,prefix)?"Пользовательское правило":"Встроенная база"}));
+    const matchedDevices=(state.devices||[]).filter((device)=>String(device.model||"").toLowerCase()===query||prefixes.some((item)=>normalize(device.mac||device.macFormatted).startsWith(normalizePrefix(item.prefix))));
+    return{model,prefixes,metrics:{prefixes:prefixes.length,matchedDevices:matchedDevices.length,vendors:new Set(matchedDevices.map((device)=>device.vendor).filter(Boolean)).size},tableRowsHtml:prefixes.length?prefixes.map((item)=>`<tr><td>${esc(item.formattedPrefix)}</td><td>${esc(item.model)}</td><td>${esc(item.sourceLabel)}</td></tr>`).join(""):'<tr><td>Нет данных</td><td></td><td></td></tr>'};
+  }
+  function renderModelAnalyticsDialog(data,model){
+    const metrics=data.metrics||{};
+    $("#modelDialogTitle").textContent="Префиксы MAC для модели "+model;
+    $("#modelDialogSubtitle").textContent="Правила определения модели по MAC: точное имя или совпадение по названию.";
+    $("#modelPrefixBody").innerHTML=data.tableRowsHtml||'<tr><td>Нет данных</td><td></td><td></td></tr>';
+    $("#modelPrefixSummary").innerHTML=`<div class="bar-label"><span>Префиксов</span><strong>${Number(metrics.prefixes||0)}</strong></div><div class="bar-label"><span>Устройств в текущем наборе</span><strong>${Number(metrics.matchedDevices||0)}</strong></div><div class="bar-label"><span>Производителей</span><strong>${Number(metrics.vendors||0)}</strong></div>`;
+    $("#modelDialog").showModal();
+  }
+  async function showModelAnalytics(model){
+    try{
+      const data=await api("/model/analytics",{method:"POST",body:JSON.stringify(currentDevicePayload({model}))});
+      renderModelAnalyticsDialog(data,model);
+    }catch(error){renderModelAnalyticsDialog(localModelAnalytics(model),model);toast("Префиксы модели показаны из встроенной HTML-базы.");}
+  }
+  async function renderSnapshots() {
+    try{
+      const data=await api("/snapshots/options",{method:"POST",body:JSON.stringify({snapshots:state.snapshots})}),options=data.optionsHtml||"",emptyOption=data.emptyOptionHtml||"<option>Нет снимков</option>";
+      $("#baselineSelect").innerHTML=options||emptyOption;$("#comparisonSelect").innerHTML=options||emptyOption;$("#multiComparisonSelect").innerHTML=options;if(options)$("#comparisonSelect").selectedIndex=data.comparisonSelectedIndex||0;
+    }catch(error){
+      renderLocalSnapshotOptions();
+    }
+  }
+  function localSnapshotOptionHtml(){
+    const options=[];
+    for(const entry of (state.snapshots||[])){
+      options.push(`<option value="${esc(entry.id)}">${esc(entry.name||entry.source||"Snapshot")} · ${esc(entry.createdAt?new Date(entry.createdAt).toLocaleString("ru-RU"):"")}</option>`);
+    }
+    return options.join("");
+  }
+  function renderLocalSnapshotOptions(){
+    const options=localSnapshotOptionHtml(),emptyOption='<option value="">Нет снимков</option>';
+    $("#baselineSelect").innerHTML=options||emptyOption;
+    $("#comparisonSelect").innerHTML=options||emptyOption;
+    $("#multiComparisonSelect").innerHTML=options;
+    const count=(state.snapshots||[]).length;
+    if(count>1)$("#comparisonSelect").selectedIndex=0;
+    if(count>1)$("#baselineSelect").selectedIndex=count-1;
+  }
+  async function renderBackendStatistics(){
+    const root=$("#backendStatisticsChart"); if(!root)return;
+    try{
+      const data=await api("/statistics/panel");
+      root.innerHTML=data.statisticsHtml||'<p class="muted">SQLite statistics are empty.</p>';
+    }catch(error){
+      root.innerHTML='<p class="muted">SQLite statistics unavailable: '+esc(error.message)+'</p>';
+    }
+  }
+  async function renderTemporalStatistics(){
+    const root=$("#temporalStatisticsChart"); if(!root)return;
+    try{
+      const data=await api("/statistics/panel");
+      root.innerHTML=data.temporalHtml||'<p class="muted">Нет SQLite-снимков для временной статистики.</p>';
+    }catch(error){
+      root.innerHTML='<p class="muted">Temporal statistics unavailable: '+esc(error.message)+'</p>';
+    }
+  }
+  async function renderBackendCharts(){
+    const root=$("#backendChartsPanel"); if(!root)return;
+    try{
+      const data=await(analyticsPanelPromise||loadAnalyticsPanel());
+      root.innerHTML=data.backendChartsHtml||'<p class="muted">Backend не вернул диаграммы.</p>';
+    }catch(error){
+      root.innerHTML='<p class="muted">Backend charts unavailable: '+esc(error.message)+'</p>';
+    }
+  }
+  function localTally(items,key,limit=8){const counts={};items.forEach((item)=>{const value=String(item[key]||"Unknown").trim()||"Unknown";counts[value]=(counts[value]||0)+1;});return Object.entries(counts).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,limit);}
+  function localChartHtml(items,emptyText="Недостаточно данных."){const max=Math.max(1,...items.map((item)=>item[1]));return items.length?items.map(([label,count])=>`<div class="bar-item"><div class="bar-label"><span>${esc(label)}</span><strong>${count}</strong></div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(count/max*100)}%"></div></div></div>`).join(""):`<p class="muted">${esc(emptyText)}</p>`;}
+  function buildLocalAnalyticsReport(devices=state.devices){
+    const rows=Array.isArray(devices)?devices:[],total=rows.length;
+    if(!total)return{total:0,reportText:"Нет данных",vendors:[],models:[],rooms:[],roomOccupancy:{assignedDevices:0,unassignedDevices:0,assignedPercent:0,uniqueRooms:0,averageDevicesPerRoom:0,mostOccupied:null,rooms:[]},coverage:{uniqueVendors:0,uniqueModels:0,address:{count:0,percent:0},room:{count:0,percent:0},ip:{count:0,percent:0},switch:{count:0,percent:0}}};
+    const value=(device,...keys)=>{for(const key of keys){const found=String(device?.[key]??"").trim();if(found)return found;}return"";};
+    const ranked=(keyGetter)=>{const counts=new Map();rows.forEach((device)=>{const item=keyGetter(device);if(item)counts.set(item,(counts.get(item)||0)+1);});return[...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,20).map(([label,count])=>({label,count,percent:Number((count/total*100).toFixed(1))}));};
+    const vendors=ranked((device)=>value(device,"vendor")||"Unknown"),models=ranked((device)=>value(device,"model")),rooms=ranked((device)=>value(device,"room"));
+    const filled=(field)=>rows.filter((device)=>{const item=field(device);return item&&!['Unknown','Не указано'].includes(item);}).length;
+    const address=filled((device)=>value(device,"address")),room=filled((device)=>value(device,"room")),ip=filled((device)=>value(device,"ip")),switchCount=filled((device)=>value(device,"switchIp","switch_ip"));
+    const percent=(count)=>Number((count/total*100).toFixed(1)),lines=["=== АНАЛИТИКА ПО УСТРОЙСТВАМ ===","",`Всего устройств: ${total}`,"","=== ПРОИЗВОДИТЕЛИ ==="];
+    vendors.forEach((item)=>lines.push(`  ${item.label}: ${item.count} (${item.percent.toFixed(1)}%)`));lines.push("","=== МОДЕЛИ ===");models.forEach((item)=>lines.push(`  ${item.label}: ${item.count} (${item.percent.toFixed(1)}%)`));lines.push("","=== ПОМЕЩЕНИЯ ===");rooms.forEach((item)=>lines.push(`  ${item.label}: ${item.count} (${item.percent.toFixed(1)}%)`));
+    const allRoomCounts=new Map();rows.forEach((device)=>{const item=value(device,"room");if(item&&!['Unknown','Не указано'].includes(item))allRoomCounts.set(item,(allRoomCounts.get(item)||0)+1);});const roomRows=[...allRoomCounts.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,50).map(([label,count])=>({label,count,percentOfAssigned:Number((count/Math.max(1,room)*100).toFixed(1)),percentOfAll:percent(count)})),roomOccupancy={assignedDevices:room,unassignedDevices:total-room,assignedPercent:percent(room),uniqueRooms:allRoomCounts.size,averageDevicesPerRoom:allRoomCounts.size?Number((room/allRoomCounts.size).toFixed(1)):0,mostOccupied:roomRows[0]||null,rooms:roomRows};
+    lines.push("","=== ЗАПОЛНЕННОСТЬ ===",`  Производитель: ${vendors.length} уникальных`,`  Модель: ${models.length} уникальных`,`  Адрес: ${address} (${percent(address).toFixed(1)}%)`,`  Помещение: ${room} (${percent(room).toFixed(1)}%)`,`  IP-адрес: ${ip} (${percent(ip).toFixed(1)}%)`,`  Коммутатор: ${switchCount} (${percent(switchCount).toFixed(1)}%)`,"","=== ЗАПОЛНЕННОСТЬ ПОМЕЩЕНИЙ ===",`  Распределено: ${room} (${roomOccupancy.assignedPercent.toFixed(1)}%)`,`  Без помещения: ${roomOccupancy.unassignedDevices}`,`  Уникальных помещений: ${roomOccupancy.uniqueRooms}`,`  Среднее устройств на помещение: ${roomOccupancy.averageDevicesPerRoom.toFixed(1)}`);
+    return{total,vendors,models,rooms,roomOccupancy,coverage:{uniqueVendors:vendors.length,uniqueModels:models.length,address:{count:address,percent:percent(address)},room:{count:room,percent:percent(room)},ip:{count:ip,percent:percent(ip)},switch:{count:switchCount,percent:percent(switchCount)}},reportText:lines.join("\n")};
+  }
+  function renderAnalyticsReport(report,source="local"){const preview=$("#analyticsReportPreview"),status=$("#analyticsReportStatus"),occupancy=report?.roomOccupancy||{};if(preview)preview.textContent=report?.reportText||"Нет данных";if(status)status.textContent=`${report?.total||0} устройств · ${source==="backend"?"расчёт backend":"локальный расчёт"}`;if($("#roomOccupancyStatus"))$("#roomOccupancyStatus").textContent=`Распределено ${Number(occupancy.assignedDevices||0).toLocaleString("ru-RU")} из ${Number(report?.total||0).toLocaleString("ru-RU")} (${Number(occupancy.assignedPercent||0).toFixed(1)}%) · без помещения ${Number(occupancy.unassignedDevices||0).toLocaleString("ru-RU")} · среднее ${Number(occupancy.averageDevicesPerRoom||0).toFixed(1)}`;if($("#roomOccupancyChart"))$("#roomOccupancyChart").innerHTML=localChartHtml((occupancy.rooms||[]).slice(0,20).map((item)=>[`${item.label} · ${Number(item.percentOfAssigned||0).toFixed(1)}%`,item.count]),"Нет данных о помещениях.");return report;}
+  async function refreshAnalyticsReport(){const local=buildLocalAnalyticsReport(state.devices);renderAnalyticsReport(local,"local");try{const report=await api("/analytics/report",{method:"POST",body:JSON.stringify(currentDevicePayload())});return renderAnalyticsReport(report,"backend");}catch{return local;}}
+  async function exportAnalyticsReport(){try{const report=await api("/analytics/report",{method:"POST",body:JSON.stringify(currentDevicePayload({exportFormat:"txt"}))});if(!report.export)throw new Error("TXT export is empty");download(report.export.filename||"analytics_report.txt",report.export.content,report.export.mimeType||"text/plain");renderAnalyticsReport(report,"backend");toast("Аналитический отчёт экспортирован.");}catch{const report=renderAnalyticsReport(buildLocalAnalyticsReport(state.devices),"local");download(`analytics_report_${new Date().toISOString().slice(0,19).replace(/[-:T]/g,"")}.txt`,report.reportText,"text/plain");toast("Аналитический отчёт экспортирован локально.");}}
+  function localAnalyticsPayload(devices=dashboardDevices()){const known=devices.filter((device)=>device.vendor&&device.vendor!=="Unknown").length,unknown=Math.max(0,devices.length-known),invalid=state.invalid.length;return{vendors:localChartHtml(localTally(devices,"vendor")),models:localChartHtml(localTally(devices,"model")),quality:localChartHtml([["Опознано",known],["Unknown",unknown],["Ошибки",invalid]].filter((item)=>item[1]>0),"Ошибок качества не найдено."),timeline:localChartHtml((state.snapshots||[]).slice(-8).map((snap)=>[String(snap.name||snap.createdAt||"snapshot").slice(0,24),(snap.devices||[]).length]),"Снимков пока нет.")};}
+  function renderLocalAnalytics(devices=dashboardDevices()){const charts=localAnalyticsPayload(devices);$("#vendorChart").innerHTML=charts.vendors;$("#modelChart").innerHTML=charts.models;$("#qualityChart").innerHTML=charts.quality;$("#timelineChart").innerHTML=charts.timeline;}
+  function analysisHeaderMetrics(devices=state.devices){if(state.resultSnapshotId&&state.resultSummary){const summary=state.resultSummary;return{models:Number(summary.models||0),oui3:Number(summary.oui3||0),oui4:Number(summary.oui4||0),oui5:Number(summary.oui5||0),autoVendors:Number(summary.autoVendors||0),autoModels:Number(summary.autoModels||0)};}const knownVendor=(device)=>device.vendor&&device.vendor!=="Unknown"&&device.vendor!=="Не определено",models=new Set(devices.map((item)=>item.model).filter(Boolean)),oui3=new Set(devices.map((item)=>formatOuiValue(item.mac||item.macFormatted||item.oui,3,"plain")).filter(Boolean)),oui4=new Set(devices.map((item)=>formatOuiValue(item.mac||item.macFormatted||item.oui,4,"plain")).filter(Boolean)),oui5=new Set(devices.map((item)=>formatOuiValue(item.mac||item.macFormatted||item.oui,5,"plain")).filter(Boolean)),autoVendors=devices.filter((item)=>knownVendor(item)&&(item.vendorMatchedPrefix||!item.vendorSource||!["file","history"].includes(item.vendorSource))).length,autoModels=devices.filter((item)=>item.model&&(item.modelMatchedPrefix||!item.modelSource||!["file","history"].includes(item.modelSource))).length;return{models:models.size,oui3:oui3.size,oui4:oui4.size,oui5:oui5.size,autoVendors,autoModels};}
+  function renderAnalysisHeaderMetrics(devices=state.devices){const header=analysisHeaderMetrics(devices);$("#metricModels").textContent=header.models;$("#metricOuiCoverage").textContent=header.oui3+" / "+header.oui4+" / "+header.oui5;$("#metricAutoDetected").textContent=header.autoVendors+" / "+header.autoModels;}
+  function renderAnalysisDashboard(){const root=$("#analysisDashboardPanel");if(!root)return;const devices=state.devices||[],summary=state.resultSnapshotId&&state.resultSummary?state.resultSummary:null,total=summary?.devices??devices.length,known=summary?.known??devices.filter((device)=>device.vendor&&device.vendor!=="Unknown"&&device.vendor!=="Не определено").length,unknown=Math.max(0,total-known),vendors=new Set(devices.map((device)=>device.vendor).filter((value)=>value&&value!=="Unknown"&&value!=="Не определено")),models=new Set(devices.map((device)=>device.model).filter(Boolean));$("#analysisMetricDevices").textContent=total;$("#analysisMetricVendors").textContent=summary?.vendors??vendors.size;$("#analysisMetricModels").textContent=summary?.models??models.size;$("#analysisMetricUnknown").textContent=unknown;$("#analysisDashboardStatus").textContent=total?"Dashboard построен по текущим результатам анализа.":"Запустите анализ, чтобы построить dashboard.";$("#analysisVendorChart").innerHTML=localChartHtml(localTally(devices,"vendor",10),"Нет данных производителей.");$("#analysisModelChart").innerHTML=localChartHtml(localTally(devices,"model",10),"Нет данных моделей.");$("#analysisOuiChart").innerHTML=localChartHtml(localTally(devices.map((device)=>({oui:formatOuiValue(device.mac||device.macFormatted||device.oui)})),"oui",10),"Нет OUI.");$("#analysisQualityChart").innerHTML=localChartHtml([["Опознано",known],["Unknown",unknown],["Ошибки",summary?.invalid??state.resultInvalidCount??state.invalid.length]].filter((item)=>item[1]>0),"Ошибок качества не найдено.");}
+  async function renderPrimaryCharts(){
+    try{
+      const data=await(analyticsPanelPromise||loadAnalyticsPanel()),charts=data.primaryChartsHtml||{};
+      $("#vendorChart").innerHTML=charts.vendors||'<p class="muted">Недостаточно данных.</p>';
+      $("#modelChart").innerHTML=charts.models||'<p class="muted">Недостаточно данных.</p>';
+      $("#qualityChart").innerHTML=charts.quality||'<p class="muted">Недостаточно данных.</p>';
+      $("#timelineChart").innerHTML=charts.timeline||'<p class="muted">Недостаточно данных.</p>';
+    }catch(error){
+      renderLocalAnalytics(dashboardDevices());
+    }
+  }
+  async function exportChartsSvg(){
+    try{
+      const data=await api("/charts",{method:"POST",body:JSON.stringify(state.resultSnapshotId?currentDevicePayload({snapshots:state.snapshots,exportFormat:"svg"}):{devices:dashboardDevices(),snapshots:state.snapshots,exportFormat:"svg"})});
+      if(!data.export)throw new Error("SVG export is empty");
+      download(data.export.filename||"mac-charts.svg",data.export.content,data.export.mimeType||"image/svg+xml");
+      toast("SVG-диаграммы экспортированы.");
+    }catch(error){
+      toast(error.message);
+    }
+  }
+  function normalizeDashboardSettings(settings={}){
+    const defaults={vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true},autoRefresh:true,refreshInterval:60,changeMode:"period",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},source=settings&&typeof settings==="object"?settings:{};
+    const changeMode=source.changeMode==="snapshots"?"snapshots":"period";
+    return{...defaults,...source,changeMode,visibleCards:{...defaults.visibleCards,...(source.visibleCards||{})},visibleCharts:{...defaults.visibleCharts,...(source.visibleCharts||{})},autoRefresh:source.autoRefresh!==false,refreshInterval:Math.max(10,Math.min(300,Number(source.refreshInterval||60)))};
+  }
+  function configureDashboardAutoRefresh(settings=state.dashboardSettings){
+    if(dashboardRefreshTimer){clearInterval(dashboardRefreshTimer);dashboardRefreshTimer=null;}
+    if(settings.autoRefresh!==false)dashboardRefreshTimer=setInterval(()=>{if($("#analyticsView")?.classList.contains("active"))renderAnalytics();},Math.max(10,Math.min(300,Number(settings.refreshInterval||60)))*1000);
+  }
+  function applyDashboardVisibility(settings=state.dashboardSettings){
+    const normalized=normalizeDashboardSettings(settings);
+    $$('[data-dashboard-card]').forEach((node)=>{node.hidden=normalized.visibleCards[node.dataset.dashboardCard]===false;});
+    $$('[data-dashboard-chart]').forEach((node)=>{node.hidden=normalized.visibleCharts[node.dataset.dashboardChart]===false;});
+  }
+  function applyDashboardSettings(settings){state.dashboardSettings=normalizeDashboardSettings({...state.dashboardSettings,...(settings||{})});const vendor=$("#dashboardVendorFilter"),room=$("#dashboardRoomFilter"),status=$("#dashboardStatusFilter");if(vendor)vendor.value=state.dashboardSettings.vendor||"";if(room)room.value=state.dashboardSettings.room||"";if(status)status.value=state.dashboardSettings.status||"all";syncDashboardChangeControls(state.dashboardSettings);applyDashboardVisibility(state.dashboardSettings);configureDashboardAutoRefresh(state.dashboardSettings);save();}
+  async function loadDashboardSettings(){try{const result=await api("/dashboard/settings");applyDashboardSettings(result.settings||{});renderAnalytics();}catch{applyDashboardSettings(state.dashboardSettings);}}
+  function dashboardSettings(){const current=normalizeDashboardSettings(state.dashboardSettings);const vendor=$("#dashboardVendorFilter"),room=$("#dashboardRoomFilter"),status=$("#dashboardStatusFilter");if(vendor)current.vendor=vendor.value||current.vendor||"";if(room)current.room=room.value||current.room||"";if(status)current.status=status.value||"all";current.chartLimit=Number(current.chartLimit||8);current.showUnknown=current.showUnknown!==false;state.dashboardSettings=current;return current;}
+  function selectDashboardSettingsTab(name="cards"){$$('[data-dashboard-settings-tab]').forEach((button)=>{const active=button.dataset.dashboardSettingsTab===name;button.classList.toggle("active-filter",active);button.setAttribute("aria-selected",String(active));});$$('[data-dashboard-settings-panel]').forEach((panel)=>{panel.hidden=panel.dataset.dashboardSettingsPanel!==name;});}
+  function fillDashboardSettingsDialog(settings=dashboardSettings()){const normalized=normalizeDashboardSettings(settings);$$('[data-dashboard-card-toggle]').forEach((input)=>{input.checked=normalized.visibleCards[input.dataset.dashboardCardToggle]!==false;});$$('[data-dashboard-chart-toggle]').forEach((input)=>{input.checked=normalized.visibleCharts[input.dataset.dashboardChartToggle]!==false;});$("#dashboardAutoRefresh").checked=normalized.autoRefresh!==false;$("#dashboardRefreshInterval").value=normalized.refreshInterval;}
+  function dashboardDialogSettings(){const current=normalizeDashboardSettings(dashboardSettings());$$('[data-dashboard-card-toggle]').forEach((input)=>{current.visibleCards[input.dataset.dashboardCardToggle]=input.checked;});$$('[data-dashboard-chart-toggle]').forEach((input)=>{current.visibleCharts[input.dataset.dashboardChartToggle]=input.checked;});current.autoRefresh=$("#dashboardAutoRefresh").checked;current.refreshInterval=Math.max(10,Math.min(300,Number($("#dashboardRefreshInterval").value||60)));return current;}
+  function showDashboardSettingsDialog(){fillDashboardSettingsDialog();selectDashboardSettingsTab("cards");if(!$("#dashboardSettingsDialog").open)$("#dashboardSettingsDialog").showModal();}
+  function dashboardDevices(){return dashboardFilteredDevices||state.devices;}
+  function renderDashboardFilterOptions(filters={}, settings=dashboardSettings(), filterOptionsHtml={}){
+    const vendorChoice=settings.vendor||"",roomChoice=settings.room||"";
+    $("#dashboardVendorFilter").innerHTML=filterOptionsHtml.vendors||'<option value="">Все производители</option>';
+    $("#dashboardRoomFilter").innerHTML=filterOptionsHtml.rooms||'<option value="">Все помещения</option>';
+    applyDashboardSettings({...settings,vendor:$("#dashboardVendorFilter").value||vendorChoice,room:$("#dashboardRoomFilter").value||roomChoice});
+  }
+  function renderLocalDashboardFilterOptions(settings=dashboardSettings()){const vendorOptions=['<option value="">Все производители</option>',...localTally(state.devices,"vendor",200).map(([value])=>`<option value="${esc(value)}" ${value===settings.vendor?"selected":""}>${esc(value)}</option>`)].join(""),roomOptions=['<option value="">Все помещения</option>',...localTally(state.devices,"room",200).map(([value])=>`<option value="${esc(value)}" ${value===settings.room?"selected":""}>${esc(value)}</option>`)].join("");$("#dashboardVendorFilter").innerHTML=vendorOptions;$("#dashboardRoomFilter").innerHTML=roomOptions;applyDashboardSettings(settings);}
+  function dashboardStatusContext(){
+    const current=new Map((state.devices||[]).map((device)=>[normalize(device.mac||device.macFormatted),device]).filter(([mac])=>mac));
+    if(!current.size)return{all:[],changed:[],missing:[],unchanged:[]};
+    const changed=new Set((state.movementHistory||[]).map((item)=>normalize(item.mac||item.macFormatted)).filter((mac)=>mac&&current.has(mac)));
+    const latestHistory=new Map();
+    (state.snapshots||[]).forEach((snapshot)=>(snapshot.devices||[]).forEach((device)=>{const mac=normalize(device.mac||device.macFormatted);if(mac&&!latestHistory.has(mac))latestHistory.set(mac,device);}));
+    (state.movementHistory||[]).forEach((item)=>{const mac=normalize(item.mac||item.macFormatted);if(mac&&!latestHistory.has(mac))latestHistory.set(mac,{mac,macFormatted:formatMac(mac),vendor:"Unknown"});});
+    const changedDevices=[],unchangedDevices=[];
+    current.forEach((device,mac)=>{const row={...device,dashboardStatus:changed.has(mac)?"changed":"unchanged"};(changed.has(mac)?changedDevices:unchangedDevices).push(row);});
+    const missingDevices=[...latestHistory.entries()].filter(([mac])=>!current.has(mac)).map(([mac,device])=>({...device,mac:device.mac||mac,macFormatted:device.macFormatted||formatMac(mac),dashboardStatus:"missing"}));
+    return{all:[...changedDevices,...unchangedDevices],changed:changedDevices,missing:missingDevices,unchanged:unchangedDevices};
+  }
+  function dashboardScope(devices,settings){return(devices||[]).filter((device)=>(!settings.vendor||String(device.vendor||"Unknown")===settings.vendor)&&(!settings.room||String(device.room||"Unknown")===settings.room)&&((settings.showUnknown!==false)||device.vendor&&device.vendor!=="Unknown"));}
+  function dashboardMovementCharts(displayed,missing,limit=8){
+    const daily={},fields={},fieldLabels={vendor:"Производитель",model:"Модель",ip:"IP-адрес",address:"Адрес",room:"Помещение",switch_ip:"Коммутатор",switchIp:"Коммутатор",switch_port:"Порт",switchPort:"Порт"};
+    (state.movementHistory||[]).forEach((item)=>{const date=String(item.changedAt||item.changed_at||item.date_str||"").slice(0,10),field=item.field||item.field_name;if(date)daily[date]=(daily[date]||0)+1;if(field)fields[fieldLabels[field]||field]=(fields[fieldLabels[field]||field]||0)+1;});
+    const top=(items)=>Object.entries(items).sort((a,b)=>b[1]-a[1]).slice(0,limit),tally=(devices)=>top((devices||[]).reduce((result,device)=>{const key=device.vendor||"Unknown";result[key]=(result[key]||0)+1;return result;},{}));
+    return{dynamics:Object.entries(daily).sort((a,b)=>a[0].localeCompare(b[0])).slice(-limit),vendors:tally(displayed),fields:top(fields),missing:tally(missing)};
+  }
+  function dashboardSnapshotId(snapshot,index){return String(snapshot?.id||snapshot?.snapshotId||snapshot?.name||`snapshot-${index+1}`);}
+  function dashboardSnapshotOptions(){return(state.snapshots||[]).map((snapshot,index)=>({id:dashboardSnapshotId(snapshot,index),name:String(snapshot.name||dashboardSnapshotId(snapshot,index)),date:String(snapshot.fileCreatedAt||snapshot.createdAt||snapshot.created_at||"")}));}
+  function dashboardChangeSeverity(type,field){if(type==="removed"||["switchIp","switchPort","switch_ip","switch_port"].includes(field))return"critical";if(["ip","address","room"].includes(field))return"high";if(["vendor","model"].includes(field))return"medium";return"low";}
+  function localDashboardChangeAnalysis(settings=dashboardSettings()){
+    const fieldLabels={vendor:"Производитель",model:"Модель",ip:"IP-адрес",address:"Адрес",room:"Помещение",switchIp:"Коммутатор",switchPort:"Порт",device:"Устройство"},typeLabels={added:"Добавлено",removed:"Удалено",modified:"Изменено"},options=dashboardSnapshotOptions(),changes=[];
+    const row=(mac,date,type,field="device",before="",after="",source="history")=>{field=({switch_ip:"switchIp",switch_port:"switchPort"})[field]||field;changes.push({mac,macFormatted:formatMac(mac),date,type,typeLabel:typeLabels[type]||"Изменено",field,fieldLabel:fieldLabels[field]||field,before:String(before||"-"),after:String(after||"-"),source:String(source||"history"),severity:dashboardChangeSeverity(type,field)});};
+    let baselineSnapshotId=settings.baselineSnapshotId||options[0]?.id||"",comparisonSnapshotId=settings.comparisonSnapshotId||options.at(-1)?.id||"",dateFrom=settings.changeDateFrom||"",dateTo=settings.changeDateTo||"";
+    if(settings.changeMode==="snapshots"&&(state.snapshots||[]).length>=2){
+      const byId=new Map(state.snapshots.map((snapshot,index)=>[dashboardSnapshotId(snapshot,index),snapshot])),baseline=byId.get(baselineSnapshotId)||state.snapshots[0],comparison=byId.get(comparisonSnapshotId)||state.snapshots.at(-1),beforeMap=new Map((baseline.devices||[]).map((device)=>[normalize(device.mac||device.macFormatted),device]).filter(([mac])=>mac)),afterMap=new Map((comparison.devices||[]).map((device)=>[normalize(device.mac||device.macFormatted),device]).filter(([mac])=>mac)),date=comparison.fileCreatedAt||comparison.createdAt||comparison.created_at||"";
+      afterMap.forEach((device,mac)=>{if(!beforeMap.has(mac))row(mac,date,"added","device","",device.source||"Устройство","snapshot");});
+      beforeMap.forEach((device,mac)=>{if(!afterMap.has(mac))row(mac,date,"removed","device",device.source||"Устройство","","snapshot");});
+      const fields=["vendor","model","ip","address","room","switchIp","switchPort"];
+      afterMap.forEach((device,mac)=>{const before=beforeMap.get(mac);if(!before)return;fields.forEach((field)=>{if(String(before[field]||"")!==String(device[field]||""))row(mac,date,"modified",field,before[field],device[field],"snapshot");});});
+    }else{
+      const end=dateTo?new Date(`${dateTo}T23:59:59`):new Date(),start=dateFrom?new Date(`${dateFrom}T00:00:00`):new Date(end.getTime()-30*86400000);dateFrom=dateFrom||start.toISOString().slice(0,10);dateTo=dateTo||end.toISOString().slice(0,10);
+      (state.movementHistory||[]).forEach((item)=>{const date=String(item.changedAt||item.changed_at||item.date_str||""),parsed=date?new Date(date):null;if(parsed&&!Number.isNaN(parsed.valueOf())&&(parsed<start||parsed>end))return;let type=String(item.type||item.change_type||"modified").toLowerCase();if(!["added","removed","modified"].includes(type))type="modified";row(normalize(item.mac||item.macFormatted),date,type,item.field||item.field_name||"device",item.before??item.from_value??item.old_value,item.after??item.to_value??item.new_value,item.source||item.file_name||"history");});
+    }
+    changes.sort((a,b)=>String(b.date).localeCompare(String(a.date)));const summary={added:changes.filter((item)=>item.type==="added").length,removed:changes.filter((item)=>item.type==="removed").length,modified:changes.filter((item)=>item.type==="modified").length,critical:changes.filter((item)=>item.severity==="critical").length,total:changes.length};return{mode:settings.changeMode,dateFrom,dateTo,baselineSnapshotId,comparisonSnapshotId,snapshotOptions:options,summary,changes};
+  }
+  function syncDashboardChangeControls(settings=state.dashboardSettings,options=dashboardSnapshotOptions()){
+    const mode=$("#dashboardChangeMode");if(mode)mode.value=settings.changeMode||"period";if($("#dashboardChangeDateFrom"))$("#dashboardChangeDateFrom").value=settings.changeDateFrom||"";if($("#dashboardChangeDateTo"))$("#dashboardChangeDateTo").value=settings.changeDateTo||"";
+    if($("#dashboardPeriodControls"))$("#dashboardPeriodControls").hidden=(settings.changeMode==="snapshots");if($("#dashboardSnapshotControls"))$("#dashboardSnapshotControls").hidden=(settings.changeMode!=="snapshots");
+    const fill=(selector,selected)=>{const node=$(selector);if(!node)return;node.innerHTML=options.length?options.map((item)=>`<option value="${esc(item.id)}" ${item.id===selected?"selected":""}>${esc(item.name)}${item.date?` · ${esc(item.date.slice(0,10))}`:""}</option>`).join(""):'<option value="">Нет сохранённых выгрузок</option>';};fill("#dashboardBaselineSnapshot",settings.baselineSnapshotId||options[0]?.id||"");fill("#dashboardComparisonSnapshot",settings.comparisonSnapshotId||options.at(-1)?.id||"");
+  }
+  function renderDashboardChanges(analysis={}){dashboardChangeAnalysis=analysis?.changes?analysis:localDashboardChangeAnalysis();const summary=dashboardChangeAnalysis.summary||{},set=(selector,value)=>{if($(selector))$(selector).textContent=String(value||0);};set("#dashboardChangeTotal",summary.total);set("#dashboardCriticalCount",summary.critical);set("#dashboardAddedCount",summary.added);set("#dashboardRemovedCount",summary.removed);set("#dashboardModifiedCount",summary.modified);const label=dashboardChangeAnalysis.mode==="snapshots"?`Выгрузки: ${dashboardChangeAnalysis.baselineSnapshotId||"-"} → ${dashboardChangeAnalysis.comparisonSnapshotId||"-"}`:`Период: ${dashboardChangeAnalysis.dateFrom||"-"} → ${dashboardChangeAnalysis.dateTo||"-"}`;if($("#dashboardChangesPeriodLabel"))$("#dashboardChangesPeriodLabel").textContent=label;syncDashboardChangeControls({...state.dashboardSettings,...dashboardChangeAnalysis},dashboardChangeAnalysis.snapshotOptions||dashboardSnapshotOptions());renderDashboardChangesTable();}
+  function renderDashboardChangesTable(){const severity=$("#dashboardChangeSeverityFilter")?.value||"all",query=($("#dashboardChangeSearch")?.value||"").trim().toLowerCase(),labels={critical:"Критическое",high:"Высокое",medium:"Среднее",low:"Низкое"},rows=(dashboardChangeAnalysis.changes||[]).filter((item)=>(severity==="all"||item.severity===severity)&&(!query||[item.macFormatted,item.fieldLabel,item.before,item.after,item.source].some((value)=>String(value||"").toLowerCase().includes(query))));$("#dashboardChangesBody").innerHTML=rows.length?rows.map((item)=>`<tr class="change-row change-${esc(item.severity)}"><td><span class="severity-badge severity-${esc(item.severity)}">${labels[item.severity]||item.severity}</span></td><td>${esc(String(item.date||"-").replace("T"," ").slice(0,19))}</td><td>${esc(item.macFormatted||item.mac)}</td><td>${esc(item.typeLabel)}</td><td>${esc(item.fieldLabel)}</td><td>${esc(item.before)}</td><td>${esc(item.after)}</td><td>${esc(item.source)}</td></tr>`).join(""):'<tr><td colspan="8" class="empty-state">Изменений по выбранным условиям не найдено.</td></tr>';}
+  function showDashboardChangesDialog(){renderDashboardChangesTable();const dialog=$("#dashboardChangesDialog");if(dialog&&!dialog.open)dialog.showModal();}
+  function readDashboardChangeControls(){const current=dashboardSettings();current.changeMode=$("#dashboardChangeMode")?.value||"period";current.changeDateFrom=$("#dashboardChangeDateFrom")?.value||"";current.changeDateTo=$("#dashboardChangeDateTo")?.value||"";current.baselineSnapshotId=$("#dashboardBaselineSnapshot")?.value||"";current.comparisonSnapshotId=$("#dashboardComparisonSnapshot")?.value||"";state.dashboardSettings=normalizeDashboardSettings(current);save();return state.dashboardSettings;}
+  function renderDashboardStatus(payload={}){
+    const metrics=payload.metrics||{},total=Number(metrics.total||0),changed=Number(metrics.changed||0),unchanged=Number(metrics.unchanged||0),settings=payload.settings||dashboardSettings(),charts=payload.statusCharts||{};
+    const set=(selector,value)=>{const node=$(selector);if(node)node.textContent=value;};
+    set("#dashboardTotalMetric",total);set("#dashboardChangedMetric",changed);set("#dashboardMissingMetric",Number(metrics.missing||0));set("#dashboardUnchangedMetric",unchanged);set("#dashboardVendorMetric",Number(metrics.vendors||0));set("#dashboardRoomCountMetric",Number(metrics.rooms||0));
+    const critical=Number(payload.changeAnalysis?.summary?.critical||0);set("#dashboardChangedHint",`${total?Math.round(changed/total*100):0}% от всех · критических: ${critical}`);set("#dashboardUnchangedHint",`${total?Math.round(unchanged/total*100):0}% от всех`);
+    $$("[data-dashboard-status]").forEach((button)=>button.classList.toggle("active-filter",button.dataset.dashboardStatus===(settings.status||"all")));
+    const draw=(selector,items,empty)=>{const node=$(selector);if(node)node.innerHTML=localChartHtml((items||[]).map((item)=>Array.isArray(item)?item:[item.label,item.value]),empty);};
+    draw("#dashboardDynamicsChart",charts.dynamics,"Нет изменений за 30 дней.");draw("#dashboardStatusVendorChart",charts.vendors,"Нет данных производителей.");draw("#dashboardFieldChangesChart",charts.fields,"Изменения полей не найдены.");draw("#dashboardMissingChart",charts.missing,"Отсутствовавших устройств нет.");
+    renderDashboardChanges(payload.changeAnalysis||localDashboardChangeAnalysis(settings));
+  }
+  function applyLocalDashboard(settings=dashboardSettings()){
+    renderLocalDashboardFilterOptions(settings);
+    const context=dashboardStatusContext(),scope={all:dashboardScope(context.all,settings),changed:dashboardScope(context.changed,settings),missing:dashboardScope(context.missing,settings),unchanged:dashboardScope(context.unchanged,settings)};
+    dashboardFilteredDevices=scope[settings.status]||scope.all;
+    const devices=dashboardFilteredDevices,unique=new Set(devices.map((device)=>normalize(device.mac||device.macFormatted)).filter(Boolean)),metrics={devices:devices.length,total:scope.all.length,changed:scope.changed.length,missing:scope.missing.length,unchanged:scope.unchanged.length,vendors:new Set(scope.all.map((device)=>device.vendor).filter((value)=>value&&value!=="Unknown")).size,rooms:new Set(scope.all.map((device)=>device.room).filter((value)=>value&&value!=="Unknown")).size,switches:new Set(devices.map((device)=>device.switchIp||device.switch_ip).filter(Boolean)).size};
+    const chartRows=dashboardMovementCharts(devices,scope.missing,settings.chartLimit);
+    renderDashboardStatus({metrics,settings,changeAnalysis:localDashboardChangeAnalysis(settings),statusCharts:Object.fromEntries(Object.entries(chartRows).map(([key,items])=>[key,items.map(([label,value])=>({label,value}))]))});
+    $("#snapshotMetric").textContent=state.snapshots.length||0;$("#uniqueMacMetric").textContent=unique.size;$("#switchMetric").textContent=metrics.switches;$("#roomMetric").textContent=new Set(devices.map((device)=>device.room).filter(Boolean)).size;renderLocalAnalytics(devices);return devices;
+  }
+  async function loadDashboardPayload(settings=dashboardSettings()){
+    const data=await api("/dashboard",{method:"POST",body:JSON.stringify(currentDevicePayload({snapshots:state.snapshots,movements:state.movementHistory,settings,compactResult:Boolean(state.resultSnapshotId),resultPageSize:500}))});
+    dashboardFilteredDevices=data.devices||state.devices;
+    renderDashboardFilterOptions(data.filters||{},data.settings||settings,data.filterOptionsHtml||{});
+    renderDashboardStatus(data);
+    return data;
+  }
+  function loadAnalyticsPanel(devices=dashboardDevices()){
+    return api("/analytics/panel",{method:"POST",body:JSON.stringify(state.resultSnapshotId?currentDevicePayload({snapshots:state.snapshots}):{devices,snapshots:state.snapshots})});
+  }
+  async function renderBackendDashboard(){
+    try{
+      const data=await api("/dashboard",{method:"POST",body:JSON.stringify(currentDevicePayload({snapshots:state.snapshots,movements:state.movementHistory,settings:dashboardSettings(),compactResult:Boolean(state.resultSnapshotId),resultPageSize:500}))});
+      if(data.metrics){
+        $("#snapshotMetric").textContent=state.snapshots.length||0;
+        $("#uniqueMacMetric").textContent=data.metrics.uniqueMacs||0;
+        $("#switchMetric").textContent=data.metrics.switches||0;
+        $("#roomMetric").textContent=data.metrics.rooms||0;
+      }
+      renderDashboardStatus(data);
+      return data;
+    }catch(error){
+      applyLocalDashboard(dashboardSettings());
+      return null;
+    }
+  }
+  async function saveDashboardSettings(settings=dashboardSettings()){
+    applyDashboardSettings(settings);
+    try{
+      const result=await api("/dashboard",{method:"POST",body:JSON.stringify(currentDevicePayload({snapshots:state.snapshots,movements:state.movementHistory,settings:state.dashboardSettings,saveSettings:true,compactResult:Boolean(state.resultSnapshotId),resultPageSize:500}))});
+      applyDashboardSettings(result.settings||state.dashboardSettings);
+      toast("Настройки dashboard сохранены.");
+    }catch(error){
+      applyLocalDashboard(state.dashboardSettings);save();toast("Настройки dashboard сохранены локально.");
+    }
+    $("#dashboardSettingsDialog")?.close();renderAnalytics();
+  }
+  function exportLocalDashboardPng(){
+    const settings=dashboardSettings(),context=dashboardStatusContext(),scope={all:dashboardScope(context.all,settings),changed:dashboardScope(context.changed,settings),missing:dashboardScope(context.missing,settings),unchanged:dashboardScope(context.unchanged,settings)},devices=scope[settings.status]||scope.all,charts=dashboardMovementCharts(devices,scope.missing,8);
+    const canvas=document.createElement("canvas");canvas.width=2000;canvas.height=1200;const ctx=canvas.getContext("2d"),surface="#ffffff",text="#172033",muted="#667085",accent="#2563eb";ctx.fillStyle="#f4f7fb";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle=text;ctx.font="bold 34px Arial";ctx.fillText("MAC Analyzer Dashboard",40,60);ctx.fillStyle=muted;ctx.font="17px Arial";ctx.fillText("Создано: "+new Date().toLocaleString("ru-RU"),40,90);
+    const metrics=[["Всего устройств",scope.all.length],["Изменённые",scope.changed.length],["Отсутствовавшие",scope.missing.length],["Без изменений",scope.unchanged.length],["Производителей",new Set(scope.all.map((item)=>item.vendor).filter((value)=>value&&value!=="Unknown")).size],["Помещений",new Set(scope.all.map((item)=>item.room).filter(Boolean)).size]],gap=14,cardW=(1920-gap*5)/6;
+    metrics.forEach(([label,value],index)=>{const x=40+index*(cardW+gap);ctx.fillStyle=surface;ctx.fillRect(x,112,cardW,112);ctx.strokeStyle="#d7dee8";ctx.strokeRect(x,112,cardW,112);ctx.fillStyle=muted;ctx.font="16px Arial";ctx.fillText(label,x+18,146);ctx.fillStyle=text;ctx.font="bold 31px Arial";ctx.fillText(String(value),x+18,193);});
+    const chartSpecs=[["Динамика изменений по дням",charts.dynamics],["Топ производителей",charts.vendors],["Изменения по полям",charts.fields],["Отсутствовавшие устройства",charts.missing]],panelW=950,panelH=445,panelGap=20;
+    chartSpecs.forEach(([title,items],index)=>{const x=40+(index%2)*(panelW+panelGap),y=250+Math.floor(index/2)*(panelH+panelGap);ctx.fillStyle=surface;ctx.fillRect(x,y,panelW,panelH);ctx.strokeStyle="#d7dee8";ctx.strokeRect(x,y,panelW,panelH);ctx.fillStyle=text;ctx.font="bold 21px Arial";ctx.fillText(title,x+22,y+42);const rows=(items||[]).slice(0,8),max=Math.max(1,...rows.map((item)=>Number(item[1]||0)));if(!rows.length){ctx.fillStyle=muted;ctx.font="15px Arial";ctx.fillText("Нет данных",x+22,y+92);return;}rows.forEach(([label,value],row)=>{const rowY=y+72+row*43,barX=x+245,barW=610;ctx.fillStyle=text;ctx.font="15px Arial";ctx.fillText(String(label).slice(0,25),x+22,rowY+18);ctx.fillStyle="#e8edf5";ctx.fillRect(barX,rowY,barW,20);ctx.fillStyle=accent;ctx.fillRect(barX,rowY,Math.max(2,barW*Number(value||0)/max),20);ctx.fillStyle=text;ctx.fillText(String(value),barX+barW+12,rowY+17);});});
+    return new Promise((resolve,reject)=>canvas.toBlob((blob)=>{if(!blob)return reject(new Error("Canvas PNG is empty"));const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`dashboard_${new Date().toISOString().replace(/[-:T]/g,"").slice(0,14)}.png`;a.click();URL.revokeObjectURL(a.href);resolve();},"image/png"));
+  }
+  async function exportDashboard(){
+    try{
+      const data=await api("/dashboard",{method:"POST",body:JSON.stringify(currentDevicePayload({snapshots:state.snapshots,movements:state.movementHistory,settings:dashboardSettings(),exportFormat:"png",compactResult:Boolean(state.resultSnapshotId),resultPageSize:500}))});
+      if(!data.export?.binary||!data.export.content)throw new Error("Dashboard PNG export is empty");
+      downloadBase64(data.export.filename||"mac-dashboard.png",data.export.content,data.export.mimeType||"image/png");
+      toast("Dashboard экспортирован в PNG.");
+    }catch(error){
+      await exportLocalDashboardPng();toast("Dashboard экспортирован в PNG локально.");
+    }
+  }
+  function externalApiSettings(){
+    return {
+      enabled:$("#externalApiEnabled")?.checked||false,
+      provider:$("#externalProviderSelect")?.value||"macvendors",
+      endpoint:$("#externalEndpointInput")?.value||"",
+      rateLimit:Number($("#externalRateLimitInput")?.value||25),
+      cacheTtlDays:30,
+      onlyUnknown:true
+    };
+  }
+  function applyExternalApiSettings(settings={},providers=[]){
+    const normalized={...empty().externalApiSettings,...settings,provider:String(settings.provider||"macvendors")};
+    state.externalApiSettings=normalized;
+    if(Array.isArray(providers)&&providers.length){
+      const optionHtml=providers.map((item)=>`<option value="${esc(item.key)}">${esc(item.description||item.key)}</option>`).join("");
+      const dialogOptionHtml=providers.filter((item)=>item.key!=="custom").map((item)=>`<option value="${esc(item.key)}">${esc(item.key+" - "+(item.description||item.key))}</option>`).join("");
+      if(optionHtml)$("#externalProviderSelect").innerHTML=optionHtml;
+      if(dialogOptionHtml)$("#apiSettingsServiceSelect").innerHTML=dialogOptionHtml;
+    }
+    if($("#externalApiEnabled"))$("#externalApiEnabled").checked=Boolean(normalized.enabled);
+    if($("#externalProviderSelect"))$("#externalProviderSelect").value=normalized.provider;
+    if($("#externalEndpointInput"))$("#externalEndpointInput").value=normalized.endpoint||"";
+    if($("#externalRateLimitInput"))$("#externalRateLimitInput").value=normalized.rateLimit||25;
+    if($("#apiSettingsServiceSelect")&&normalized.provider!=="custom")$("#apiSettingsServiceSelect").value=normalized.provider;
+    save();
+  }
+  async function saveExternalApiSettings(){
+    const settings=externalApiSettings();
+    try{
+      const result=await api("/external-enrichment/settings",{method:"POST",body:JSON.stringify({settings})});
+      applyExternalApiSettings(result.settings||settings,result.providers||[]);
+      toast("Настройки внешнего API сохранены: "+result.settings.provider);
+      return result.settings;
+    }catch(error){applyExternalApiSettings(settings);toast("Настройки API сохранены локально.");return settings;}
+  }
+  async function loadExternalApiSettings(){
+    try{
+      const result=await api("/external-enrichment/settings");
+      applyExternalApiSettings(result.settings||{},result.providers||[]);
+    }catch{applyExternalApiSettings(state.externalApiSettings||{});}
+  }
+  function showApiSettingsDialog(){const provider=$("#externalProviderSelect").value;if(provider!=="custom")$("#apiSettingsServiceSelect").value=provider;$("#apiSettingsTestResult").textContent="Введите MAC-адрес для тестирования.";$("#apiSettingsTestResult").className="api-test-result muted";$("#apiSettingsDialog").showModal();}
+  async function testApiSettingsDialog(){
+    const input=$("#apiSettingsTestMacInput"),resultNode=$("#apiSettingsTestResult"),mac=input.value.trim(),normalized=normalize(mac);
+    if(!normalized){resultNode.textContent="Введите корректный MAC-адрес из 12 шестнадцатеричных символов.";resultNode.className="api-test-result error";return;}
+    resultNode.textContent="Выполняется запрос...";resultNode.className="api-test-result muted";
+    const provider=$("#apiSettingsServiceSelect").value,settings={...externalApiSettings(),provider,enabled:true};
+    try{const response=await api("/external-enrichment/test",{method:"POST",body:JSON.stringify({mac,settings})});resultNode.textContent=response.vendor?"Найден производитель: "+response.vendor:"Производитель не найден или API недоступен";resultNode.className="api-test-result "+(response.vendor?"success":"error");await refreshApiCacheStatus();}
+    catch(error){const vendor=localVendor(mac);resultNode.textContent=vendor!=="Unknown"?"Найден производитель: "+vendor+" (встроенная HTML-база)":"Производитель не найден или API недоступен";resultNode.className="api-test-result "+(vendor!=="Unknown"?"success":"error");}
+  }
+  async function saveApiSettingsDialog(){const provider=$("#apiSettingsServiceSelect").value;$("#externalProviderSelect").value=provider;await saveExternalApiSettings();$("#apiSettingsDialog").close();}
+  async function refreshApiCacheStatus(){
+    try{
+      const result=await api("/api-cache?limit=5"),cache=result.cache||{};
+      if($("#apiCacheStatus"))$("#apiCacheStatus").textContent=(cache.total||0)+" entries";
+      return cache;
+    }catch(error){if($("#apiCacheStatus"))$("#apiCacheStatus").textContent="cache unavailable";throw error;}
+  }
+  async function clearApiCache(){
+    try{
+      const result=await api("/api-cache/clear",{method:"POST",body:JSON.stringify({prefix:"external_vendor:"})});
+      await refreshApiCacheStatus();
+      toast("API cache cleared: "+result.deleted);
+    }catch(error){toast(error.message);}
+  }
+  async function renderBackendClusters(devices=state.devices){
+    const root=$("#clusterChart"); if(!root)return;
+    try{
+      const data=await(analyticsPanelPromise||loadAnalyticsPanel(devices));
+      root.innerHTML=data.clusterRowsHtml||data.emptyClusterRowsHtml||'<p class="muted">Backend не нашёл кластеров.</p>';
+    }catch(error){
+      root.innerHTML='<p class="muted">Cluster backend unavailable: '+esc(error.message)+'</p>';
+    }
+  }
+  async function exportClusters(){
+    try{
+      const data=await api("/clusters",{method:"POST",body:JSON.stringify(state.resultSnapshotId?currentDevicePayload({fields:["vendor","room","switchIp"],minSize:1,exportFormat:"csv"}):{devices:dashboardDevices(),fields:["vendor","room","switchIp"],minSize:1,exportFormat:"csv"})});
+      if(!data.export)throw new Error("Cluster export is empty");
+      download(data.export.filename||"mac-clusters.csv","\uFEFF"+data.export.content,data.export.mimeType||"text/csv");
+      toast("Кластеры экспортированы backend-сервисом.");
+    }catch(error){
+      toast(error.message);
+    }
+  }
+  async function renderBackendTopology(devices=state.devices){
+    const root=$("#topologyGraph"); if(!root)return;
+    try{
+      const data=await api("/topology",{method:"POST",body:JSON.stringify(state.resultSnapshotId?currentDevicePayload():{devices})});
+      root.innerHTML=data.topologyHtml||data.emptyTopologyHtml||'<p class="muted">Backend не нашёл связей топологии.</p>';
+    }catch(error){
+      root.innerHTML='<p class="muted">Topology backend unavailable: '+esc(error.message)+'</p>';
+    }
+  }
+  async function exportTopology(){
+    try{
+      const data=await api("/topology",{method:"POST",body:JSON.stringify(state.resultSnapshotId?currentDevicePayload({exportFormat:"html"}):{devices:dashboardDevices(),exportFormat:"html"})});
+      if(!data.export)throw new Error("Topology export is empty");
+      download(data.export.filename||"mac-topology.html",data.export.content,data.export.mimeType||"text/html");
+      toast("Топология экспортирована backend-сервисом.");
+    }catch(error){
+      toast(error.message);
+    }
+  }
+  function renderQualityReport(panel){
+    $("#qualityInsights").innerHTML=panel.insightsHtml||'<p class="muted">Backend не нашёл проблем качества.</p>';
+  }
+  async function renderQualityReportsHistory(){
+    const root=$("#qualityReportsList"); if(!root)return;
+    try{
+      const data=await api("/quality/reports?limit=5");
+      root.innerHTML=data.reportsHtml||data.emptyReportsHtml||'<p class="muted">Saved quality reports are empty.</p>';
+    }catch(error){
+      root.innerHTML='<p class="muted">Quality reports unavailable: '+esc(error.message)+'</p>';
+    }
+  }
+  function analyzeLocalQuality(){const devices=dashboardDevices(),missingMac=devices.filter((device)=>!normalize(device.mac||device.macFormatted)).length,unknown=devices.filter((device)=>!device.vendor||device.vendor==="Unknown").length,missingIp=devices.filter((device)=>!device.ip).length;$("#qualityInsights").innerHTML=localChartHtml([["Ошибки MAC",missingMac+state.invalid.length],["Unknown vendor",unknown],["Нет IP",missingIp]].filter((item)=>item[1]>0),"Проблем качества не найдено.");toast("Локальный анализ качества данных завершён.");}
+  async function analyzeQuality(){
+    try{
+      const data=await api("/quality/panel",{method:"POST",body:JSON.stringify(state.resultSnapshotId?currentDevicePayload({invalid:state.invalid,source:"current-browser-dataset",save:true}):{devices:dashboardDevices(),invalid:state.invalid,source:"current-browser-dataset",save:true})});
+      renderQualityReport(data);
+      await renderQualityReportsHistory();
+      toast("Backend анализ качества данных завершён.");
+    }catch(error){analyzeLocalQuality();}
+  }
+  async function renderAnalytics(){applyLocalDashboard(dashboardSettings());try{await loadDashboardPayload();}catch(error){applyLocalDashboard(dashboardSettings());}const devices=dashboardDevices();analyticsPanelPromise=loadAnalyticsPanel(devices);renderPrimaryCharts();renderBackendStatistics();renderTemporalStatistics();renderBackendCharts();renderBackendDashboard();renderBackendClusters(devices);renderBackendTopology(devices);renderQualityReportsHistory();refreshAnalyticsReport();}
+  function historyQueryParams(query="", from="", to="", limit="500"){
+    const params=new URLSearchParams({limit});
+    if(query)params.set("query",query);
+    if(from)params.set("from",from);
+    if(to)params.set("to",to);
+    return params;
+  }
+  function loadHistoryPanel(query="", from="", to="", limit="500"){
+    return api("/history/panel?"+historyQueryParams(query,from,to,limit).toString());
+  }
+  function renderHistory(){
+    const query=($("#historySearchInput")?.value||"").trim();
+    const from=$("#historyDateFrom").value,to=$("#historyDateTo").value;
+    historyPanelPromise=loadHistoryPanel(query, from, to);
+    renderSnapshotHistory(query, from, to);
+    renderBackendHistorySummaries(query, from, to);
+    renderSqliteHistory(query, from, to);
+    renderVendorModelHistory(query, from, to);
+    renderMovementHistory(query, from, to);
+  }
+  function localHistoryItems(query="", from="", to=""){
+    const q=String(query||"").toLowerCase(),fromTime=from?Date.parse(from+"T00:00:00"):0,toTime=to?Date.parse(to+"T23:59:59"):Infinity;
+    return (state.snapshots||[]).filter((snapshot)=>{const time=Date.parse(snapshot.createdAt||snapshot.date||"")||0,text=[snapshot.name,snapshot.source,(snapshot.devices||[]).map((device)=>[device.mac,device.macFormatted,device.vendor,device.model,device.ip,device.address,device.room,device.switchIp].join(" ")).join(" ")].join(" ").toLowerCase();return time>=fromTime&&time<=toTime&&(!q||text.includes(q));});
+  }
+  function localSnapshotHistoryRows(query="", from="", to=""){
+    const snapshots=localHistoryItems(query,from,to);
+    return snapshots.length?snapshots.map((snapshot)=>`<tr><td>${esc(snapshot.createdAt?new Date(snapshot.createdAt).toLocaleString("ru-RU"):"")}</td><td>${esc(snapshot.name||"Snapshot")}</td><td>${(snapshot.devices||[]).length}</td><td>${esc(snapshot.source||"browser")}</td><td><button class="button secondary" data-local-snapshot="${esc(snapshot.id)}">Открыть</button></td></tr>`).join(""):'<tr><td colspan="5" class="empty-state">Локальная история снимков пока пуста.</td></tr>';
+  }
+  function localFlatHistory(query="", from="", to=""){
+    return localHistoryItems(query,from,to).flatMap((snapshot)=>(snapshot.devices||[]).map((device)=>({...device,_snapshot:snapshot})));
+  }
+  function localMovementItems(query="", from="", to=""){
+    const snapshots=localHistoryItems(query,from,to).slice().sort((a,b)=>(Date.parse(a.createdAt||"")||0)-(Date.parse(b.createdAt||"")||0));
+    const q=String(query||"").toLowerCase(),fromTime=from?Date.parse(from+"T00:00:00"):0,toTime=to?Date.parse(to+"T23:59:59"):Infinity;
+    const movements=(state.movementHistory||[]).filter((item)=>{const time=Date.parse(item.changedAt||"")||0,text=[item.mac,item.type,item.field,item.before,item.after,item.source].join(" ").toLowerCase();return time>=fromTime&&time<=toTime&&(!q||text.includes(q));});
+    for(let index=1;index<snapshots.length;index++){
+      const before=snapshots[index-1],after=snapshots[index],result=localComparisonPayload({baselineId:before.id,currentId:after.id,fields:["vendor","model","ip","address","room","switchIp","switchPort"]});
+      for(const change of result.changes||[])movements.push({...change,changedAt:after.createdAt||"",source:(before.name||before.source||"snapshot")+" → "+(after.name||after.source||"snapshot")});
+    }
+    return movements.reverse();
+  }
+  function localMovementTableRows(items){
+    return items.length?items.slice(0,500).map((item)=>`<tr data-mac="${esc(item.mac||"")}"><td>${esc((item.changedAt||item.changed_at)?new Date(item.changedAt||item.changed_at).toLocaleString("ru-RU"):"")}</td><td>${esc(formatMac(item.mac)||item.mac)}</td><td>${esc(item.type||"Изменено")}</td><td>${esc(item.field||item.field_name||"")}</td><td>${esc(item.before??item.from_value??"")}</td><td>${esc(item.after??item.to_value??"")}</td><td>${esc(item.source||"")}</td></tr>`).join(""):'<tr><td colspan="7" class="empty-state">Изменений между загрузками пока нет.</td></tr>';
+  }
+  function movementHistoryFilters(){return{query:($("#movementSearchInput")?.value||"").trim(),changeType:$("#movementTypeFilter")?.value||"",field:$("#movementFieldFilter")?.value||"",dateFrom:$("#movementDateFrom")?.value||"",dateTo:$("#movementDateTo")?.value||""};}
+  function movementHistoryParams(filters=movementHistoryFilters()){
+    const params=new URLSearchParams({limit:"5000"}),names={query:"query",changeType:"type",field:"field",dateFrom:"from",dateTo:"to"};
+    Object.entries(names).forEach(([key,name])=>{if(filters[key])params.set(name,filters[key]);});return params;
+  }
+  function localMovementChangeType(item){const before=String(item.before??item.from_value??""),after=String(item.after??item.to_value??"");return!before&&after?"added":before&&!after?"removed":"modified";}
+  function localEnhancedMovementRows(items){
+    return items.length?items.slice(0,500).map((item)=>{const type=localMovementChangeType(item),mac=normalize(item.mac)||"";return`<tr class="movement-child-row movement-${type}" data-mac="${esc(mac)}"><td data-movement-column="mac">${esc(formatMac(mac)||mac)}</td><td data-movement-column="count">1</td><td data-movement-column="dates">${esc((item.changedAt||item.changed_at)?new Date(item.changedAt||item.changed_at).toLocaleString("ru-RU"):"")}</td><td data-movement-column="vendor"></td><td data-movement-column="model"></td><td data-movement-column="room"></td><td data-movement-column="field">${esc(item.field||item.field_name||"")}</td><td data-movement-column="before">${esc(item.before??item.from_value??"")}</td><td data-movement-column="after">${esc(item.after??item.to_value??"")}</td><td data-movement-column="source">${esc(item.source||"")}</td></tr>`;}).join(""):'<tr><td colspan="10" class="empty-state">Нет изменений за выбранный период.</td></tr>';
+  }
+  function applyMovementColumnSettings(settings=movementColumnSettings){
+    movementColumnSettings=settings||movementColumnSettings;const visible=new Set(movementColumnSettings.visible||[]),widths=movementColumnSettings.widths||{};
+    $$('[data-movement-column]').forEach((cell)=>{const key=cell.dataset.movementColumn;cell.hidden=!visible.has(key);const width=Math.max(64,Math.min(600,Number(widths[key])||150));cell.style.width=width+"px";cell.style.minWidth=width+"px";cell.style.maxWidth=width+"px";});
+    $$('[data-movement-column-toggle]').forEach((input)=>{input.checked=visible.has(input.dataset.movementColumnToggle);});
+    $$('[data-movement-column-width]').forEach((input)=>{input.value=String(Math.max(64,Math.min(600,Number(widths[input.dataset.movementColumnWidth])||150)));});
+  }
+  function readMovementColumnSettings(){
+    const visible=$$('[data-movement-column-toggle]:checked').map((input)=>input.dataset.movementColumnToggle),widths={...movementColumnSettings.widths};
+    $$('[data-movement-column-width]').forEach((input)=>{widths[input.dataset.movementColumnWidth]=Math.max(64,Math.min(600,Number(input.value)||150));});
+    return{visible,widths};
+  }
+  async function saveMovementColumnSettings(settings=readMovementColumnSettings(),showToast=true){
+    if(!settings.visible.length){toast("Оставьте видимой хотя бы одну колонку.");return false;}
+    try{const result=await api("/history/movements/columns",{method:"POST",body:JSON.stringify({settings})});movementColumnSettings=result.settings;applyMovementColumnSettings();if(showToast)toast("Колонки расширенной истории сохранены.");return true;}catch(error){toast(error.message);return false;}
+  }
+  function optimizeMovementColumns(){
+    const widths={...movementColumnSettings.widths};
+    for(const key of movementColumnSettings.visible||[]){const texts=$$(`[data-movement-column="${key}"]`).slice(0,250).map((cell)=>String(cell.textContent||"").trim().length);widths[key]=Math.max(72,Math.min(420,Math.max(8,...texts)*8+28));}
+    movementColumnSettings={...movementColumnSettings,widths};applyMovementColumnSettings();
+  }
+  function startMovementColumnResize(event){const handle=event.target.closest("[data-movement-resize]");if(!handle)return;event.preventDefault();const column=handle.dataset.movementResize,startWidth=Number(movementColumnSettings.widths?.[column])||150;movementColumnResize={column,startX:event.clientX,startWidth,handle};handle.classList.add("active");handle.setPointerCapture?.(event.pointerId);}
+  function resizeMovementColumn(event){if(!movementColumnResize)return;const width=Math.max(64,Math.min(600,movementColumnResize.startWidth+event.clientX-movementColumnResize.startX));movementColumnSettings.widths[movementColumnResize.column]=Math.round(width);applyMovementColumnSettings();}
+  function finishMovementColumnResize(){if(!movementColumnResize)return;movementColumnResize.handle?.classList.remove("active");movementColumnResize=null;saveMovementColumnSettings(movementColumnSettings,false);}
+  function setMovementGroupsExpanded(expanded){$$('[data-movement-child]').forEach((row)=>{row.hidden=!expanded;});$$('[data-toggle-movement-group]').forEach((button)=>{button.textContent=expanded?"▾":"▸";button.setAttribute("aria-expanded",expanded?"true":"false");button.title=expanded?"Свернуть группу":"Развернуть группу";});}
+  async function exportMovementHistory(){const params=movementHistoryParams();params.set("format","xlsx");const result=await api("/history/movements/export?"+params.toString());downloadBase64(result.filename||"filtered-history.xlsx",result.content,result.mimeType);toast("Расширенная история экспортирована в XLSX.");}
+  async function deleteShownMovementHistory(){if(!enhancedMovementIds.length){toast("Нет показанных SQLite-изменений для удаления.");return;}if(!state.engineeringMode||!state.engineeringToken){toast("Для удаления включите инженерный режим.");return;}if(!confirm(`Удалить показанные записи изменений (${enhancedMovementIds.length})?`))return;try{const result=await api("/history/movements/delete",{method:"POST",body:JSON.stringify({ids:enhancedMovementIds})});toast("Удалено изменений: "+result.deleted);renderMovementHistory();renderServices();}catch(error){toast(error.message);}}
+  async function renderMovementHistory(){
+    const root=$("#localMovementBody");
+    if(!root)return;
+    const filters=movementHistoryFilters();
+    try{
+      const data=await api("/history/movements?"+movementHistoryParams(filters).toString());
+      enhancedMovementIds=data.ids||[];root.innerHTML=data.rowsHtml||data.emptyRowsHtml;$("#movementHistorySummary").innerHTML=data.summaryHtml||"";
+      movementColumnSettings=data.columnSettings||movementColumnSettings;$("#movementColumnControls").innerHTML=movementColumnSettings.controlsHtml||"";applyMovementColumnSettings();
+    }catch(error){
+      let items=localMovementItems(filters.query,filters.dateFrom.slice(0,10),filters.dateTo.slice(0,10));
+      if(filters.field)items=items.filter((item)=>(item.field||item.field_name)===filters.field);if(filters.changeType)items=items.filter((item)=>localMovementChangeType(item)===filters.changeType);
+      enhancedMovementIds=[];root.innerHTML=localEnhancedMovementRows(items);$("#movementHistorySummary").innerHTML=`<div class="bar-label"><span>Локальных изменений</span><strong>${items.length}</strong></div>`;applyMovementColumnSettings();
+    }
+  }
+  function renderLocalHistorySummaries(query="", from="", to=""){
+    const rows=localFlatHistory(query,from,to),vendorRows=localTally(rows,"vendor",20),modelRows=localTally(rows,"model",20),summary=(items,label)=>items.length?items.map(([name,count])=>`<tr><td>${esc(name)}</td><td>${count}</td><td>${new Set(rows.filter((device)=>String(device[label]||"Unknown")===name).map((device)=>device.mac||device.macFormatted).filter(Boolean)).size}</td></tr>`).join(""):'<tr><td colspan="3" class="empty-state">Локальная история пуста.</td></tr>';
+    $("#vendorHistoryBody").innerHTML=summary(vendorRows,"vendor");
+    $("#modelHistoryBody").innerHTML=summary(modelRows,"model");
+  }
+  function renderLocalSqliteHistory(query="", from="", to=""){
+    const rows=localFlatHistory(query,from,to),body=$("#sqliteHistoryBody"),summary=$("#sqliteHistorySummary");
+    if(summary)summary.innerHTML=`<div class="bar-label"><span>Local history</span><strong>${rows.length}</strong></div>`;
+    if(body)body.innerHTML=rows.length?rows.slice(0,500).map((device)=>`<tr data-mac="${esc(device.mac||device.macFormatted||"")}"><td>${esc(device.macFormatted||formatMac(device.mac)||device.mac||"")}</td><td>${esc(device.vendor||"")}</td><td>${esc(device.model||"")}</td><td>${esc(device.ip||"")}</td><td>${esc(device.address||"")}</td><td>${esc(device._snapshot?.source||device.source||"browser")}</td><td>${esc(device._snapshot?.createdAt?new Date(device._snapshot.createdAt).toLocaleString("ru-RU"):"")}</td></tr>`).join(""):'<tr><td colspan="7" class="empty-state">Локальная история устройств пока пуста.</td></tr>';
+  }
+  function renderLocalVendorModelHistory(query="", from="", to=""){
+    const rows=localFlatHistory(query,from,to).filter((device)=>device.vendor||device.model),body=$("#vendorModelHistoryBody"),summary=$("#vendorModelHistorySummary");
+    if(summary)summary.innerHTML=`<div class="bar-label"><span>Local learning</span><strong>${rows.length}</strong></div>`;
+    if(body)body.innerHTML=rows.length?rows.slice(0,500).map((device)=>`<tr data-mac="${esc(device.mac||device.macFormatted||"")}"><td>${esc(device.macFormatted||formatMac(device.mac)||device.mac||"")}</td><td>${esc(device.oui||normalize(device.mac||device.macFormatted)?.slice(0,6)||"")}</td><td>${esc((normalize(device.mac||device.macFormatted)||"").slice(0,10))}</td><td>${esc(device.vendor||"")}</td><td>${esc(device.model||"")}</td><td>${esc(device._snapshot?.source||device.source||"browser")}</td><td>${esc(device._snapshot?.createdAt?new Date(device._snapshot.createdAt).toLocaleString("ru-RU"):"")}</td></tr>`).join(""):'<tr><td colspan="7" class="empty-state">Локальная история vendor/model пока пуста.</td></tr>';
+  }
+  async function renderSnapshotHistory(query="", from="", to=""){
+    const root=$("#historyBody");
+    if(!root)return;
+    try{
+      const data=await api("/statistics/snapshots?"+historyQueryParams(query,from,to,"500").toString());
+      root.innerHTML=data.tableRowsHtml||data.emptyTableRowsHtml||'<tr><td colspan="5" class="empty-state">Backend snapshot history is empty.</td></tr>';
+    }catch(error){
+      root.innerHTML=localSnapshotHistoryRows(query,from,to);
+    }
+  }
+  async function renderBackendHistorySummaries(query="", from="", to=""){
+    const vendorBody=$("#vendorHistoryBody"), modelBody=$("#modelHistoryBody");
+    if(!vendorBody||!modelBody)return;
+    try{
+      const panel=await(historyPanelPromise||loadHistoryPanel(query,from,to));
+      const summary=panel.summaryTables||{};
+      vendorBody.innerHTML=summary.vendorRowsHtml||summary.emptyRowsHtml||'<tr><td colspan="3" class="empty-state">Backend history is empty.</td></tr>';
+      modelBody.innerHTML=summary.modelRowsHtml||summary.emptyRowsHtml||'<tr><td colspan="3" class="empty-state">Backend history is empty.</td></tr>';
+    }catch(error){
+      renderLocalHistorySummaries(query,from,to);
+    }
+  }
+  async function exportHistory(){
+    const processId=beginProcess("Экспорт истории","Подготовка записей истории",10);
+    const params=new URLSearchParams({format:"html",limit:"1000"});
+    const query=($("#historySearchInput")?.value||"").trim();
+    const from=$("#historyDateFrom").value,to=$("#historyDateTo").value;
+    if(query)params.set("query",query);
+    if(from)params.set("from",from);
+    if(to)params.set("to",to);
+    try{
+      updateProcess(processId,35,"Формирование отчёта backend-сервисом");
+      const result=await api("/statistics/snapshots/export?"+params.toString());
+      updateProcess(processId,85,"Сохранение файла истории");
+      download(result.filename||"mac-history.html",result.content||"",result.mimeType||"text/html");
+      toast("История экспортирована backend-сервисом.");
+      finishProcess(processId,"История экспортирована");
+    }catch(error){
+      updateProcess(processId,55,"Backend недоступен: локальная подготовка истории");
+      const rows=localHistoryItems(query,from,to).map((snapshot)=>`<tr><td>${esc(snapshot.createdAt||"")}</td><td>${esc(snapshot.name||"Snapshot")}</td><td>${(snapshot.devices||[]).length}</td><td>${esc(snapshot.source||"browser")}</td></tr>`).join("");
+      download("mac-history.html",`<!doctype html><html><head><meta charset="utf-8"><title>MAC history</title><style>body{font:14px Arial;margin:32px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:7px;text-align:left}th{background:#eee}</style></head><body><h1>MAC Analyzer history</h1><table><thead><tr><th>Date</th><th>Snapshot</th><th>Devices</th><th>Source</th></tr></thead><tbody>${rows||'<tr><td colspan="4">Local history is empty.</td></tr>'}</tbody></table></body></html>`,"text/html");
+      toast("История экспортирована локально.");
+      finishProcess(processId,"История экспортирована в автономном режиме","warning");
+    }
+  }
+  async function renderSqliteHistory(query="", from="", to=""){
+    const body=$("#sqliteHistoryBody"), summary=$("#sqliteHistorySummary");
+    if(!body||!summary)return;
+    try{
+      const panel=await(historyPanelPromise||loadHistoryPanel(query,from,to));
+      const data=panel.historySearch||{};
+      summary.innerHTML=data.summaryHtml||'<div class="bar-label"><span>SQLite</span><strong>empty</strong></div>';
+      body.innerHTML=data.tableRowsHtml||data.emptyTableRowsHtml||'<tr><td colspan="7" class="empty-state">SQLite history is empty.</td></tr>';
+    }catch(error){
+      renderLocalSqliteHistory(query,from,to);
+    }
+  }
+  async function renderVendorModelHistory(query="", from="", to=""){
+    const body=$("#vendorModelHistoryBody"), summary=$("#vendorModelHistorySummary");
+    if(!body||!summary)return;
+    try{
+      const panel=await(historyPanelPromise||loadHistoryPanel(query,from,to));
+      const data=panel.vendorModelHistory||{};
+      summary.innerHTML=data.summaryHtml||'<div class="bar-label"><span>SQLite</span><strong>empty</strong></div>';
+      body.innerHTML=data.tableRowsHtml||data.emptyTableRowsHtml||'<tr><td colspan="7" class="empty-state">Vendor/model history is empty.</td></tr>';
+    }catch(error){
+      renderLocalVendorModelHistory(query,from,to);
+    }
+  }
+  async function renderMappings(){try{const data=await api("/mappings/panel");state.localVendorMappings=data.vendors||state.localVendorMappings||{};state.localModelMappings=data.models||state.localModelMappings||{};save();$("#vendorMappingList").innerHTML=data.vendorRowsHtml||'<p class="muted">Правила пока не загружены.</p>';$("#modelMappingList").innerHTML=data.modelRowsHtml||'<p class="muted">Правила пока не загружены.</p>';}catch(error){renderLocalMappings();}}
+  function ouiReferenceStatusText(data={}){const files=data.files||[],file=files[0],count=Number(data.referenceMappings||0);return count?`Загружено правил: ${count.toLocaleString("ru-RU")}${file?` · ${file.name}`:""}`:"Внешний справочник пока не загружен.";}
+  async function loadOuiReferenceStatus(){const target=$("#ouiReferenceStatus");if(!target)return;try{const data=await api("/reference/oui/status");target.textContent=ouiReferenceStatusText(data);}catch{target.textContent=`Автономный справочник: ${Object.keys(state.localVendorMappings||{}).length.toLocaleString("ru-RU")} правил`;}}
+  async function parseLocalOuiReference(file){const mappings={};if(/\.csv$/i.test(file.name)){const table=await clientReadTable(file),normalized=(table.headers||[]).map((name)=>String(name||"").toLowerCase().replace(/[^a-zа-я0-9]/gi,"")),prefixIndex=normalized.findIndex((name)=>["assignment","oui","prefix","macprefix"].includes(name)),vendorIndex=normalized.findIndex((name)=>["organizationname","organization","vendor","manufacturer","производитель"].includes(name));if(prefixIndex<0||vendorIndex<0)throw new Error("В CSV нужны колонки Assignment/OUI и Organization/Vendor.");for(const row of table.rows||[]){const prefix=normalizePrefix(row[prefixIndex]),vendor=String(row[vendorIndex]||"").trim();if([6,8,10].includes(prefix.length)&&vendor)mappings[prefix]=vendor;}}else{const text=await readClientTextFile(file);for(const line of text.split(/\r?\n/)){let parts;if(line.includes("(hex)"))parts=line.split("(hex)",2);else if(line.includes("\t"))parts=line.split("\t",2);else if(line.includes(";"))parts=line.split(";",2);else continue;const prefix=normalizePrefix(parts[0]),vendor=String(parts[1]||"").trim().replace(/^"|"$/g,"");if([6,8,10].includes(prefix.length)&&vendor)mappings[prefix]=vendor;}}if(!Object.keys(mappings).length)throw new Error("В файле не найдены правила OUI 3/4/5 байт.");return mappings;}
+  async function importOuiReference(){const input=$("#ouiReferenceFileInput"),file=input?.files?.[0],target=$("#ouiReferenceStatus");if(!file){toast("Выберите OUI-справочник TXT или CSV.");return;}if(file.size>64*1024*1024){toast("Справочник больше 64 МБ.");return;}const processId=beginProcess("Импорт OUI-справочника",file.name,5);try{target.textContent="Загрузка справочника...";updateProcess(processId,25,"Передача справочника без Base64-копии");const result=await api("/reference/oui/import",{method:"POST",headers:{"Content-Type":"application/octet-stream","X-File-Name":encodeURIComponent(file.name)},body:file});target.textContent=ouiReferenceStatusText(result.status||{});updateProcess(processId,80,`Импортировано: ${Number(result.imported?.count||0).toLocaleString("ru-RU")}`);await renderMappings();applyLocalVendorModelMappings(state.devices);save();renderResults();renderAnalytics();finishProcess(processId,"OUI-справочник загружен в SQLite");toast(`Загружено OUI-правил: ${Number(result.imported?.count||0).toLocaleString("ru-RU")}`);}catch(error){if(!networkUnavailable(error)){target.textContent=error.message;failProcess(processId,error);toast(error.message);return;}try{updateProcess(processId,45,"Backend недоступен: разбор справочника в браузере");const mappings=await parseLocalOuiReference(file);state.localVendorMappings={...state.localVendorMappings,...mappings};applyLocalVendorModelMappings(state.devices);save({immediate:true});await flushBrowserStateSave().catch(()=>{});renderMappings();renderResults();renderAnalytics();target.textContent=`Автономно загружено: ${Object.keys(mappings).length.toLocaleString("ru-RU")} правил`;finishProcess(processId,"OUI-справочник сохранён в браузере","warning");toast(`Автономно загружено OUI-правил: ${Object.keys(mappings).length.toLocaleString("ru-RU")}`);}catch(localError){target.textContent=localError.message;failProcess(processId,localError);toast(localError.message);}}finally{if(input)input.value="";}}
+  function localMappingRows(rules,type){
+    const entries=Object.entries(rules||{}).sort((a,b)=>a[0].localeCompare(b[0]));
+    return entries.length?entries.map(([prefix,name])=>`<div class="summary-line"><strong>${esc(prefix)}</strong><span>${esc(name)}</span>${type==="model"?`<button class="button secondary" data-model-prefixes="${esc(name)}">Префиксы</button>`:""}<button class="icon-button" data-local-remove-${type}="${esc(prefix)}" title="Удалить">×</button></div>`).join(""):'<p class="muted">Локальные правила пока не добавлены.</p>';
+  }
+  function renderLocalMappings(){
+    $("#vendorMappingList").innerHTML=localMappingRows(state.localVendorMappings,"vendor");
+    $("#modelMappingList").innerHTML=localMappingRows(state.localModelMappings,"model");
+  }
+  function vendorModelLearnSettings(){return{minCount:Math.max(1,Math.min(999,Number($("#vendorModelLearnMinCount")?.value||2))),source:($("#vendorModelLearnSource")?.value||"").trim()};}
+  function learnLocalVendorModelMappings(settings=vendorModelLearnSettings()){
+    const source=String(settings.source||"").toLowerCase(),rows=localFlatHistory().concat(state.devices||[]).filter((device)=>!source||[device.source,device._snapshot?.source,device._snapshot?.name].join(" ").toLowerCase().includes(source)),learned=learnLocalRulesFromDevices(rows,settings.minCount);
+    applyLocalVendorModelMappings(state.devices);
+    save();renderMappings();renderResults();renderAnalytics();
+    return learned;
+  }
+  function download(name,text,type){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:type+";charset=utf-8"}));a.download=name;a.click();URL.revokeObjectURL(a.href);}
+  function downloadBase64(name,content,type){const bytes=Uint8Array.from(atob(content),(char)=>char.charCodeAt(0));const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([bytes],{type}));a.download=name;a.click();URL.revokeObjectURL(a.href);}
+  function clipboardSafeCell(value){return String(value??"").replace(/\t|\r?\n/g," ").trim();}
+  function tableRowsToTsv(rows){return rows.map((row)=>row.map(clipboardSafeCell).join("\t")).join("\n");}
+  async function copyTextToClipboard(value,label="данные"){
+    const text=String(value||"");
+    if(!text.trim()){toast("Нет данных для копирования.");return false;}
+    try{
+      if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(text);
+      else{
+        const area=document.createElement("textarea");area.value=text;area.readOnly=true;area.style.position="fixed";area.style.opacity="0";document.body.appendChild(area);area.select();document.execCommand("copy");area.remove();
+      }
+      toast("Скопировано: "+label);return true;
+    }catch(error){toast("Не удалось скопировать: "+error.message);return false;}
+  }
+  function tableClipboardText(table){
+    if(!table)return"";
+    const headers=Array.from(table.querySelectorAll("thead th")).map((cell)=>cell.textContent);
+    const rows=Array.from(table.querySelectorAll("tbody tr:not([hidden])")).filter((row)=>!row.querySelector(".empty-state")).map((row)=>Array.from(row.cells).map((cell)=>cell.textContent));
+    return tableRowsToTsv(headers.length?[headers,...rows]:rows);
+  }
+  function selectTableRow(row){
+    if(!row||!row.closest("table"))return null;
+    row.closest("table").querySelectorAll("tbody tr.selected-row").forEach((item)=>{item.classList.remove("selected-row");item.setAttribute("aria-selected","false");});
+    row.classList.add("selectable-row","selected-row");row.setAttribute("aria-selected","true");return row;
+  }
+  function selectedTableRow(table){return table?.querySelector("tbody tr.selected-row")||null;}
+  function rowMac(row){return normalize(row?.dataset.mac||row?.cells?.[0]?.textContent||"");}
+  function copySelectedTableMac(table){const mac=rowMac(selectedTableRow(table));return copyTextToClipboard(mac?formatMac(mac):"","MAC-адрес");}
+  function copyTable(table,label){return copyTextToClipboard(tableClipboardText(table),label);}
+  function hideTableContextMenu(){const menu=$("#tableContextMenu");if(menu)menu.hidden=true;contextTableRow=null;}
+  function showTableContextMenu(event,row){
+    const menu=$("#tableContextMenu");if(!menu||!rowMac(row))return;
+    event.preventDefault();contextTableRow=selectTableRow(row);menu.hidden=false;
+    const width=menu.offsetWidth||190,height=menu.offsetHeight||120;
+    menu.style.left=Math.max(6,Math.min(event.clientX,window.innerWidth-width-6))+"px";
+    menu.style.top=Math.max(6,Math.min(event.clientY,window.innerHeight-height-6))+"px";
+    menu.querySelector("button")?.focus();
+  }
+  function bindSelectableMacTable(body){
+    body?.addEventListener("click",(event)=>{const row=event.target.closest("tr[data-mac]");if(row)selectTableRow(row);});
+    body?.addEventListener("contextmenu",(event)=>{const row=event.target.closest("tr[data-mac]");if(row)showTableContextMenu(event,row);});
+  }
+  function focusViewSection(viewName,selector){view(viewName);requestAnimationFrame(()=>{const target=$(selector);target?.scrollIntoView({block:"center"});target?.focus?.();});}
+  function closeActiveDialog(){const dialogs=$$("dialog[open]");if(!dialogs.length)return false;dialogs[dialogs.length-1].close();return true;}
+  function cancelActiveEnrichment(){if(!enrichmentController&&!currentEnrichmentJobId)return false;if(currentEnrichmentJobId)api("/enrichment/jobs/"+encodeURIComponent(currentEnrichmentJobId),{method:"DELETE"}).catch(()=>{});enrichmentController?.abort();return true;}
+  function handleAppShortcut(event){
+    const keyName=event.key.toLowerCase(),ctrl=event.ctrlKey||event.metaKey;
+    if(keyName==="escape"){if(!$("#tableContextMenu")?.hidden){event.preventDefault();hideTableContextMenu();return;}if(closeActiveDialog()){event.preventDefault();return;}if(cancelActiveEnrichment())event.preventDefault();return;}
+    if(keyName==="f1"){event.preventDefault();$("#helpDialog").showModal();return;}
+    if(ctrl&&keyName==="o"){event.preventDefault();$("#fileInput").click();return;}
+    if(ctrl&&keyName==="s"){event.preventDefault();exportManagedBinary("xlsx").catch((error)=>toast(error.message));return;}
+    if(ctrl&&keyName==="e"){event.preventDefault();exportData("csv");return;}
+    if(ctrl&&keyName==="a"){event.preventDefault();view("analytics");return;}
+    if(ctrl&&keyName==="h"){event.preventDefault();view("history");return;}
+    if(ctrl&&keyName==="f"){event.preventDefault();focusViewSection("workspace","#searchInput");return;}
+    if(event.altKey||ctrl||event.shiftKey)return;
+    if(keyName==="f5"){event.preventDefault();analyze();return;}
+    if(keyName==="f6"){event.preventDefault();view("compare");return;}
+    if(keyName==="f7"){event.preventDefault();focusViewSection("analytics","#backendChartsPanel");return;}
+    if(keyName==="f8"){event.preventDefault();focusViewSection("analytics","#topologyGraph");return;}
+    if(keyName==="f9"){event.preventDefault();focusViewSection("compare","#multiComparisonSelect");}
+  }
+  function exportColumns(){return(state.visibleColumns||empty().visibleColumns).filter(Boolean).map((key)=>({key,title:labels[key]||key}));}
+  function exportCell(device,key,index){if(key==="row")return index+1;if(key==="oui")return formatOuiValue(device.mac||device.macFormatted||device.oui);if(key==="macFormatted")return device.macFormatted||formatMac(device.mac);return device[key]??"";}
+  function localExportTable(){const columns=exportColumns();return{columns,rows:state.devices.map((device,index)=>columns.map((column)=>exportCell(device,column.key,index)))};}
+  function localCsvLine(row,separator=","){return row.map((value)=>'"'+String(value??"").replace(/"/g,'""')+'"').join(separator);}
+  function localYamlScalar(value){const text=String(value??"");return text===""?'""':/[\n:#\[\]{},"']|^\s|\s$/.test(text)?JSON.stringify(text):text;}
+  function localSpreadsheetXml(table){const header='<Row>'+table.columns.map((column)=>`<Cell><Data ss:Type="String">${esc(column.title)}</Data></Cell>`).join("")+'</Row>',body=table.rows.map((row)=>'<Row>'+row.map((cell)=>`<Cell><Data ss:Type="String">${esc(cell)}</Data></Cell>`).join("")+'</Row>').join("");return'<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="MAC Analyzer"><Table>'+header+body+'</Table></Worksheet></Workbook>';}
+  function localHtmlExport(table){const head=table.columns.map((column)=>`<th>${esc(column.title)}</th>`).join(""),body=table.rows.map((row)=>`<tr>${row.map((cell)=>`<td>${esc(cell)}</td>`).join("")}</tr>`).join("");return`<!doctype html><html><head><meta charset="utf-8"><title>MAC Analyzer Export</title><style>body{font:14px Arial;margin:32px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:7px;text-align:left}th{background:#eee}</style></head><body><h1>MAC Analyzer Export</h1><p>Created: ${new Date().toISOString()}</p><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></body></html>`;}
+  function localExportData(type){if(!currentDeviceCount()){toast("Нет результатов для экспорта.");return false;}try{MemoryGuard.assertLocalExportCapacity(state.devices.length,state.devices.length*exportColumns().length);}catch(error){toast(error.message);return false;}const table=localExportTable(),date=new Date().toISOString().replace(/[:.]/g,"-").slice(0,19),name="mac-analysis-"+date;let filename=name+"."+type,mime="text/plain",content="";if(type==="csv"){filename=name+".csv";mime="text/csv";content="\uFEFF"+[table.columns.map((c)=>c.title),...table.rows].map((row)=>localCsvLine(row)).join("\n");}else if(type==="txt"){filename=name+".txt";content=[table.columns.map((c)=>c.title),...table.rows].map((row)=>row.map((value)=>String(value??"")).join("\t")).join("\n");}else if(type==="json"){filename=name+".json";mime="application/json";content=JSON.stringify({export_date:new Date().toISOString(),count:state.devices.length,devices:state.devices},null,2);}else if(type==="yaml"){filename=name+".yaml";content=["export_date: "+new Date().toISOString(),"count: "+state.devices.length,"devices:",...state.devices.map((device)=>"  - "+exportColumns().map((column)=>`${column.key}: ${localYamlScalar(exportCell(device,column.key,0))}`).join("\n    "))].join("\n");}else if(type==="html"){filename=name+".html";mime="text/html";content=localHtmlExport(table);}else if(type==="spreadsheetml"||type==="xls"||type==="xlsx"){filename=name+".xls";mime="application/vnd.ms-excel";content=localSpreadsheetXml(table);}else{return false;}download(filename,content,mime);toast("Экспорт выполнен в браузере без backend.");return true;}
+  async function exportManagedBinary(type){
+    if(!currentDeviceCount()){toast("Нет результатов для экспорта.");return;}
+    const processId=beginProcess("Экспорт "+type.toUpperCase(),"Подготовка "+state.devices.length+" записей",10),columns=exportColumns(),ouiSettings={length:state.ouiLength,style:state.ouiStyle};
+    try{updateProcess(processId,35,"Формирование файла ExportManager");const result=await api("/export",{method:"POST",body:JSON.stringify(currentDevicePayload({format:type,columns,ouiSettings}))});if(!result.binary)throw new Error("Backend returned text export for "+type);updateProcess(processId,85,"Сохранение сформированного файла");downloadBase64(result.filename||("mac-analysis."+type),result.content,result.mimeType||"application/octet-stream");toast("Экспорт подготовлен ExportManager.");finishProcess(processId,"Экспорт "+type.toUpperCase()+" готов");}
+    catch(error){if(type==="xlsx"){updateProcess(processId,60,"Локальное формирование Excel");localExportData("spreadsheetml");toast("Backend недоступен: скачан Excel XML из браузера.");finishProcess(processId,"Excel подготовлен в браузере","warning");return;}if(type==="pdf"){updateProcess(processId,60,"Локальное формирование отчёта");localExportData("html");toast("Backend недоступен: скачан HTML-отчёт для печати/PDF.");finishProcess(processId,"HTML-отчёт подготовлен для печати/PDF","warning");return;}failProcess(processId,error);throw error;}
+  }
+  async function exportData(type){
+    if(!currentDeviceCount()){toast("Нет результатов для экспорта.");return;}
+    const processId=beginProcess("Экспорт данных","Подготовка формата "+type,10),columns=exportColumns(),ouiSettings={length:state.ouiLength,style:state.ouiStyle};
+    try{updateProcess(processId,35,"Формирование файла backend-сервисом");const result=await api("/export",{method:"POST",body:JSON.stringify(currentDevicePayload({format:type,columns,ouiSettings}))});updateProcess(processId,85,"Сохранение файла");if(result.binary){downloadBase64(result.filename||("mac-analysis."+type),result.content,result.mimeType||"application/octet-stream");}else{download(result.filename||("mac-analysis."+type),type==="csv"?"\uFEFF"+result.content:result.content,result.mimeType||"text/plain");}toast("Экспорт подготовлен backend-сервисом.");finishProcess(processId,"Экспорт завершён: "+type);}
+    catch(error){updateProcess(processId,60,"Backend недоступен: локальный экспорт");if(localExportData(type))finishProcess(processId,"Экспорт завершён в браузере: "+type,"warning");else{toast("Backend export error: "+error.message);failProcess(processId,error);}}
+  }
+  async function renderServices(){
+    try {
+      const serviceData=await api("/services/panel"),notificationData=serviceData.notifications||{},html=serviceData.html||{};
+      $("#ipMappingList").innerHTML=html.ipRowsHtml||'<p class="muted">Соответствия пока не добавлены.</p>';
+      $("#taskList").innerHTML=html.taskRowsHtml||'<p class="muted">Задачи пока не созданы.</p>';
+      const channel=notificationData.channels.find((item)=>item.channel===$("#notificationChannel").value);
+      if(channel){$("#notificationEnabled").checked=Boolean(channel.enabled);$("#notificationConfig").value=JSON.stringify(channel.config||{},null,2);}
+      $("#appLogList").innerHTML=html.logRowsHtml||'<p class="muted">Журнал пока пуст.</p>';
+      $("#metricList").innerHTML=html.metricRowsHtml||'<p class="muted">Метрики пока пусты.</p>';
+      $("#timeStatsSummary").innerHTML=html.timeStatsSummaryHtml||'<div class="bar-label"><span>Operations</span><strong>0</strong></div>';
+      $("#timeStatsBody").innerHTML=html.timeStatsRowsHtml||'<tr><td colspan="6" class="empty-state">Статистика по времени пока пуста.</td></tr>';
+      const autosaveStatus=$("#autosaveStatus"); if(autosaveStatus)autosaveStatus.textContent=html.autosaveStatusText||"Autosave slots are empty.";
+      $("#databaseSummary").innerHTML=html.databaseSummaryHtml||"";
+      $("#legacyImportSummary").innerHTML=html.legacySummaryHtml||"";
+    } catch { renderLocalIpMappings(); renderLocalTimeStats(); }
+  }
+  function normalizeIp(value){const parts=String(value||"").trim().match(/\d{1,3}(?:\.\d{1,3}){3}/);if(!parts)return"";const ip=parts[0].split(".").map(Number);return ip.every((part)=>part>=0&&part<=255)?ip.join("."):"";}
+  function localIpMappingRows(){return Array.isArray(state.ipMappings)?state.ipMappings:[];}
+  function renderLocalIpMappings(){
+    const mappings=localIpMappingRows();
+    $("#ipMappingList").innerHTML=mappings.length?mappings.map((item)=>`<div class="summary-line"><strong>${esc(item.switchIp)}</strong><span>${esc(item.address||"")} ${item.source?("· "+esc(item.source)):""}</span><button class="icon-button" data-remove-local-ip="${esc(item.switchIp)}" title="Удалить">×</button></div>`).join(""):'<p class="muted">Локальные соответствия IP коммутаторов пока не добавлены.</p>';
+    const summary=$("#databaseSummary");
+    if(summary&&!summary.innerHTML)summary.innerHTML=`<div class="bar-item"><div class="bar-label"><span>Локальные IP-маппинги</span><strong>${mappings.length}</strong></div></div>`;
+  }
+  function renderLocalTimeStats(){
+    const snapshots=Array.isArray(state.snapshots)?state.snapshots:[],movements=Array.isArray(state.movementHistory)?state.movementHistory:[];
+    const summary=$("#timeStatsSummary"),body=$("#timeStatsBody");
+    if(summary)summary.innerHTML=`<div class="bar-label"><span>Local snapshots</span><strong>${snapshots.length}</strong></div><div class="bar-label"><span>Local movements</span><strong>${movements.length}</strong></div><div class="bar-label"><span>Current devices</span><strong>${state.devices.length}</strong></div>`;
+    if(body)body.innerHTML=snapshots.slice(0,50).map((snapshot)=>`<tr><td>${esc((snapshot.createdAt||"").slice(0,10))}</td><td>${esc((snapshot.createdAt||"").slice(11,19))}</td><td>snapshot</td><td>${esc(snapshot.source||snapshot.name||"browser")}</td><td>${(snapshot.devices||[]).length}</td><td>-</td></tr>`).join("")||'<tr><td colspan="6" class="empty-state">Локальная статистика по времени пока пуста.</td></tr>';
+  }
+  function upsertLocalIpMapping(switchIp,address,source="manual"){
+    const ip=normalizeIp(switchIp),addr=String(address||"").trim();
+    if(!ip||!addr)return false;
+    const next=localIpMappingRows().filter((item)=>item.switchIp!==ip);
+    next.unshift({switchIp:ip,address:addr,source,updatedAt:new Date().toISOString()});
+    state.ipMappings=next.slice(0,2000);
+    save();
+    return true;
+  }
+  function localIpMappingFields(headers){
+    const lower=headers.map((header)=>String(header||"").toLowerCase());
+    const find=(patterns)=>lower.findIndex((header)=>patterns.some((pattern)=>pattern.test(header)));
+    return{switchIp:find([/switch.*ip/,/ip.*switch/,/коммутатор.*ip/,/ip.*коммут/,/^ip$/]),address:find([/address/,/addr/,/адрес/,/location/,/room/,/помещ/,/стойк/])};
+  }
+  async function importLocalIpMappings(file){
+    const table=await clientReadTable(file),fields=localIpMappingFields(table.headers),switchIndex=fields.switchIp>=0?fields.switchIp:0,addressIndex=fields.address>=0?fields.address:1;
+    let imported=0,skipped=0;
+    table.rows.forEach((row)=>{if(upsertLocalIpMapping(row[switchIndex],row[addressIndex],file.name))imported++;else skipped++;});
+    renderLocalIpMappings();
+    return{imported,skipped};
+  }
+  function applyLocalIpMappings(){
+    const map=Object.fromEntries(localIpMappingRows().map((item)=>[item.switchIp,item.address]));
+    let matched=0,filled=0;
+    state.devices.forEach((device)=>{const address=map[normalizeIp(device.switchIp)];if(address){matched++;if(!device.address||device.address!==address){device.address=address;filled++;}}});
+    if(filled&&state.resultBrowserSnapshotId)state.resultBrowserSnapshotDirty=true;
+    save();
+    renderResults();
+    renderAnalytics();
+    renderLocalIpMappings();
+    return{matched,filled};
+  }
+  function autodetectLocalIpMappings(){
+    let imported=0;
+    state.devices.forEach((device)=>{if(upsertLocalIpMapping(device.switchIp,device.address||device.room||device.location||"",device.source||"current-results"))imported++;});
+    renderLocalIpMappings();
+    return imported;
+  }
+  function exportLocalIpMappings(){
+    const content="\uFEFFswitch_ip,address,source,updated_at\n"+localIpMappingRows().map((item)=>localCsvLine([item.switchIp,item.address,item.source,item.updatedAt])).join("\n");
+    download("ip-address-mappings.csv",content,"text/csv");
+  }
+  async function searchDatabase(){
+    const root=$("#databaseSearchResults"); if(!root)return;
+    const query=($("#databaseSearchInput")?.value||"").trim();
+    try{
+      const data=await api("/database/search?query="+encodeURIComponent(query)+"&limit=100");
+      root.innerHTML=data.resultsHtml||data.emptyResultsHtml||'<p class="muted">Ничего не найдено.</p>';
+    }catch(error){
+      root.innerHTML='<p class="muted">Поиск недоступен: '+esc(error.message)+'</p>';
+    }
+  }
+  function databaseHistoryFilters(){
+    return{
+      mac:($("#dbHistoryMacFilter")?.value||"").trim(),
+      source:($("#dbHistorySourceFilter")?.value||"").trim(),
+      vendor:($("#dbHistoryVendorFilter")?.value||"").trim(),
+      model:($("#dbHistoryModelFilter")?.value||"").trim(),
+      room:($("#dbHistoryRoomFilter")?.value||"").trim(),
+      dateFrom:$("#dbHistoryDateFrom")?.value||"",
+      dateTo:$("#dbHistoryDateTo")?.value||""
+    };
+  }
+  function databaseHistoryParams(filters=databaseHistoryFilters()){
+    const params=new URLSearchParams({limit:"1000"});
+    const names={mac:"mac",source:"source",vendor:"vendor",model:"model",room:"room",dateFrom:"from",dateTo:"to"};
+    Object.entries(names).forEach(([key,name])=>{if(filters[key])params.set(name,filters[key]);});
+    return params;
+  }
+  async function loadDatabaseHistoryManagement(){
+    const body=$("#databaseHistoryBody"),summary=$("#databaseHistorySummary");
+    if(!body||!summary)return;
+    body.innerHTML='<tr><td colspan="13" class="empty-state">История загружается...</td></tr>';
+    try{
+      const data=await api("/database/history/records?"+databaseHistoryParams().toString());
+      body.innerHTML=data.rowsHtml||data.emptyRowsHtml||'<tr><td colspan="13" class="empty-state">Записи истории не найдены.</td></tr>';
+      summary.innerHTML=data.summaryHtml||"";
+      const selectAll=$("#selectAllDatabaseHistory");if(selectAll){selectAll.checked=false;selectAll.indeterminate=false;}
+    }catch(error){
+      body.innerHTML='<tr><td colspan="13" class="empty-state">История SQLite недоступна: '+esc(error.message)+'</td></tr>';
+      summary.innerHTML="";
+    }
+  }
+  function selectedDatabaseHistoryIds(){return $$('[data-db-history-select]:checked').map((input)=>Number(input.value)).filter((id)=>Number.isInteger(id)&&id>0);}
+  async function deleteDatabaseHistoryEntries(ids=[],filters={}){
+    if(!state.engineeringMode||!state.engineeringToken){toast("Для удаления включите инженерный режим.");return false;}
+    const selected=Array.isArray(ids)?ids:[];
+    const activeFilters=Object.fromEntries(Object.entries(filters||{}).filter(([,value])=>String(value||"").trim()));
+    if(!selected.length&&!Object.keys(activeFilters).length){toast("Выберите записи или задайте хотя бы один фильтр.");return false;}
+    const message=selected.length?`Удалить выбранные записи (${selected.length})?`:`Удалить все записи по текущему фильтру?`;
+    if(!confirm(message))return false;
+    try{
+      const result=await api("/database/history/delete",{method:"POST",body:JSON.stringify({ids:selected,filters:activeFilters})});
+      await loadDatabaseHistoryManagement();
+      renderServices();
+      toast("Удалено записей истории: "+result.deleted);
+      return true;
+    }catch(error){toast(error.message);return false;}
+  }
+  async function openDatabaseDevice(mac){
+    if(!mac)return;
+    if(!state.devices.some((item)=>item.mac===mac)){
+      const result=await api("/database/device?mac="+encodeURIComponent(mac));
+      state.devices.unshift(result.device);
+      save();
+      renderResults();
+    }
+    showDevice(mac);
+  }
+  async function renderParityStatus(){
+    const root=$("#parityStatusSummary"),details=$("#parityDetailsList");
+    if(!root)return;
+    try{
+      const data=await api("/parity/status");
+      root.innerHTML=data.summaryHtml||'<p class="muted">Parity status is empty.</p>';
+      if(details){
+        details.innerHTML=data.detailsHtml||data.emptyDetailsHtml||'<p class="muted">Нет данных parity.</p>';
+      }
+    }catch(error){
+      root.innerHTML='<p class="muted">Parity status недоступен: '+esc(error.message)+'</p>';
+      if(details)details.innerHTML="";
+    }
+  }
+  async function exportParityReport(){
+    try{
+      const report=await api("/parity/report");
+      download(report.filename||"mac-analyzer-parity-report.json",report.content||"{}",report.mimeType||"application/json");
+      toast("Parity report exported.");
+    }catch(error){
+      toast(error.message);
+    }
+  }
+  function localSystemDiagnostics(){
+    const checks=[
+      ["Frontend","Основной контроллер",Boolean(window.MacAnalyzerAppReady),"app.js загружен"],
+      ["Frontend","Чтение XLSX",Boolean(window.MacAnalyzerFileReaders),"Потоковый browser parser"],
+      ["Большие файлы","Защита памяти",Boolean(window.MacAnalyzerMemoryGuard),"Лимиты, paging и yield"],
+      ["Хранение","IndexedDB",Boolean(window.indexedDB),"Автономное хранение больших файлов"],
+      ["Интерфейс","Руководство",Boolean(window.MacAnalyzerGuide),"Навигация и режимы"],
+    ].map(([group,name,passed,detail])=>({group,name,passed,status:passed?"passed":"failed",detail}));
+    const passed=checks.filter(item=>item.passed).length,total=checks.length,failed=total-passed,readinessPercent=Math.round(passed/total*100);
+    return{status:failed?"error":"healthy",summary:{passed,total,failed,warnings:0,readinessPercent,parityPercent:100},checks,
+      summaryHtml:`<div class="bar-label"><span>Готовность HTML</span><strong>${readinessPercent}%</strong></div><div class="bar-label"><span>Frontend</span><strong>${passed}/${total}</strong></div><div class="bar-label"><span>Backend</span><strong>offline</strong></div><div class="bar-label"><span>Ошибки</span><strong>${failed}</strong></div>`,
+      detailsHtml:checks.map(item=>`<div class="diagnostic-row diagnostic-${item.status}"><span><strong>${esc(item.name)}</strong><small>${esc(item.group)} · ${esc(item.detail)}</small></span><b>${item.passed?"OK":"Ошибка"}</b></div>`).join("")};
+  }
+  function paintSystemDiagnostics(data){
+    const summary=$("#systemDiagnosticsSummary"),details=$("#systemDiagnosticsDetails");
+    if(summary)summary.innerHTML=data.summaryHtml||'<p class="muted">Нет итогов диагностики.</p>';
+    if(details)details.innerHTML=data.detailsHtml||'<p class="muted">Нет подробностей диагностики.</p>';
+    if(summary){summary.dataset.loaded="true";summary.dataset.status=data.status||"unknown";}
+  }
+  async function runSystemDiagnostics(){
+    const button=$("#runSystemDiagnosticsButton"),summary=$("#systemDiagnosticsSummary");
+    if(button)button.disabled=true;
+    if(summary)summary.innerHTML='<p class="muted">Проверка файлов, SQLite, API и защиты памяти...</p>';
+    try{
+      const data=await api("/system/diagnostics");
+      paintSystemDiagnostics(data);
+      toast(data.status==="healthy"?"Самодиагностика: программа готова.":"Самодиагностика обнаружила проблему.");
+      return data;
+    }catch(error){
+      const data=localSystemDiagnostics();
+      paintSystemDiagnostics(data);
+      toast("Backend недоступен: выполнена локальная диагностика HTML.");
+      return data;
+    }finally{if(button)button.disabled=false;}
+  }
+  function applyResultColumnWidths(){
+    const table=$("#resultsTable"),header=$("#resultsHeader"),columns=(state.visibleColumns||empty().visibleColumns).filter(Boolean);
+    if(!table||!header)return;
+    const cells=Array.from(header.querySelectorAll("th"));
+    if(!cells.length)return;
+    state.columnWidths=normalizeColumnWidths(state.columnWidths);
+    let total=0;
+    cells.forEach((cell,index)=>{
+      const column=columns[index]||"column_"+index,width=state.columnWidths[column]||150;
+      total+=width;cell.dataset.resultColumn=column;cell.style.width=width+"px";cell.style.minWidth=width+"px";cell.style.maxWidth=width+"px";
+      if(!cell.querySelector(".column-resize-handle")){
+        const handle=document.createElement("span");handle.className="column-resize-handle";handle.title="Изменить ширину столбца";handle.setAttribute("aria-hidden","true");
+        handle.addEventListener("pointerdown",(event)=>{event.preventDefault();event.stopPropagation();resultColumnResize={column,startX:event.clientX,startWidth:state.columnWidths[column]||150,handle};handle.classList.add("active");handle.setPointerCapture?.(event.pointerId);});
+        cell.appendChild(handle);
+      }
+    });
+    const tableWidth=Math.max(900,total);table.style.tableLayout="fixed";table.style.width=tableWidth+"px";table.style.minWidth=tableWidth+"px";
+    $$("#columnPreferenceList [data-column-width]").forEach((input)=>{if(document.activeElement!==input&&state.columnWidths[input.dataset.columnWidth])input.value=String(state.columnWidths[input.dataset.columnWidth]);});
+  }
+  function resizeResultColumn(event){if(!resultColumnResize)return;const width=Math.max(64,Math.min(600,resultColumnResize.startWidth+event.clientX-resultColumnResize.startX));state.columnWidths[resultColumnResize.column]=Math.round(width);applyResultColumnWidths();}
+  function finishResultColumnResize(){if(!resultColumnResize)return;resultColumnResize.handle?.classList.remove("active");resultColumnResize=null;save();saveResultColumnWidths("Ширина столбца сохранена в SQLite.");}
+  function optimizedResultColumnWidths(){
+    const columns=(state.visibleColumns||empty().visibleColumns).filter(Boolean),rows=Array.from($("#resultsBody")?.querySelectorAll("tr:not([hidden])")||[]).slice(0,200),next=normalizeColumnWidths(state.columnWidths);
+    columns.forEach((column,index)=>{let length=String(labels[column]||column).length;rows.forEach((row)=>{length=Math.max(length,String(row.cells[index]?.textContent||"").trim().length);});next[column]=Math.max(72,Math.min(420,Math.round(length*7.5+36)));});
+    return next;
+  }
+  function resultColumnWidthsFromInputs(){const widths={};$$("#columnPreferenceList [data-column-width]").forEach((input)=>{const width=Number(input.value);if(Number.isFinite(width))widths[input.dataset.columnWidth]=Math.max(64,Math.min(600,Math.round(width)));});return widths;}
+  async function saveResultColumnWidths(message="Ширина столбцов сохранена в SQLite."){
+    state.columnWidths=normalizeColumnWidths({...state.columnWidths,...resultColumnWidthsFromInputs()});save();applyResultColumnWidths();
+    try{const result=await api("/columns/preferences/results",{method:"POST",body:JSON.stringify(columnPreferencesPayload({widths:state.columnWidths}))});applyColumnPreferences(result.preferences);toast(message);return result.preferences;}
+    catch(error){renderColumnPreferences();toast("Ширина столбцов сохранена локально.");return null;}
+  }
+  async function loadResultColumnWidths(){
+    try{const result=await api("/columns/preferences/results");applyColumnPreferences(result.preferences);toast("Ширина столбцов загружена из SQLite.");}
+    catch(error){state.columnWidths=normalizeColumnWidths(state.columnWidths);applyResultColumnWidths();toast("Используется локально сохранённая ширина.");}
+  }
+  function optimizeResultColumnWidths(){state.columnWidths=optimizedResultColumnWidths();applyResultColumnWidths();saveResultColumnWidths("Ширина оптимизирована и сохранена.");}
+  function resetResultColumnWidths(){const custom=Object.fromEntries((state.customColumns||[]).map((column)=>[column,150]));state.columnWidths=normalizeColumnWidths({...defaultColumnWidths,...custom});applyResultColumnWidths();saveResultColumnWidths("Ширина сброшена к стандартной.");}
+  async function renderColumnPreferences(){
+    const root=$("#columnPreferenceList");
+    if(!root)return;
+    try{
+      const data=await api("/columns/preferences/results/render",{method:"POST",body:JSON.stringify({preferences:columnPreferencesPayload(),labels})});
+      root.innerHTML=data.listHtml||data.emptyListHtml||'<p class="muted">Колонки не настроены.</p>';
+      if(data.preferences){
+        state.columnOrder=data.preferences.order||state.columnOrder;
+        state.visibleColumns=data.preferences.visible||state.visibleColumns;
+        state.columnWidths=normalizeColumnWidths(data.preferences.widths||state.columnWidths);
+      }
+      applyResultColumnWidths();
+    }catch(error){
+      root.innerHTML='<p class="muted">Настройки колонок недоступны: '+esc(error.message)+'</p>';
+    }
+  }
+  function applyColumnPreferences(preferences){
+    if(!preferences)return;
+    state.visibleColumns=preferences.visible||state.visibleColumns;
+    state.columnOrder=preferences.order||state.columnOrder||state.visibleColumns;
+    state.customColumns=(preferences.custom||[]).map((item)=>item.key);
+    state.customColumnMappings=Object.fromEntries((preferences.custom||[]).map((item)=>[item.key,item.sourceIndex]));
+    state.columnWidths=normalizeColumnWidths(preferences.widths||state.columnWidths);
+    (preferences.custom||[]).forEach((item)=>{labels[item.key]=item.title||item.key;});
+    save();
+    renderColumnPreferences();
+    renderResults();
+  }
+  function columnPreferencesPayload(overrides={}){
+    const order=overrides.order||state.columnOrder||empty().columnOrder;
+    const visible=overrides.visible||state.visibleColumns||empty().visibleColumns;
+    const customSource=overrides.customKeys||state.customColumns||[];
+    const custom=customSource.map((key)=>({
+      key,
+      title:(overrides.labels&&overrides.labels[key])||labels[key]||key,
+      sourceIndex:(overrides.customColumnMappings||state.customColumnMappings||{})[key],
+    }));
+    const widths=normalizeColumnWidths(overrides.widths||state.columnWidths);
+    return {order,visible,custom,widths};
+  }
+  const viewConfig={workspace:["Анализ MAC-адресов","Импортируйте данные, обогатите их и сохраните результат."],single:["Анализ одного файла","Загрузите файл и перейдите к основному анализу."],compare:["Сравнение снимков","Сопоставьте результаты двух загрузок."],analytics:["Аналитика","Сводка по текущему набору и истории."],history:["История","Локальные снимки результатов анализа."],data:["Данные","IP-маппинг, колонки результатов и SQLite-данные."],automation:["Автоматизация","Планировщик, уведомления и API-обогащение."],settings:["Настройки","Справочники и резервная копия приложения."],guide:["Руководство","Назначение программы и рабочие сценарии для пользователя и инженера."]};
+  function normalizeViewName(name){return Object.prototype.hasOwnProperty.call(viewConfig,name)?name:"workspace";}
+  function viewFromHash(){return normalizeViewName((location.hash||"").replace(/^#/,""));}
+  function renderViewContent(name){if(name==="workspace"){renderFiles();renderMapping();renderMetrics();renderResults();return;}if(name==="data"){renderServices();loadDatabaseHistoryManagement();}else if(name==="automation")renderServices();if(name==="settings")renderParityStatus();if(name==="analytics")renderAnalytics();if(name==="history")renderHistory();if(name==="single")renderSingleMappingGrid();if(name==="compare")renderSnapshots();if(name==="guide"){Guide.syncMode(engineeringSessionActive(),state.engineeringExpiresAt,document);if(!$("#systemDiagnosticsSummary")?.dataset.loaded)runSystemDiagnostics();}}
+  function activateView(name,{updateHash=true,render=true}={}){name=normalizeViewName(name);if(!engineeringSessionActive()&&engineeringOnlyViews.has(name))name="history";$$(".nav-item").forEach((b)=>{const active=b.dataset.view===name;b.classList.toggle("active",active);b.setAttribute("aria-selected",active?"true":"false");});$$(".view").forEach((panel)=>{const active=panel.id===name+"View";panel.classList.toggle("active",active);panel.hidden=!active;});const title=viewConfig[name];$("#viewTitle").textContent=title[0];$("#viewSubtitle").textContent=title[1];if(updateHash&&location.hash!=="#"+name)history.pushState(null,"","#"+name);if(render)renderViewContent(name);return name;}
+  function view(name,options={}){return activateView(name,options);}
+  let lastComparisonResult=null;
+  function comparisonPayload(exportFormat=""){
+    const fields=$$("#compareView input[type=checkbox]:checked").map((input)=>input.value);
+    return {snapshots:state.snapshots,baselineId:$("#baselineSelect").value,currentId:$("#comparisonSelect").value,fields,exportFormat};
+  }
+  function renderComparisonResult(result){
+    lastComparisonResult=result;
+    $("#comparisonBody").innerHTML=result.changesRowsHtml||result.emptyRowsHtml||'<tr><td colspan="5" class="empty-state">Изменений не найдено.</td></tr>';
+    $("#comparisonSummary").innerHTML=result.summaryHtml||'<h2>Результат сравнения</h2><span class="summary-number">0</span><p class="muted">Добавлено: 0 · Удалено: 0 · Изменено: 0</p>';
+  }
+  function localSnapshotById(id){for(const entry of (state.snapshots||[])){if(entry.id===id)return entry;}return null;}
+  function localDeviceMap(devices=[]){const result=new Map();for(const device of devices||[]){const mac=normalize(device.mac||device.macFormatted);if(mac)result.set(mac,device);}return result;}
+  function localComparisonPayload(payload=comparisonPayload()){
+    const snapshotRows=payload.__snapshotRows||state.snapshots||[];
+    const byId=(id)=>snapshotRows.find((entry)=>entry.id===id),baseline=byId(payload.baselineId)||snapshotRows[1]||snapshotRows[0],current=byId(payload.currentId)||snapshotRows[0],fields=payload.fields&&payload.fields.length?payload.fields:["vendor","model","ip","address","room","switchIp","switchPort"];
+    if(!baseline||!current||baseline.id===current.id)return{changes:[],changesRowsHtml:'<tr><td colspan="5" class="empty-state">Нужно минимум два разных снимка для локального сравнения.</td></tr>',emptyRowsHtml:'<tr><td colspan="5" class="empty-state">Нужно минимум два разных снимка для локального сравнения.</td></tr>',summaryHtml:'<h2>Результат сравнения</h2><span class="summary-number">0</span><p class="muted">Добавлено: 0 · Удалено: 0 · Изменено: 0</p>'};
+    const before=localDeviceMap(baseline.devices),after=localDeviceMap(current.devices),changes=[];
+    for(const [mac,device] of after.entries()){if(!before.has(mac)){changes.push({mac,type:"Добавлено",field:"-",before:"",after:device.macFormatted||formatMac(mac)});continue;}const previous=before.get(mac);for(const field of fields){const oldValue=String(previous[field]??""),newValue=String(device[field]??"");if(oldValue!==newValue)changes.push({mac,type:"Изменено",field:labels[field]||field,before:oldValue,after:newValue});}}
+    for(const [mac,device] of before.entries()){if(!after.has(mac))changes.push({mac,type:"Удалено",field:"-",before:device.macFormatted||formatMac(mac),after:""});}
+    const added=changes.filter((item)=>item.type==="Добавлено").length,removed=changes.filter((item)=>item.type==="Удалено").length,modified=changes.filter((item)=>item.type==="Изменено").length;
+    const rows=changes.map((item)=>`<tr><td>${esc(formatMac(item.mac)||item.mac)}</td><td>${esc(item.type)}</td><td>${esc(item.field)}</td><td>${esc(item.before)}</td><td>${esc(item.after)}</td></tr>`).join("");
+    return{changes,changesRowsHtml:rows||'<tr><td colspan="5" class="empty-state">Изменений не найдено.</td></tr>',emptyRowsHtml:'<tr><td colspan="5" class="empty-state">Изменений не найдено.</td></tr>',summaryHtml:`<h2>Результат сравнения</h2><span class="summary-number">${changes.length}</span><p class="muted">Добавлено: ${added} · Удалено: ${removed} · Изменено: ${modified}</p>`,baseline,current};
+  }
+  async function storedLocalComparisonPayload(payload=comparisonPayload()){
+    const candidates=[localSnapshotById(payload.baselineId)||(state.snapshots||[])[1]||(state.snapshots||[])[0],localSnapshotById(payload.currentId)||(state.snapshots||[])[0]].filter(Boolean);
+    const hydrated=await Promise.all(candidates.map(loadLocalSnapshotRecord));
+    return localComparisonPayload({...payload,__snapshotRows:hydrated});
+  }
+  function localComparisonExport(result,format){
+    const rows=[["MAC","Тип изменения","Поле","Было","Стало"],...(result.changes||[]).map((item)=>[formatMac(item.mac)||item.mac,item.type,item.field,item.before,item.after])];
+    if(format==="csv")return{filename:"mac-comparison.csv",mimeType:"text/csv",content:"\uFEFF"+rows.map((row)=>localCsvLine(row)).join("\n")};
+    if(format==="txt")return{filename:"mac-comparison.txt",mimeType:"text/plain",content:rows.map((row)=>row.join("\t")).join("\n")};
+    return{filename:"mac-comparison.xls",mimeType:"application/vnd.ms-excel",content:localSpreadsheetXml({columns:rows[0].map((title)=>({title})),rows:rows.slice(1)})};
+  }
+  async function compare(){
+    const payload=comparisonPayload();
+    const processId=beginProcess("Сравнение снимков","Подготовка выбранных выгрузок",10);
+    try{
+      updateProcess(processId,35,"Сопоставление устройств и полей");
+      renderComparisonResult(await api("/compare/snapshots",{method:"POST",body:JSON.stringify(payload)}));
+      toast("Сравнение выполнено backend-сервисом.");
+      finishProcess(processId,"Сравнение снимков завершено");
+    }catch(error){
+      updateProcess(processId,65,"Локальное сравнение снимков");
+      renderComparisonResult(await storedLocalComparisonPayload(payload));
+      toast("Сравнение выполнено локально.");
+      finishProcess(processId,"Сравнение выполнено в браузере","warning");
+    }
+  }
+  async function exportComparison(format){
+    const payload=comparisonPayload(format);
+    const processId=beginProcess("Экспорт сравнения","Расчёт различий",10);
+    try{
+      updateProcess(processId,35,"Формирование сравнения backend-сервисом");
+      const result=await api("/compare/snapshots",{method:"POST",body:JSON.stringify(payload)});
+      renderComparisonResult(result);
+      const exported=result.export;
+      if(!exported)throw new Error("Экспорт сравнения не сформирован.");
+      updateProcess(processId,85,"Сохранение файла сравнения");
+      download(exported.filename||("mac-comparison."+format),format==="csv"?"\uFEFF"+exported.content:exported.content,exported.mimeType||"text/plain");
+      toast("Экспорт сравнения готов.");
+      finishProcess(processId,"Экспорт сравнения готов");
+    }catch(error){
+      updateProcess(processId,60,"Локальное формирование файла сравнения");
+      const exported=localComparisonExport(await storedLocalComparisonPayload(payload),format);
+      download(exported.filename,exported.content,exported.mimeType);
+      toast("Экспорт сравнения выполнен локально.");
+      finishProcess(processId,"Экспорт сравнения готов в автономном режиме","warning");
+    }
+  }
+  async function multiCompare(event){
+    if(event){
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+    const baselineId=$("#baselineSelect").value;
+    const comparisonIds=Array.from($("#multiComparisonSelect").selectedOptions).map((option)=>option.value).filter((id)=>id!==baselineId).slice(0,10);
+    const fields=$$("#compareView input[type=checkbox]:checked").map((input)=>input.value);
+    const processId=beginProcess("Массовое сравнение","Подготовка "+comparisonIds.length+" снимков",10);
+    try{
+      updateProcess(processId,35,"Сопоставление выбранных снимков");
+      const result=await api("/compare/snapshots/many",{method:"POST",body:JSON.stringify({snapshots:state.snapshots,baselineId,comparisonIds,fields})});
+      renderComparisonResult(result);
+      toast("Массовое сравнение выполнено backend-сервисом.");
+      finishProcess(processId,"Массовое сравнение завершено");
+    }catch(error){
+      const allChanges=[];
+      for(const [targetIndex,targetId] of comparisonIds.entries()){
+        updateProcess(processId,45+Math.round((targetIndex/Math.max(1,comparisonIds.length))*45),"Локальное сравнение "+(targetIndex+1)+" / "+comparisonIds.length);
+        const result=await storedLocalComparisonPayload({baselineId,currentId:targetId,fields});
+        for(const change of result.changes||[])allChanges.push({...change,target:result.current?.name||targetId});
+      }
+      const rows=allChanges.map((item)=>`<tr><td>${esc(formatMac(item.mac)||item.mac)}</td><td>${esc(item.type)}</td><td>${esc(item.field)}</td><td>${esc(item.before)}</td><td>${esc(item.after)}</td></tr>`).join("");
+      renderComparisonResult({changes:allChanges,changesRowsHtml:rows||'<tr><td colspan="5" class="empty-state">Изменений не найдено.</td></tr>',summaryHtml:`<h2>Массовое сравнение</h2><span class="summary-number">${allChanges.length}</span><p class="muted">Локально сравнено наборов: ${comparisonIds.length}</p>`});
+      toast("Массовое сравнение выполнено локально.");
+      finishProcess(processId,"Локально сравнено снимков: "+comparisonIds.length,"warning");
+    }
+  }
+  function activeViewName(){return $(".view.active")?.id?.replace(/View$/,"")||viewFromHash();}
+  function renderAll(){
+    const name=activeViewName();
+    if(name==="workspace"){renderFiles();renderMapping();renderMetrics();renderResults();return;}
+    if(name==="compare"){renderSnapshots();return;}
+    if(name==="analytics"){renderAnalytics();return;}
+    if(name==="history"){renderHistory();return;}
+    if(name==="settings"){renderMappings();loadOuiReferenceStatus();return;}
+    renderViewContent(name);
+  }
+  $$(".nav-item").forEach((b)=>{b.setAttribute("aria-controls",b.dataset.view+"View");b.addEventListener("click",()=>view(b.dataset.view));});
+  window.addEventListener("hashchange",()=>view(viewFromHash(),{updateHash:true}));
+  $("#browseFilesButton")?.addEventListener("click",()=>$("#fileInput")?.click());$("#browseEnrichmentFilesButton")?.addEventListener("click",()=>$("#enrichFileInput")?.click());$("#singleBrowseFileButton")?.addEventListener("click",()=>$("#singleFileInput")?.click());$("#dropZone")?.addEventListener("keydown",(e)=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$("#fileInput")?.click();}});$("#fileInput").addEventListener("change",(e)=>loadFiles(e.target.files,e.target,"primary"));$("#enrichFileInput")?.addEventListener("change",(e)=>loadFiles(e.target.files,e.target,"enrichment"));$("#singleFileInput").addEventListener("change",(e)=>{pendingSingleFile=e.target.files[0]||null;inspectSingleFile();});$("#singleSheetInput").addEventListener("change",inspectSingleFile);$("#singleManualMappingToggle").addEventListener("change",renderSingleMappingGrid);$("#singleFileAnalyzeButton").addEventListener("click",analyzeSingleFile);$("#dropZone").addEventListener("dragover",(e)=>{e.preventDefault();$("#dropZone").classList.add("dragover");});$("#dropZone").addEventListener("dragleave",()=>$("#dropZone").classList.remove("dragover"));$("#dropZone").addEventListener("drop",(e)=>{e.preventDefault();$("#dropZone").classList.remove("dragover");loadFiles(e.dataTransfer.files,null,"auto");});
+  $("#reconnectBackendButton")?.addEventListener("click",async()=>{try{await checkBackendConnection();await syncFromBackend();toast("Backend и SQLite подключены.");}catch{toast("Backend не отвечает на http://127.0.0.1:8080");}});
+  $("#fileList").addEventListener("click",(e)=>{const id=e.target.dataset.removeFile,row=e.target.closest("[data-file-id]");if(id){state.files=state.files.filter((f)=>f.id!==id);sourceFilesById.delete(id);ensureMappingSelection();save();renderAll();return;}if(row){state.activeMappingFileId=row.dataset.fileId;save();renderFiles();renderMapping();}});
+  $("#cancelAnalyzeButton").addEventListener("click",cancelActiveEnrichment);
+  bindSelectableMacTable($("#resultsBody"));bindSelectableMacTable($("#sqliteHistoryBody"));bindSelectableMacTable($("#vendorModelHistoryBody"));bindSelectableMacTable($("#localMovementBody"));
+  $("#resultsBody").addEventListener("dblclick",(e)=>{const row=e.target.closest("tr[data-mac]");if(row)showDevice(row.dataset.mac);});
+  $("#sqliteHistoryBody").addEventListener("dblclick",(e)=>{const row=e.target.closest("tr[data-mac]");if(row)showDevice(row.dataset.mac);});
+  $("#vendorModelHistoryBody").addEventListener("dblclick",(e)=>{const row=e.target.closest("tr[data-mac]");if(row)showDevice(row.dataset.mac);});
+  $("#localMovementBody").addEventListener("dblclick",(e)=>{const row=e.target.closest("tr[data-mac]");if(row)showDevice(row.dataset.mac);});
+  $("#copyResultsTableButton").addEventListener("click",()=>copyTable($("#resultsTable"),"таблица результатов"));
+  $("#copyResultsMacButton").addEventListener("click",()=>copySelectedTableMac($("#resultsTable")));
+  $("#copyHistoryTableButton").addEventListener("click",()=>copyTable($("#sqliteHistoryTable"),"история MAC"));
+  $("#copyHistoryMacButton").addEventListener("click",()=>copySelectedTableMac($("#sqliteHistoryTable")));
+  $("#tableContextMenu").addEventListener("click",(event)=>{const action=event.target.dataset.contextAction,row=contextTableRow;if(!action||!row)return;if(action==="copy-mac")copyTextToClipboard(rowMac(row)?formatMac(rowMac(row)):"","MAC-адрес");if(action==="copy-row")copyTextToClipboard(tableRowsToTsv([Array.from(row.cells).map((cell)=>cell.textContent)]),"строка");if(action==="show-history"&&rowMac(row))showDevice(rowMac(row));hideTableContextMenu();});
+  document.addEventListener("click",(event)=>{if(!event.target.closest("#tableContextMenu"))hideTableContextMenu();});
+  window.addEventListener("blur",hideTableContextMenu);window.addEventListener("resize",hideTableContextMenu);window.addEventListener("scroll",hideTableContextMenu,true);
+  $("#closeDeviceDialog").addEventListener("click",()=>$("#deviceDialog").close());
+  $("#exportDeviceAnalyticsButton").addEventListener("click",exportDeviceAnalytics);
+  $("#deleteDeviceHistoryButton").addEventListener("click",async()=>{const mac=$("#deviceDialog").dataset.mac;if(!mac||!confirm("Удалить всю историю этого MAC из SQLite и локальных снимков?"))return;try{await api("/history?mac="+encodeURIComponent(mac),{method:"DELETE"});await showDevice(mac);renderHistory();toast("История MAC удалена.");}catch(error){const normalized=normalize(mac);state.snapshots=(state.snapshots||[]).map((snapshot)=>({...snapshot,devices:(snapshot.devices||[]).filter((device)=>normalize(device.mac||device.macFormatted)!==normalized)}));state.movementHistory=(state.movementHistory||[]).filter((item)=>normalize(item.mac)!==normalized);save();showLocalDevice(mac);renderHistory();toast("Локальная история MAC удалена.");}});
+  $("#closeModelDialog").addEventListener("click",()=>$("#modelDialog").close());
+  $("#helpButton").addEventListener("click",()=>$("#helpDialog").showModal());
+  $("#closeHelpDialog").addEventListener("click",()=>$("#helpDialog").close());
+  $("#openGuideFromHelpButton")?.addEventListener("click",()=>{$("#helpDialog").close();view("guide");});
+  $("#guideView")?.addEventListener("click",(event)=>{
+    const tab=event.target.closest("[data-guide-tab]");
+    if(tab){Guide.activateTab(tab.dataset.guideTab,document);return;}
+    const destination=event.target.closest("[data-guide-view]")?.dataset.guideView;
+    if(destination)view(destination);
+  });
+  $("#guideView")?.addEventListener("keydown",(event)=>{
+    const tab=event.target.closest("[data-guide-tab]");
+    if(!tab||!["ArrowLeft","ArrowRight","Home","End"].includes(event.key))return;
+    event.preventDefault();
+    const tabs=$$("[data-guide-tab]"),index=tabs.indexOf(tab);
+    const next=event.key==="Home"?0:event.key==="End"?tabs.length-1:(index+(event.key==="ArrowRight"?1:-1)+tabs.length)%tabs.length;
+    Guide.activateTab(tabs[next].dataset.guideTab,document);tabs[next].focus();
+  });
+  $("#guideEngineeringLoginButton")?.addEventListener("click",()=>engineeringSessionActive()?view("workspace"):openEngineeringDialog());
+  $("#runSystemDiagnosticsButton")?.addEventListener("click",runSystemDiagnostics);
+  $("#mappingFileSelect").addEventListener("change",(e)=>{state.activeMappingFileId=e.target.value;save();renderMapping();});
+  $("#mappingDisplayMode").addEventListener("change",(e)=>{state.mappingDisplayMode=e.target.value==="letter"?"letter":"name";save();renderMapping();});
+  $("#copyMappingToAllButton").addEventListener("click",()=>{const file=selectedMappingFile();if(!file)return toast("Сначала выберите файл для сопоставления.");state.files.forEach((item)=>{item.mapping={...file.mapping};localMappingSummary(item);});save();renderMapping();toast("Сопоставление скопировано во все файлы.");});
+  $("#mappingGrid").addEventListener("change",(e)=>{const f=e.target.dataset.map,file=selectedMappingFile();if(f&&file){file.mapping[f]=e.target.value===""?"":Number(e.target.value);refreshMappingSummary(file).catch(()=>localMappingSummary(file));save();}});
+  $("#autoMapColumnsButton").addEventListener("click",async()=>{const file=selectedMappingFile();if(!file)return toast("Сначала добавьте основной файл.");try{file.mapping=await detectColumnsWithBackend(file,{mode:"auto",ai:false});await refreshMappingSummary(file);toast("Колонки определены backend-детектором.");}catch(error){file.mapping=localAutoMapping(file.headers.map(h=>h.name));localMappingSummary(file);toast(networkUnavailable(error)?"Колонки определены в браузере.":"Backend column detector error: "+error.message);}save();renderMapping();});
+  $("#sampleMapColumnsButton").addEventListener("click",async()=>{const file=selectedMappingFile();if(!file)return toast("Сначала добавьте основной файл.");try{const reviewed=await detectColumnsWithBackend(file);if(!reviewed){renderColumnDetectionSummary(file);toast("Выбор колонок отменён.");return;}file.mapping=reviewed;await refreshMappingSummary(file);toast("Проверенное сопоставление AI применено.");}catch(error){file.mapping=localAutoMapping(file.headers.map(h=>h.name));localMappingSummary(file);toast(networkUnavailable(error)?"Колонки определены в браузере.":"Backend column detector error: "+error.message);}save();renderMapping();});
+  $("#autoSelectConflictColumnsButton").addEventListener("click",autoSelectConflictColumns);
+  $("#clearConflictColumnsButton").addEventListener("click",()=>{$$('[data-conflict-column]').forEach((select)=>{select.value="";});$("#columnConflictStatus").textContent="Выбор очищен. MAC-адрес необходимо указать вручную.";});
+  $("#applyConflictColumnsButton").addEventListener("click",applyColumnConflictSelection);
+  $("#cancelConflictColumnsButton").addEventListener("click",()=>resolveColumnConflict(null));
+  $("#closeColumnConflictDialog").addEventListener("click",()=>resolveColumnConflict(null));
+  $("#columnConflictDialog").addEventListener("cancel",(event)=>{event.preventDefault();resolveColumnConflict(null);});
+  $("#analyzeButton").addEventListener("click",analyze);["#searchInput","#vendorFilter","#validityFilter"].forEach((s)=>$(s).addEventListener("input",()=>{resultPage=1;renderResults();}));$("#exportExcelButton").addEventListener("click",()=>exportData("spreadsheetml"));$("#exportCsvButton").addEventListener("click",()=>exportData("csv"));$("#exportTxtButton").addEventListener("click",()=>exportData("txt"));$("#exportYamlButton").addEventListener("click",()=>exportData("yaml"));$("#exportJsonButton").addEventListener("click",()=>exportData("json"));$("#exportHtmlButton").addEventListener("click",()=>exportData("html"));$("#compareButton").addEventListener("click",compare);
+  $("#resultPreviousPageButton").addEventListener("click",()=>{if(resultPage>1){resultPage--;renderResults();}});
+  $("#resultNextPageButton").addEventListener("click",()=>{resultPage++;renderResults();});
+  $("#resultPageSizeSelect").addEventListener("change",(event)=>{resultPageSize=Math.max(25,Math.min(Number(event.target.value)||250,1000));resultPage=1;renderResults();});
+  $("#exportComparisonExcelButton").addEventListener("click",()=>exportComparison("excel"));
+  $("#exportComparisonCsvButton").addEventListener("click",()=>exportComparison("csv"));
+  $("#exportComparisonTxtButton").addEventListener("click",()=>exportComparison("txt"));
+  $("#multiCompareButton").addEventListener("click",multiCompare,true);
+  $("#clearResultFiltersButton").addEventListener("click",()=>{$("#searchInput").value="";$("#vendorFilter").value="";$("#validityFilter").value="";resultPage=1;renderResults();});
+  $("#exportXlsxButton").addEventListener("click",async()=>{try{await exportManagedBinary("xlsx");}catch(error){toast(error.message);}});
+  $("#exportPdfButton").addEventListener("click",async()=>{try{await exportManagedBinary("pdf");}catch(error){toast(error.message);}});
+  $("#comparisonFilters").addEventListener("click",(e)=>{const filter=e.target.dataset.comparisonFilter;if(!filter)return;$$("[data-comparison-filter]").forEach((button)=>button.classList.toggle("active-filter",button.dataset.comparisonFilter===filter));const types={added:"Добавлено",removed:"Удалено",modified:"Изменено"};$$("#comparisonBody tr").forEach((row)=>{const type=row.children[1]?.textContent;row.hidden=filter!=="all"&&type!==types[filter];});});
+  $("#historyBody").addEventListener("click",async(e)=>{const id=e.target.dataset.loadSnapshot||e.target.dataset.localSnapshot;if(id){try{let opened;if(e.target.dataset.localSnapshot){const localSnapshot=(state.snapshots||[]).find((entry)=>entry.id===id);if(!localSnapshot)throw new Error("Локальный снимок не найден.");const stored=await loadLocalSnapshotRecord(localSnapshot);opened={devices:stored?.devices||[],invalid:stored?.invalid||[],lastAnalysis:stored?.createdAt||localSnapshot.createdAt||new Date().toISOString()};clearResultReference();if(localSnapshot.browserStored){state.resultBrowserSnapshotId=id;state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=Number(stored?.deviceCount||opened.devices.length);state.resultInvalidCount=opened.invalid.length;}}else{clearResultReference();opened=await api("/snapshots/open",{method:"POST",body:JSON.stringify({id,snapshots:state.snapshots,compactResult:true,resultPageSize})});const reference=opened.resultReference||{};state.resultSnapshotId=String(reference.snapshotId||id);state.resultDeviceCount=Number(reference.deviceCount||0);state.resultInvalidCount=Number(reference.invalidCount||0);state.resultSummary=opened.resultSummary||opened.resultPage?.summary||null;}state.devices=opened.resultPage?.items||opened.devices||[];state.invalid=opened.invalid||[];state.lastAnalysis=opened.lastAnalysis||new Date().toISOString();resultPage=1;save();renderAll();view("workspace");toast("Снимок открыт.");}catch(error){toast(error.message);}}});
+  $("#historySearchInput").addEventListener("input",renderHistory);
+  $("#historyDateFrom").addEventListener("change",renderHistory);$("#historyDateTo").addEventListener("change",renderHistory);
+  $("#clearHistoryFiltersButton").addEventListener("click",()=>{$("#historySearchInput").value="";$("#historyDateFrom").value="";$("#historyDateTo").value="";renderHistory();});
+  $("#exportHistoryButton").addEventListener("click",async()=>{try{await exportHistory();}catch(error){toast(error.message);}});
+  $("#applyMovementFiltersButton").addEventListener("click",renderMovementHistory);
+  $("#movementSearchInput").addEventListener("keydown",(event)=>{if(event.key==="Enter")renderMovementHistory();});
+  $("#movementTypeFilter").addEventListener("change",renderMovementHistory);$("#movementFieldFilter").addEventListener("change",renderMovementHistory);
+  $("#clearMovementFiltersButton").addEventListener("click",()=>{$$("#movementDateFrom,#movementDateTo,#movementSearchInput").forEach((input)=>{input.value="";});$("#movementTypeFilter").value="";$("#movementFieldFilter").value="";renderMovementHistory();});
+  $("#exportMovementHistoryButton").addEventListener("click",()=>exportMovementHistory().catch((error)=>toast(error.message)));
+  $("#deleteShownMovementsButton").addEventListener("click",deleteShownMovementHistory);
+  $("#expandMovementGroupsButton").addEventListener("click",()=>setMovementGroupsExpanded(true));$("#collapseMovementGroupsButton").addEventListener("click",()=>setMovementGroupsExpanded(false));
+  $("#localMovementBody").addEventListener("click",(event)=>{const button=event.target.closest("[data-toggle-movement-group]");if(!button)return;const mac=button.dataset.toggleMovementGroup,expanded=button.getAttribute("aria-expanded")!=="false";$$(`[data-movement-child="${mac}"]`).forEach((row)=>{row.hidden=expanded;});button.setAttribute("aria-expanded",expanded?"false":"true");button.textContent=expanded?"▸":"▾";button.title=expanded?"Развернуть группу":"Свернуть группу";});
+  $("#movementColumnControls").addEventListener("change",(event)=>{if(event.target.matches("[data-movement-column-toggle],[data-movement-column-width]")){movementColumnSettings=readMovementColumnSettings();applyMovementColumnSettings();}});
+  $("#optimizeMovementColumnsButton").addEventListener("click",optimizeMovementColumns);
+  $("#resetMovementColumnsButton").addEventListener("click",()=>{movementColumnSettings={...movementColumnSettings,visible:["mac","count","dates","vendor","model","room","field","before","after","source"],widths:{mac:180,count:100,dates:170,vendor:160,model:160,room:120,field:120,before:240,after:240,source:160}};applyMovementColumnSettings();});
+  $("#saveMovementColumnsButton").addEventListener("click",()=>saveMovementColumnSettings());
+  $("#loadMovementColumnsButton").addEventListener("click",async()=>{try{const result=await api("/history/movements/columns");movementColumnSettings=result.settings;$("#movementColumnControls").innerHTML=movementColumnSettings.controlsHtml||"";applyMovementColumnSettings();toast("Колонки расширенной истории загружены.");}catch(error){toast(error.message);}});
+  $("#enhancedMovementHeader").addEventListener("pointerdown",startMovementColumnResize);
+  $("#clearHistoryButton").addEventListener("click",async()=>{if(!confirm("Очистить всю историю снимков из SQLite и локальные снимки браузера?"))return;try{const result=await api("/database/snapshots/delete",{method:"POST",body:JSON.stringify({})});state.snapshots=[];state.movementHistory=[];save();renderAll();renderServices();toast("Удалено снимков SQLite: "+result.deleted);}catch(error){state.snapshots=[];state.movementHistory=[];save();renderAll();renderServices();toast("Локальная история снимков очищена.");}});
+  $("#learnVendorModelButton").addEventListener("click",async()=>{const settings=vendorModelLearnSettings();try{const result=await api("/vendor-model-history/learn",{method:"POST",body:JSON.stringify(settings)});await syncFromBackend();await renderMappings();applyLocalVendorModelMappings(state.devices);save();renderResults();renderAnalytics();renderHistory();toast("Learned vendors: "+result.learned.vendors+", models: "+result.learned.models);}catch(error){const result=learnLocalVendorModelMappings(settings);applyLocalVendorModelMappings(state.devices);save();renderResults();renderAnalytics();renderHistory();toast("Локально изучено производителей: "+result.vendors+", моделей: "+result.models);}});
+  $("#addVendorButton").addEventListener("click",async()=>{const oui=$("#vendorOuiInput").value.toUpperCase().replace(/[^0-9A-F]/g,""),name=$("#vendorNameInput").value.trim();if(oui.length<6||oui.length>10||!name){toast("Укажите OUI/MAC5 от 6 до 10 символов и производителя.");return;}try{await api("/mappings/vendors",{method:"POST",body:JSON.stringify({key:oui,value:name})});state.localVendorMappings[oui]=name;$("#vendorOuiInput").value="";$("#vendorNameInput").value="";await renderMappings();applyLocalVendorModelMappings(state.devices);save();renderResults();renderAnalytics();renderHistory();toast("Правило производителя сохранено в SQLite.");}catch(error){state.localVendorMappings[oui]=name;$("#vendorOuiInput").value="";$("#vendorNameInput").value="";applyLocalVendorModelMappings(state.devices);save();renderMappings();renderResults();renderAnalytics();renderHistory();toast("Правило производителя сохранено локально.");}});
+  $("#addModelButton").addEventListener("click",async()=>{const p=$("#modelPrefixInput").value.toUpperCase().replace(/[^0-9A-F]/g,""),name=$("#modelNameInput").value.trim();if(p.length<6||!name){toast("Укажите префикс MAC и модель.");return;}try{await api("/mappings/models",{method:"POST",body:JSON.stringify({key:p,value:name})});state.localModelMappings[p]=name;$("#modelPrefixInput").value="";$("#modelNameInput").value="";await renderMappings();applyLocalVendorModelMappings(state.devices);save();renderResults();renderAnalytics();renderHistory();toast("Правило модели сохранено в SQLite.");}catch(error){state.localModelMappings[p]=name;$("#modelPrefixInput").value="";$("#modelNameInput").value="";applyLocalVendorModelMappings(state.devices);save();renderMappings();renderResults();renderAnalytics();renderHistory();toast("Правило модели сохранено локально.");}});
+  $("#settingsView").addEventListener("click",(e)=>{const model=e.target.dataset.modelPrefixes;if(model){e.preventDefault();e.stopImmediatePropagation();showModelAnalytics(model);}},true);
+  $("#settingsView").addEventListener("click",async(e)=>{const v=e.target.dataset.removeVendor,m=e.target.dataset.removeModel,lv=e.target.dataset.localRemoveVendor,lm=e.target.dataset.localRemoveModel,model=e.target.dataset.modelPrefixes;if(model)return;if(lv||lm){if(lv)delete state.localVendorMappings[lv];if(lm)delete state.localModelMappings[lm];save();renderMappings();renderResults();toast("Локальное правило удалено.");return;}if(v||m){try{await api("/mappings/"+(v?"vendors/":"models/")+encodeURIComponent(v||m),{method:"DELETE"});await syncFromBackend();await renderMappings();toast("Правило удалено из SQLite.");}catch(error){toast(error.message);}}});
+  $("#themeButton").addEventListener("click",showThemeSelection);
+  $("#closeThemeDialog").addEventListener("click",()=>$("#themeDialog").close());
+  $("#themeDialogCloseButton").addEventListener("click",()=>$("#themeDialog").close());
+  $("#themeDialog").addEventListener("click",(e)=>{const theme=e.target.closest("[data-theme-dialog-choice]")?.dataset.themeDialogChoice;if(theme)saveThemePreference(theme);});
+  $("#vendorDetectorThreshold")?.addEventListener("input",()=>{if($("#vendorDetectorThresholdLabel"))$("#vendorDetectorThresholdLabel").textContent=($("#vendorDetectorThreshold")?.value||60)+"%";});
+  $("#saveVendorDetectorSettingsButton")?.addEventListener("click",saveVendorDetectorSettings);
+  $("#importOuiReferenceButton")?.addEventListener("click",importOuiReference);
+  $("#ouiReferenceFileInput")?.addEventListener("change",()=>{const file=$("#ouiReferenceFileInput")?.files?.[0];if(file&&$("#ouiReferenceStatus"))$("#ouiReferenceStatus").textContent=`Выбран: ${file.name} · ${(file.size/1024/1024).toFixed(2)} МБ`;});
+  $("#saveHistoryEnrichmentSettingsButton")?.addEventListener("click",saveHistoryEnrichmentSettings);
+  ["#engineeringLoginButton","#appModeButton","#brandModeButton","#modeContextAction"].forEach((selector)=>$(selector)?.addEventListener("click",(event)=>{event.preventDefault();engineeringSessionActive()?logoutEngineering():openEngineeringDialog();}));
+  $("#closeEngineeringDialog")?.addEventListener("click",()=>$("#engineeringDialog")?.close());
+  $("#cancelEngineeringLoginButton")?.addEventListener("click",()=>$("#engineeringDialog")?.close());
+  $("#engineeringLoginForm")?.addEventListener("submit",async(event)=>{event.preventDefault();const result=$("#engineeringLoginResult"),submit=$("#submitEngineeringLoginButton");submit.disabled=true;result.className="engineering-login-result muted";result.textContent="Проверка пароля...";try{await loginEngineering($("#engineeringPasswordInput").value,Number($("#engineeringTtlInput").value||480));}catch(error){result.className="engineering-login-result error";result.textContent=error.status===401?"Неверный пароль инженерного режима.":error.message;}finally{submit.disabled=false;}});
+  $("#settingsView").addEventListener("click",(e)=>{const theme=e.target.dataset.themeChoice;if(theme){saveThemePreference(theme);}});
+  $("#refreshParityStatusButton").addEventListener("click",()=>{renderParityStatus();toast("Parity status обновлён.");});
+  $("#exportParityReportButton").addEventListener("click",exportParityReport);
+  $("#clearAllButton").addEventListener("click",()=>{if(confirm("Очистить текущие файлы и результаты? История сохранится.")){state.files=[];state.devices=[];state.invalid=[];clearResultReference();state.lastAnalysis=null;save();renderAll();}});
+  $("#saveBackupButton").addEventListener("click",async()=>{try{const backup=await api("/backup/export",{method:"POST",body:JSON.stringify({state:compactAnalysisAutosaveState()})});download(backup.filename||"mac-analyzer-backup.json",backup.content||"{}","application/json");}catch(error){toast(error.message);}});
+  $("#saveAutosaveButton").addEventListener("click",async()=>{try{await persistAutosave("manual");toast("Autosave saved to SQLite.");}catch(error){toast(error.message);}});
+  $("#restoreAutosaveButton").addEventListener("click",async()=>{try{await restoreAutosave();toast("Autosave restored.");}catch(error){toast(error.message);}});
+  $("#deleteAutosaveButton").addEventListener("click",async()=>{try{await deleteAutosave();toast("Autosave deleted.");renderServices();}catch(error){toast(error.message);}});
+  $("#restoreBackupInput").addEventListener("change",async(e)=>{try{const file=e.target.files[0];if(!file)return;const backup=await api("/backup/restore",{method:"POST",body:JSON.stringify({filename:file.name,contentBase64:await fileToBase64(file)})});state={...empty(),...(backup.state||{})};save();location.reload();}catch{toast("Не удалось восстановить резервную копию.");}});
+  $("#addIpMappingButton").addEventListener("click",async()=>{const switchIp=$("#switchIpInput").value.trim(),address=$("#switchAddressInput").value.trim();if(!switchIp||!address)return toast("Укажите IP и адрес.");try{await api("/ip-mappings",{method:"POST",body:JSON.stringify({switchIp,address})});$("#switchIpInput").value="";$("#switchAddressInput").value="";renderServices();}catch(error){if(upsertLocalIpMapping(switchIp,address,"manual")){$("#switchIpInput").value="";$("#switchAddressInput").value="";renderLocalIpMappings();toast("IP-маппинг сохранён локально.");}else toast(error.message);}});
+  $("#ipMappingImportInput").addEventListener("change",async(e)=>{const file=e.target.files[0];if(!file)return;try{const result=await api("/ip-mappings/import",{method:"POST",body:JSON.stringify({filename:file.name,contentBase64:await fileToBase64(file)})});renderServices();toast("Импортировано соответствий: "+result.imported+", пропущено: "+result.skipped);}catch(error){try{const result=await importLocalIpMappings(file);toast("Локально импортировано соответствий: "+result.imported+", пропущено: "+result.skipped);}catch(localError){toast("Импорт не выполнен: "+localError.message);}}e.target.value="";});
+  $("#exportIpMappingsButton").addEventListener("click",async()=>{try{const data=await api("/ip-mappings/export");download(data.filename||"ip-address-mappings.csv","\uFEFF"+data.content,"text/csv");}catch(error){exportLocalIpMappings();toast("IP-маппинг экспортирован локально.");}});
+  $("#autoDetectIpMappingsButton").addEventListener("click",async()=>{if(!currentDeviceCount())return toast("Нет результатов для автоопределения.");try{const result=await api("/ip-mappings/autodetect",{method:"POST",body:JSON.stringify(currentDevicePayload())});renderServices();toast("Автоопределено соответствий: "+result.imported);}catch(error){toast("Локально автоопределено соответствий: "+autodetectLocalIpMappings());}});
+  $("#applyIpMappingsButton").addEventListener("click",async()=>{if(!currentDeviceCount())return toast("Нет результатов для применения.");try{const result=await api("/ip-mappings/apply",{method:"POST",body:JSON.stringify(currentDevicePayload({compactResult:true,resultPageSize}))});state.devices=result.devices||[];if(result.resultReference?.snapshotId){state.resultSnapshotId=result.resultReference.snapshotId;state.resultDeviceCount=Number(result.resultReference.deviceCount||state.devices.length);state.resultInvalidCount=0;state.resultSummary=result.resultSummary||null;if(result.snapshot){state.snapshots.unshift({...result.snapshot,devices:[],backendStored:true});state.snapshots=state.snapshots.slice(0,25);}}save();renderResults();renderAnalytics();renderServices();toast("IP-маппинг применён: "+(result.summary?.matched||0)+" совпадений, заполнено "+(result.summary?.filled||0));}catch(error){const result=applyLocalIpMappings();toast("Локальный IP-маппинг применён: "+result.matched+" совпадений, заполнено "+result.filled);}});
+  $("#ipMappingList").addEventListener("click",async(e)=>{const value=e.target.dataset.removeIp,local=e.target.dataset.removeLocalIp;if(value){try{await api("/ip-mappings/"+encodeURIComponent(value),{method:"DELETE"});renderServices();}catch(error){toast(error.message);}}if(local){state.ipMappings=localIpMappingRows().filter((item)=>item.switchIp!==local);save();renderLocalIpMappings();toast("Локальный IP-маппинг удалён.");}});
+  $("#addTaskButton").addEventListener("click",async()=>{const name=$("#taskNameInput").value.trim(),intervalMinutes=Number($("#taskIntervalInput").value);if(!name||intervalMinutes<1)return toast("Укажите имя и интервал.");try{await api("/tasks",{method:"POST",body:JSON.stringify({name,intervalMinutes,enabled:true})});$("#taskNameInput").value="";renderServices();}catch(error){toast(error.message);}});
+  $("#queueCurrentFilesButton").addEventListener("click",async()=>{if(!state.files.length)return toast("Нет файлов для очереди.");try{const taskData=await api("/tasks"),task=(taskData.tasks||[])[0];if(!task)return toast("Сначала создайте задачу.");const result=await api("/tasks/queue",{method:"POST",body:JSON.stringify({taskId:task.id,files:enrichmentFilesPayload(true)})});renderServices();toast("Файлов добавлено в очередь: "+result.queued);}catch(error){toast(error.message);}});
+  $("#runFirstTaskButton").addEventListener("click",async()=>{try{const taskData=await api("/tasks"),task=(taskData.tasks||[])[0];if(!task)return toast("Сначала создайте задачу.");const result=await api("/tasks/"+encodeURIComponent(task.id)+"/run",{method:"POST",body:JSON.stringify({})});renderServices();toast("Очередь обработана: "+result.done+" готово, "+result.errors+" ошибок.");}catch(error){toast(error.message);}});
+  $("#taskList").addEventListener("click",async(e)=>{const id=e.target.dataset.removeTask;if(id){await api("/tasks/"+id,{method:"DELETE"});renderServices();}});
+  $("#saveColumnsButton").addEventListener("click",async()=>{const columns=$$("#columnPreferenceList input[type=checkbox]:checked").map((input)=>input.value);if(!columns.length)return toast("Оставьте хотя бы одну колонку.");const order=$$("#columnPreferenceList [data-column-field]").map((item)=>item.dataset.columnField),custom=(state.customColumns||[]).map((key)=>({key,title:labels[key]||key,sourceIndex:state.customColumnMappings[key]}));try{const result=await api("/columns/preferences/results",{method:"POST",body:JSON.stringify({order,visible:columns,custom,widths:state.columnWidths})});applyColumnPreferences(result.preferences);toast("Колонки сохранены в SQLite.");}catch(error){toast(error.message);}});
+  $("#resetColumnsButton").addEventListener("click",async()=>{try{const result=await api("/columns/preferences/results",{method:"DELETE"});applyColumnPreferences(result.preferences);toast("Колонки сброшены к стандартным.");}catch(error){toast(error.message);}});
+  $("#addCustomColumnButton").addEventListener("click",async()=>{const name=$("#customColumnNameInput").value.trim(),column=$("#customColumnSource").value;if(!name||column==="")return toast("Укажите название и колонку файла.");const key="custom_"+name.toLowerCase().replace(/[^a-zа-я0-9]+/gi,"_").replace(/^_|_$/g,"");if((state.customColumns||[]).includes(key))return toast("Такое поле уже добавлено.");const nextCustom=[...(state.customColumns||[]),key],nextMappings={...(state.customColumnMappings||{}),[key]:Number(column)},nextLabels={...labels,[key]:name},nextOrder=[...(state.columnOrder||empty().columnOrder),key],nextVisible=[...(state.visibleColumns||empty().visibleColumns),key];try{const result=await api("/columns/preferences/results",{method:"POST",body:JSON.stringify(columnPreferencesPayload({order:nextOrder,visible:nextVisible,customKeys:nextCustom,customColumnMappings:nextMappings,labels:nextLabels}))});Object.assign(labels,nextLabels);$("#customColumnNameInput").value="";applyColumnPreferences(result.preferences);toast("Пользовательская колонка сохранена в SQLite.");}catch(error){toast(error.message);}});
+  $("#columnPreferenceList").addEventListener("click",async(e)=>{const field=e.target.dataset.moveColumn,direction=e.target.dataset.direction;if(!field)return;try{const result=await api("/columns/preferences/results",{method:"POST",body:JSON.stringify({action:"move",column:field,direction})});applyColumnPreferences(result.preferences);toast("Порядок колонок сохранён в SQLite.");}catch(error){toast(error.message);}});
+  $("#columnPreferenceList").addEventListener("click",async(e)=>{const field=e.target.dataset.removeCustomColumn;if(!field)return;const nextCustom=(state.customColumns||[]).filter((item)=>item!==field),nextMappings={...(state.customColumnMappings||{})},nextLabels={...labels},nextVisible=(state.visibleColumns||[]).filter((item)=>item!==field),nextOrder=(state.columnOrder||[]).filter((item)=>item!==field);delete nextMappings[field];delete nextLabels[field];try{const result=await api("/columns/preferences/results",{method:"POST",body:JSON.stringify(columnPreferencesPayload({order:nextOrder,visible:nextVisible,customKeys:nextCustom,customColumnMappings:nextMappings,labels:nextLabels}))});delete labels[field];state.devices.forEach((item)=>delete item[field]);applyColumnPreferences(result.preferences);toast("Пользовательская колонка удалена из SQLite.");}catch(error){toast(error.message);}});
+  $("#columnPreferenceList").addEventListener("change",(event)=>{const column=event.target.dataset.columnWidth;if(!column)return;const width=Math.max(64,Math.min(600,Number(event.target.value)||150));state.columnWidths[column]=width;saveResultColumnWidths();});
+  $("#optimizeColumnWidthsButton").addEventListener("click",optimizeResultColumnWidths);
+  $("#resetColumnWidthsButton").addEventListener("click",resetResultColumnWidths);
+  $("#saveColumnWidthsButton").addEventListener("click",()=>saveResultColumnWidths());
+  $("#loadColumnWidthsButton").addEventListener("click",loadResultColumnWidths);
+  $("#ouiLengthSelect").value=String(state.ouiLength||3);
+  $("#ouiLengthSelect").addEventListener("change",(e)=>{saveOuiPreference({length:Number(e.target.value),style:state.ouiStyle});});
+  $("#ouiStyleSelect").value=state.ouiStyle||"plain";
+  $("#ouiStyleSelect").addEventListener("change",(e)=>{saveOuiPreference({length:state.ouiLength,style:e.target.value});});
+  $("#saveNotificationButton").addEventListener("click",async()=>{try{await api("/notifications",{method:"POST",body:JSON.stringify({channel:$("#notificationChannel").value,configText:$("#notificationConfig").value,enabled:$("#notificationEnabled").checked})});toast("Настройки уведомлений сохранены.");}catch(error){toast("Проверьте JSON: "+error.message);}});
+  $("#testNotificationButton").addEventListener("click",async()=>{try{const channel=$("#notificationChannel").value;await api("/notifications/test",{method:"POST",body:JSON.stringify({channel,configText:$("#notificationConfig").value})});toast("Тестовое уведомление отправлено.");}catch(error){toast("Тест не выполнен: "+error.message);}});
+  $("#testAnalysisNotificationButton").addEventListener("click",async()=>{try{const result=await api("/notifications/event",{method:"POST",body:JSON.stringify(currentDevicePayload({type:"analysis_completed",invalid:state.invalid,source:"manual notification test"}))});toast("Событие анализа: отправлено "+result.sent+", ошибок "+result.errors+", пропущено "+result.skipped);}catch(error){toast("Событие не отправлено: "+error.message);}});
+  $("#notificationChannel").addEventListener("change",()=>{renderServices();});
+  $("#saveExternalApiSettingsButton").addEventListener("click",saveExternalApiSettings);
+  $("#openApiSettingsDialogButton").addEventListener("click",showApiSettingsDialog);
+  $("#closeApiSettingsDialog").addEventListener("click",()=>$("#apiSettingsDialog").close());
+  $("#apiSettingsCancelButton").addEventListener("click",()=>$("#apiSettingsDialog").close());
+  $("#apiSettingsSaveButton").addEventListener("click",saveApiSettingsDialog);
+  $("#apiSettingsTestButton").addEventListener("click",testApiSettingsDialog);
+  $("#apiSettingsTestMacInput").addEventListener("keydown",(event)=>{if(event.key==="Enter")testApiSettingsDialog();});
+  $("#apiEnrichButton").addEventListener("click",async()=>{if(!state.devices.length)return toast("Нет устройств для API-обогащения.");const previousDevices=state.devices||[],sourceCreatedAt=state.lastAnalysis||primaryFileCreatedAt();try{if(!state.resultSnapshotId&&!backendAvailable&&state.devices.length>(MemoryGuard.limits.inlineComparisonRows||20000))throw new Error("Для API-обогащения большого автономного набора подключите backend.");const result=await api("/external-enrichment/run",{method:"POST",body:JSON.stringify(currentDevicePayload({createdAt:sourceCreatedAt,saveHistory:true,compactResult:true,resultPageSize:resultPageSize}))});state.devices=result.devices||[];state.lastAnalysis=sourceCreatedAt;if(result.resultReference?.snapshotId){state.resultSnapshotId=result.resultReference.snapshotId;state.resultDeviceCount=Number(result.resultReference.deviceCount||state.devices.length);state.resultInvalidCount=Number(result.resultReference.invalidCount||0);if(result.snapshot){state.snapshots.unshift({...result.snapshot,devices:[],backendStored:true});state.snapshots=state.snapshots.slice(0,25);}}recordLocalMovements(previousDevices,state.devices,"external-api-enrichment",state.lastAnalysis);save();persistAutosave("external-api-enrichment").catch(()=>{});renderAll();toast("API-обогащение: кандидатов "+result.summary.candidates+", обновлено "+result.summary.updated+", кэш "+result.summary.cached+", запросов "+result.summary.lookups);}catch(error){toast(error.message);}});
+  $("#apiLookupButton").addEventListener("click",async()=>{const mac=$("#apiLookupMacInput").value.trim();if(!mac)return toast("Введите MAC-адрес.");try{const result=await api("/external-enrichment/test",{method:"POST",body:JSON.stringify({mac})});$("#apiLookupResult").textContent=(result.macFormatted||mac)+" · "+(result.vendor||"Unknown")+" · provider: "+result.provider+" · source: "+result.source;await refreshApiCacheStatus();}catch(error){$("#apiLookupResult").textContent="Ошибка API: "+error.message;}});
+  $("#refreshApiCacheButton").addEventListener("click",()=>{refreshApiCacheStatus().catch((error)=>toast(error.message));});
+  $("#clearApiCacheButton").addEventListener("click",clearApiCache);
+  $("#databaseSearchButton").addEventListener("click",searchDatabase);
+  $("#databaseSearchInput").addEventListener("keydown",(event)=>{if(event.key==="Enter")searchDatabase();});
+  $("#databaseSearchResults").addEventListener("dblclick",async(e)=>{const row=e.target.closest("[data-db-mac]");const mac=row?.dataset.dbMac,type=row?.dataset.dbType;if(!mac){toast(type==="ipMapping"?"IP mapping has no device MAC.":"No MAC in this database result.");return;}try{await openDatabaseDevice(mac);}catch(error){toast(error.message);}});
+  $("#databaseHistoryFilterButton").addEventListener("click",loadDatabaseHistoryManagement);
+  $("#reloadDatabaseHistoryButton").addEventListener("click",loadDatabaseHistoryManagement);
+  $$("#dbHistoryMacFilter,#dbHistorySourceFilter,#dbHistoryVendorFilter,#dbHistoryModelFilter,#dbHistoryRoomFilter,#dbHistoryDateFrom,#dbHistoryDateTo").forEach((input)=>input.addEventListener("keydown",(event)=>{if(event.key==="Enter")loadDatabaseHistoryManagement();}));
+  $("#clearDatabaseHistoryFiltersButton").addEventListener("click",()=>{$$("#dbHistoryMacFilter,#dbHistorySourceFilter,#dbHistoryVendorFilter,#dbHistoryModelFilter,#dbHistoryRoomFilter,#dbHistoryDateFrom,#dbHistoryDateTo").forEach((input)=>{input.value="";});loadDatabaseHistoryManagement();});
+  $("#deleteSelectedDatabaseHistoryButton").addEventListener("click",()=>deleteDatabaseHistoryEntries(selectedDatabaseHistoryIds(),{}));
+  $("#deleteFilteredDatabaseHistoryButton").addEventListener("click",()=>deleteDatabaseHistoryEntries([],databaseHistoryFilters()));
+  $("#selectAllDatabaseHistory").addEventListener("change",(event)=>{$$('[data-db-history-select]').forEach((input)=>{input.checked=event.target.checked;});});
+  $("#databaseHistoryBody").addEventListener("change",(event)=>{if(!event.target.matches("[data-db-history-select]"))return;const boxes=$$('[data-db-history-select]'),checked=boxes.filter((input)=>input.checked).length,selectAll=$("#selectAllDatabaseHistory");selectAll.checked=boxes.length>0&&checked===boxes.length;selectAll.indeterminate=checked>0&&checked<boxes.length;});
+  $("#databaseHistoryBody").addEventListener("click",(event)=>{const button=event.target.closest("[data-delete-db-history-id]");if(button)deleteDatabaseHistoryEntries([Number(button.dataset.deleteDbHistoryId)],{});});
+  $("#databaseHistoryBody").addEventListener("dblclick",async(event)=>{if(event.target.closest("button,input"))return;const row=event.target.closest("[data-db-history-mac]");if(!row)return;try{await openDatabaseDevice(row.dataset.dbHistoryMac);}catch(error){toast(error.message);}});
+  $("#refreshDataButton").addEventListener("click",()=>{syncFromBackend();renderServices();loadDatabaseHistoryManagement();});
+  $("#clearDatabaseSnapshotsButton").addEventListener("click",async()=>{if(!confirm("Удалить все сохранённые снимки/выгрузки из SQLite?"))return;try{const result=await api("/database/snapshots/delete",{method:"POST",body:JSON.stringify({})});state.snapshots=[];save();renderAll();renderServices();toast("Удалено снимков SQLite: "+result.deleted);}catch(error){toast(error.message);}});
+  $("#clearDatabaseHistoryButton").addEventListener("click",async()=>{if(!confirm("Удалить всю историю устройств и перемещений из SQLite? Снимки браузера не будут удалены."))return;try{await api("/history",{method:"DELETE"});await loadDatabaseHistoryManagement();toast("История SQLite очищена.");}catch(error){toast(error.message);}});
+  $("#databaseMaintenanceButton").addEventListener("click",async()=>{try{const result=await api("/database/maintenance",{method:"POST",body:JSON.stringify({integrity:true,optimize:true,vacuum:false})});renderServices();toast("SQLite integrity: "+result.integrity+", reclaimed "+Math.round((result.reclaimedBytes||0)/1024)+" KB");}catch(error){toast(error.message);}});
+  $("#legacyImportButton").addEventListener("click",async()=>{try{const result=await api("/legacy/import",{method:"POST",body:JSON.stringify({dryRun:false})});renderServices();toast("Legacy SQLite: imported "+(result.summary?.imported||0)+", skipped "+(result.summary?.skipped||0));}catch(error){toast(error.message);}});
+  $("#qualityAnalysisButton").addEventListener("click",()=>{analyzeQuality();toast("Анализ качества данных завершён.");});
+  $("#refreshAnalyticsReportButton").addEventListener("click",refreshAnalyticsReport);
+  $("#exportAnalyticsReportButton").addEventListener("click",exportAnalyticsReport);
+  $("#dashboardVendorFilter").addEventListener("change",renderAnalytics);
+  $("#dashboardRoomFilter").addEventListener("change",renderAnalytics);
+  $("#dashboardStatusFilter").addEventListener("change",renderAnalytics);
+  $("#refreshDashboardButton").addEventListener("click",renderAnalytics);
+  $$("[data-dashboard-status]").forEach((button)=>button.addEventListener("click",async()=>{const selected=button.dataset.dashboardStatus||"all",status=$("#dashboardStatusFilter");if(status)status.value=selected;await renderAnalytics();if(selected==="changed")showDashboardChangesDialog();}));
+  $("#dashboardChangeMode").addEventListener("change",()=>{const settings=readDashboardChangeControls();syncDashboardChangeControls(settings);});
+  $("#applyDashboardChangeRangeButton").addEventListener("click",async()=>{readDashboardChangeControls();await renderAnalytics();showDashboardChangesDialog();});
+  $("#openDashboardChangesButton").addEventListener("click",showDashboardChangesDialog);
+  $("#dashboardChangeSeverityFilter").addEventListener("change",renderDashboardChangesTable);
+  $("#dashboardChangeSearch").addEventListener("input",renderDashboardChangesTable);
+  $("#closeDashboardChangesDialog").addEventListener("click",()=>$("#dashboardChangesDialog").close());
+  $("#saveDashboardSettingsButton").addEventListener("click",showDashboardSettingsDialog);
+  $$('[data-dashboard-settings-tab]').forEach((button)=>button.addEventListener("click",()=>selectDashboardSettingsTab(button.dataset.dashboardSettingsTab)));
+  $("#applyDashboardSettingsButton").addEventListener("click",()=>saveDashboardSettings(dashboardDialogSettings()));
+  $("#resetDashboardSettingsButton").addEventListener("click",()=>{const current=dashboardSettings();fillDashboardSettingsDialog({...current,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true},autoRefresh:true,refreshInterval:60});saveDashboardSettings(dashboardDialogSettings());});
+  $("#closeDashboardSettingsDialog").addEventListener("click",()=>$("#dashboardSettingsDialog").close());
+  $("#cancelDashboardSettingsButton").addEventListener("click",()=>$("#dashboardSettingsDialog").close());
+  $("#exportDashboardButton").addEventListener("click",(event)=>{event.preventDefault();event.stopImmediatePropagation();exportDashboard();},true);
+  $("#exportChartsSvgButton").addEventListener("click",exportChartsSvg);
+  $("#exportTopologyButton").addEventListener("click",exportTopology);
+  $("#exportClustersButton").addEventListener("click",exportClusters);
+  window.addEventListener("pointermove",resizeResultColumn);window.addEventListener("pointerup",finishResultColumnResize);window.addEventListener("pointercancel",finishResultColumnResize);
+  window.addEventListener("pointermove",resizeMovementColumn);window.addEventListener("pointerup",finishMovementColumnResize);window.addEventListener("pointercancel",finishMovementColumnResize);
+  document.addEventListener("keydown",handleAppShortcut);
+  setInterval(()=>{persistAutosave("interval").catch(()=>{});},60000);
+  setInterval(()=>{if(state.engineeringMode&&!engineeringSessionActive()){clearEngineeringSession();renderEngineeringState();toast("Инженерная сессия завершена.");}},30000);
+  window.addEventListener("beforeunload",()=>{save();const autosaveState=compactAnalysisAutosaveState();fetch("/api/autosave",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slot:"main",reason:"beforeunload",state:autosaveState}),keepalive:true}).catch(()=>{});});
+  applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});view(viewFromHash(),{updateHash:true,render:false});renderEngineeringState();renderAll();renderColumnPreferences();renderParityStatus();loadThemePreference();loadOuiPreference().then(()=>{renderResults();});loadVendorDetectorSettings();loadHistoryEnrichmentSettings();loadDashboardSettings();loadEngineeringSession();loadExternalApiSettings();refreshApiCacheStatus().catch(()=>{});restoreBrowserStateFromIndexedDb().then((restored)=>{if(restored){applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});renderEngineeringState();renderAll();renderColumnPreferences();const status=$("#autosaveStatus");if(status)status.textContent="Полный workspace восстановлен из хранилища браузера.";}}).finally(()=>syncFromBackend());window.MacAnalyzerAppReady=true;document.documentElement.dataset.macAnalyzerApp="ready";
+})();
