@@ -16,6 +16,26 @@ from pathlib import Path
 from typing import Any
 
 from openpyxl import Workbook
+import pefile
+
+
+def embedded_manifest(executable: Path) -> bytes:
+    image = pefile.PE(str(executable), fast_load=True)
+    image.parse_data_directories(
+        directories=[pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_RESOURCE"]]
+    )
+    resources = getattr(image, "DIRECTORY_ENTRY_RESOURCE", None)
+    if resources is None:
+        return b""
+    manifests: list[bytes] = []
+    for resource_type in resources.entries:
+        if resource_type.id != pefile.RESOURCE_TYPE["RT_MANIFEST"]:
+            continue
+        for resource_name in resource_type.directory.entries:
+            for language in resource_name.directory.entries:
+                data = language.data.struct
+                manifests.append(image.get_data(data.OffsetToData, data.Size))
+    return b"".join(manifests).replace(b"\x00", b"")
 
 
 def request_json(base_url: str, method: str, path: str, payload: Any = None) -> dict[str, Any]:
@@ -71,6 +91,12 @@ def verify(package: Path, port: int) -> dict[str, Any]:
     executable = package / "MACAnalyzerBackend.exe"
     if not executable.is_file():
         raise FileNotFoundError(executable)
+    package_info = json.loads((package / "PACKAGE_INFO.json").read_text(encoding="utf-8-sig"))
+    manifest = embedded_manifest(executable)
+    if package_info.get("administratorRightsRequired") is not False:
+        raise AssertionError("Portable package unexpectedly requires administrator rights")
+    if b"requestedExecutionLevel" not in manifest or b"asInvoker" not in manifest:
+        raise AssertionError("Portable backend does not contain the asInvoker manifest")
 
     data_root = package / "data"
     data_root.mkdir(parents=True, exist_ok=True)
@@ -163,6 +189,9 @@ def verify(package: Path, port: int) -> dict[str, Any]:
         assert package in database_path.parents
         return {
             "status": "passed",
+            "package": package_info["package"],
+            "administratorRightsRequired": package_info["administratorRightsRequired"],
+            "embeddedManifest": "asInvoker",
             "health": health["status"],
             "diagnostics": diagnostics["status"],
             "diagnosticChecks": f'{diagnostics["summary"]["passed"]}/{diagnostics["summary"]["total"]}',

@@ -33,7 +33,23 @@ def test_portable_build_is_self_contained_and_excludes_working_data():
     assert "Portable frontend contains obsolete memoryGuard code" in builder
     assert "Portable frontend is stale" in builder
     assert "BUILD_INFO.json" in builder
-    assert "build_source_portable.ps1" in builder
+    assert "PACKAGE_INFO.json" in builder
+    assert 'administratorRightsRequired = $false' in builder
+    assert '"--manifest", $manifestPath' in builder
+    assert "build_source_portable.ps1" not in builder
+    assert 'Join-Path $outputRoot "source"' in builder
+
+
+def test_windows_fallback_never_requests_elevation():
+    builder = _read("scripts/build_portable.ps1")
+    manifest = _read("config/windows-as-invoker.manifest")
+    launcher = _read("scripts/portable_start.ps1")
+    assert 'requestedExecutionLevel level="asInvoker" uiAccess="false"' in manifest
+    assert "--uac-admin" not in builder
+    assert "-Verb RunAs" not in launcher
+    verifier = _read("tools/verify_portable_backend.py")
+    assert 'b"requestedExecutionLevel" not in manifest' in verifier
+    assert 'b"asInvoker" not in manifest' in verifier
 
 
 def test_source_only_portable_package_has_no_backend_executable():
@@ -97,6 +113,8 @@ def test_root_launchers_delegate_to_portable_scripts():
     assert "portable_stop.ps1" in stop
     assert 'Join-Path $root "MACAnalyzerBackend.exe"' in launcher
     assert 'Join-Path $root ".venv-portable\\Scripts\\python.exe"' in launcher
+    assert launcher.index("if ($python) {") < launcher.index("elseif (Test-Path -LiteralPath $portableExecutable)")
+    assert 'Starting MAC Analyzer without elevation: $backendMode' in launcher
     assert "Test-MacAnalyzerHealth" in launcher
     assert 'WindowStyle = "Hidden"' in launcher
     assert "if ($argumentList.Count)" in launcher

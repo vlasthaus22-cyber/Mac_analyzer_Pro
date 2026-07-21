@@ -14,8 +14,13 @@ $outputRoot = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) }
 $distPath = Join-Path $outputRoot "dist"
 $workPath = Join-Path $root "data\build\pyinstaller"
 $specPath = Join-Path $workPath "spec"
+$manifestPath = Join-Path $root "config\windows-as-invoker.manifest"
 New-Item -ItemType Directory -Force -Path $outputRoot, $workPath, $specPath | Out-Null
 if (-not $SkipClean -and (Test-Path -LiteralPath $distPath)) { Remove-Item -LiteralPath $distPath -Recurse -Force }
+if (-not $SkipClean -and (Test-Path -LiteralPath (Join-Path $outputRoot "source"))) {
+    Remove-Item -LiteralPath (Join-Path $outputRoot "source") -Recurse -Force
+}
+if (-not (Test-Path -LiteralPath $manifestPath)) { throw "Windows asInvoker manifest is missing: $manifestPath" }
 
 $data = @(
     @("index.html", "."),
@@ -36,7 +41,7 @@ $data = @(
 $arguments = @(
     "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir", "--contents-directory", ".",
     "--name", "MACAnalyzerBackend", "--distpath", $distPath, "--workpath", $workPath,
-    "--specpath", $specPath, "--collect-all", "openpyxl", "--collect-all", "reportlab",
+    "--specpath", $specPath, "--manifest", $manifestPath, "--collect-all", "openpyxl", "--collect-all", "reportlab",
     "--collect-all", "PIL", "--hidden-import", "xlrd"
 )
 foreach ($item in $data) {
@@ -95,6 +100,12 @@ if ($git) {
     sourceRevision = $revision
     frontendChecksums = $checksums
 } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $package "BUILD_INFO.json") -Encoding UTF8
-Write-Output "Portable package created: $package"
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "build_source_portable.ps1") -OutputDirectory $outputRoot
-if ($LASTEXITCODE -ne 0) { throw "Source-only portable package build failed." }
+[ordered]@{
+    package = "MAC Analyzer Pro Universal"
+    launcher = "START_MAC_ANALYZER.cmd"
+    administratorRightsRequired = $false
+    preferredBackend = "server.py via an available user Python"
+    fallbackBackend = "MACAnalyzerBackend.exe (asInvoker)"
+    dataDirectory = "data"
+} | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath (Join-Path $package "PACKAGE_INFO.json") -Encoding UTF8
+Write-Output "Universal no-admin package created: $package"

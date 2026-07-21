@@ -84,45 +84,56 @@ if (-not (Test-PortAvailable $Port)) {
 $portableExecutable = Join-Path $root "MACAnalyzerBackend.exe"
 $filePath = ""
 $argumentList = @()
+$backendMode = ""
+$pythonCandidates = @(
+    (Join-Path $root ".venv-portable\Scripts\python.exe"),
+    (Join-Path $root ".venv\Scripts\python.exe"),
+    (Join-Path $root "runtime\python\python.exe")
+)
+$python = $pythonCandidates | Where-Object { (Test-Path -LiteralPath $_) -and (Test-Python $_) } | Select-Object -First 1
+$pythonPrefix = @()
 
-if (Test-Path -LiteralPath $portableExecutable) {
-    $filePath = $portableExecutable
-} else {
-    $pythonCandidates = @(
-        (Join-Path $root "runtime\python\python.exe"),
-        (Join-Path $root ".venv-portable\Scripts\python.exe"),
-        (Join-Path $root ".venv\Scripts\python.exe")
-    )
-    $python = $pythonCandidates | Where-Object { (Test-Path -LiteralPath $_) -and (Test-Python $_) } | Select-Object -First 1
-    $pythonPrefix = @()
+if (-not $python) {
+    $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+    if ($pyLauncher -and (Test-Python $pyLauncher.Source @("-3"))) {
+        $python = $pyLauncher.Source
+        $pythonPrefix = @("-3")
+    }
+}
+if (-not $python) {
+    $systemPython = Get-Command python -ErrorAction SilentlyContinue
+    if ($systemPython -and (Test-Python $systemPython.Source)) { $python = $systemPython.Source }
+}
 
-    if (-not $python) {
-        $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
-        if ($pyLauncher -and (Test-Python $pyLauncher.Source @("-3"))) {
-            $python = $pyLauncher.Source
-            $pythonPrefix = @("-3")
-        }
-    }
-    if (-not $python) {
-        $systemPython = Get-Command python -ErrorAction SilentlyContinue
-        if ($systemPython -and (Test-Python $systemPython.Source)) { $python = $systemPython.Source }
-    }
-    if (-not $python) {
-        throw "Python 3.10+ was not found. Use the portable package containing MACAnalyzerBackend.exe."
-    }
-
+if ($python) {
     if (-not (Test-BackendDependencies $python $pythonPrefix)) {
         $portableVenv = Join-Path $root ".venv-portable"
-        & $python @pythonPrefix -m venv $portableVenv
-        if ($LASTEXITCODE -ne 0) { throw "Failed to create the portable Python environment." }
-        $python = Join-Path $portableVenv "Scripts\python.exe"
-        $pythonPrefix = @()
-        & $python -m pip install --disable-pip-version-check -r (Join-Path $root "requirements-web.txt")
-        if ($LASTEXITCODE -ne 0) { throw "Failed to install backend dependencies." }
+        Write-Output "Preparing a local Python environment without administrator rights..."
+        & $python @pythonPrefix -m venv $portableVenv 2>> $stderr
+        if ($LASTEXITCODE -eq 0) {
+            $venvPython = Join-Path $portableVenv "Scripts\python.exe"
+            & $venvPython -m pip install --disable-pip-version-check -r (Join-Path $root "requirements-web.txt") 2>> $stderr
+            if ($LASTEXITCODE -eq 0 -and (Test-BackendDependencies $venvPython)) {
+                $python = $venvPython
+                $pythonPrefix = @()
+            } else {
+                $python = $null
+            }
+        } else {
+            $python = $null
+        }
     }
+}
 
+if ($python) {
     $filePath = $python
     $argumentList = @($pythonPrefix) + @("server.py")
+    $backendMode = "Python source"
+} elseif (Test-Path -LiteralPath $portableExecutable) {
+    $filePath = $portableExecutable
+    $backendMode = "built-in portable fallback"
+} else {
+    throw "No usable backend was found. Keep the complete universal package together or install Python 3.10+."
 }
 
 $env:MAC_ANALYZER_PORT = [string]$Port
@@ -143,6 +154,7 @@ $startParameters = @{
     PassThru = $true
 }
 if ($argumentList.Count) { $startParameters.ArgumentList = $argumentList }
+Write-Output "Starting MAC Analyzer without elevation: $backendMode"
 $process = Start-Process @startParameters
 
 for ($attempt = 0; $attempt -lt 100; $attempt++) {

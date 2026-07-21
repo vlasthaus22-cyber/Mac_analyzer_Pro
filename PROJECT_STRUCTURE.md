@@ -39,9 +39,8 @@ Mac_analyzer_Pro/
     runtime/               PID и временное состояние процессов
       tests/               временные изолированные базы тестов; автоматически очищаются
   logs/                    журналы backend и исходной программы
-  portable/                результат автономной Windows-сборки (создаётся командой сборки, не хранится в Git)
-    dist/MACAnalyzerBackend/ автономная Windows-сборка с исполняемым backend
-    source/MACAnalyzerWebSource/ исходная сборка без MacAnalyzerBackend.exe; запускает server.py через Python
+  portable/                результат универсальной Windows-сборки (создаётся командой сборки, не хранится в Git)
+    dist/MACAnalyzerBackend/ единый пакет: исходный server.py, Python-first лаунчер и резервный asInvoker backend
   START_MAC_ANALYZER.cmd    запуск переносимого backend и открытие web-интерфейса
   STOP_MAC_ANALYZER.cmd     остановка переносимого backend
   index.html               HTML-интерфейс и автономный browser fallback
