@@ -21,7 +21,14 @@ def test_standalone_keeps_xlsx_import_support():
     assert "expandedBytes>standaloneMemoryLimits.zipExpandedBytes" in html
     assert "shared.length>standaloneMemoryLimits.sharedStrings" in html
     assert "assertStandaloneEnrichmentCapacity([...state.files,rec])" in html
+    assert "const standaloneSourceFiles=new Map()" in html
+    assert "rows:data.rows.slice(0,100),rowCount,rowsComplete:rowCount<=100" in html
+    assert "standaloneSourceFiles.set(id,file);data.rows.length=0" in html
+    assert "async function standaloneRowsForAnalysis(file)" in html
+    assert "async function analyze()" in html
     assert "assertStandaloneEnrichmentCapacity();state.devices=[];state.invalid=[];const byMac=new Map()" in html
+    assert "if(loaded.temporary)rows.length=0" in html
+    assert "ri%2000===0" in html
     assert "byMac.clear();state.invalid=invalid" in html
     assert '"DCA632":"Raspberry Pi"' in html
     assert '"DC A632".replace' not in html
@@ -680,7 +687,8 @@ def test_standalone_app_log_performance_metrics_parity_block():
     assert 'download("mac-standalone-logs.html"' in html
     assert 'download("mac-standalone-logs.xlsx",buildXlsxFromTable(logsExportTable(),"Logs")' in html
     assert 'download("mac-standalone-logs.pdf",buildSimplePdf("MAC Analyzer Logs"' in html
-    assert 'timedOperation("analyze"' in html
+    assert 'savePerformanceMetric("analyze",performance.now()-started,details)' in html
+    assert 'logAction("analyze",details)' in html
     assert 'timedOperation("scheduler_queue"' in html
     assert 'timedOperation("local_database_search"' in html
     assert "renderLocalDatabase();renderLogsPanel()" in html

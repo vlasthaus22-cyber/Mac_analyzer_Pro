@@ -2,11 +2,12 @@
   "use strict";
 
   const list = (value) => (Array.isArray(value) ? value : []);
+  const workspacePreviewRows = 101;
 
   function compactFiles(files, preserveBrowserRows) {
     return list(files).map((file) => ({
       ...file,
-      rows: preserveBrowserRows && !file.fileToken ? list(file.rows) : [],
+      rows: preserveBrowserRows && !file.fileToken ? list(file.rows).slice(0, workspacePreviewRows) : [],
     }));
   }
 
