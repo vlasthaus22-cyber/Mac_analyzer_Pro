@@ -194,7 +194,7 @@ def test_user_requested_backend_parity_blocks_are_present():
             "def build_enrichment_context",
             "def normalize_history_enrichment_settings",
             'elif parsed.path == "/api/history/panel":',
-            '"autosave": load_autosave_state("main")',
+            '"autosave": load_autosave_state("main", hydrate=False)',
             "if new_value != old_value and (new_value or old_value):",
             'elif parsed.path == "/api/ip-mappings/import":',
             'elif parsed.path == "/api/ip-mappings/autodetect":',

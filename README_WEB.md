@@ -23,6 +23,17 @@
 powershell -ExecutionPolicy Bypass -File scripts/build_portable.ps1
 ```
 
+Команда создаёт два варианта:
+
+- `portable/dist/MACAnalyzerBackend` — автономная Windows-сборка.
+- `portable/source/MACAnalyzerWebSource` — исходная сборка без `MacAnalyzerBackend.exe`; backend запускается из `server.py` через Python 3.10+.
+
+Оба варианта хранят пользовательские данные внутри `data/`. Все браузеры,
+открытые через один запущенный backend, получают общий workspace, результаты,
+историю и настройки из локальной SQLite. Полные строки XLSX не включаются в
+bootstrap-ответ: браузер получает только токены файлов, метаданные и страницы
+результатов.
+
 Готовая папка находится в `portable/dist/MACAnalyzerBackend`. Переносить нужно
 всю эту папку целиком. На другом Windows-компьютере запустите
 `START_MAC_ANALYZER.cmd`: встроенный `MACAnalyzerBackend.exe` поднимет локальный

@@ -33,6 +33,19 @@ def test_portable_build_is_self_contained_and_excludes_working_data():
     assert "Portable frontend contains obsolete memoryGuard code" in builder
     assert "Portable frontend is stale" in builder
     assert "BUILD_INFO.json" in builder
+    assert "build_source_portable.ps1" in builder
+
+
+def test_source_only_portable_package_has_no_backend_executable():
+    builder = _read("scripts/build_source_portable.ps1")
+    assert 'source\\MACAnalyzerWebSource' in builder
+    assert 'entryPoint = "server.py"' in builder
+    assert 'executableBackend = $false' in builder
+    assert 'Filter "*.exe"' in builder
+    assert 'Filter "__pycache__"' in builder
+    assert '"data\\databases"' in builder
+    assert '"data\\imports"' in builder
+    assert '"data\\backups"' in builder
 
 
 def test_portable_launcher_resolves_a_relocated_cyrillic_path():

@@ -97,9 +97,9 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
 
     assert 'id="fileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
-    assert '<script src="frontend/memory-guard.js?v=20260721.1"></script>' in html
-    assert '<script src="frontend/file-readers.js?v=20260721.1"></script>' in html
-    assert '<meta name="application-build" content="2026.07.21.1">' in html
+    assert '<script src="frontend/memory-guard.js?v=20260721.2"></script>' in html
+    assert '<script src="frontend/file-readers.js?v=20260721.2"></script>' in html
+    assert '<meta name="application-build" content="2026.07.21.2">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -146,6 +146,25 @@ def test_large_second_xlsx_uses_indexeddb_without_blocking_render():
     assert 'async function fallbackLoadIndexedState()' in html
     assert 'fallbackLoadIndexedState().then((restored)' in html
     assert '.file-row-pending' in styles
+
+
+def test_cross_browser_restore_prefers_compact_sqlite_workspace():
+    app = read_app_js()
+    server = Path("server.py").read_text(encoding="utf-8")
+
+    assert 'if(fileRecord.fileToken&&!fileRecord.clientImported)return true;' in app
+    assert 'const data=await api("/autosave?slot=main&compact=1")' in app
+    assert 'state.backendAutosaveUpdatedAt=result.updatedAt||state.backendAutosaveUpdatedAt||"";' in app
+    assert 'function shouldRestoreBootstrapAutosave(autosave)' in app
+    assert 'if(!merged.resultSnapshotId&&merged.activeSnapshotId)' in app
+    assert 'async function restoreInitialState()' in app
+    assert 'const backendSynced=await syncFromBackend();' in app
+    assert 'if(!backendSynced){' in app
+    assert 'const restored=await restoreBrowserStateFromIndexedDb();' in app
+    assert '"autosave": load_autosave_state("main", hydrate=False)' in server
+    assert 'state = load_autosave_state(query.get("slot", ["main"])[0], hydrate=not compact)' in server
+    assert 'state["devices"] = []' in server
+    assert '{**item, "rows": []}' in server
 
 
 def test_migrated_controls_have_single_backend_binding():
@@ -914,7 +933,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260721.1"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260721.2"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
     assert 'async function storeLocalSnapshot(' in app
     assert 'devices:rows.slice(0,previewLimit)' in app
@@ -1975,7 +1994,7 @@ def test_role_aware_guide_is_a_separate_working_view():
         'data-guide-tab="large-files"',
         'data-guide-requires-engineering',
         'id="openGuideFromHelpButton"',
-        '<script src="frontend/guide.js?v=20260721.1"></script>',
+        '<script src="frontend/guide.js?v=20260721.2"></script>',
     ):
         assert marker in html
     for text in (
@@ -2083,6 +2102,7 @@ if __name__ == "__main__":
     test_full_runner_isolates_sqlite_from_working_database()
     test_global_process_progress_covers_file_analysis_compare_and_export()
     test_navigation_tabs_are_hash_routable_and_safe()
+    test_cross_browser_restore_prefers_compact_sqlite_workspace()
     test_migrated_controls_have_single_backend_binding()
     test_single_snapshot_compare_uses_backend_snapshot_resolver()
     test_multi_snapshot_compare_uses_backend_snapshot_resolver()

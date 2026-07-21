@@ -33,13 +33,15 @@ Mac_analyzer_Pro/
     legacy/                базы исходной PyQt-программы
     backups/               резервные копии
     imports/               входные файлы и ограниченный workspace-cache для больших таблиц
-      workspace-cache/     полные таблицы по токену с TTL для восстановления backend
+      workspace-cache/     полные таблицы по токену с долговременным TTL; RAM-кэш освобождается отдельно от дисковых файлов
     reference/             переносимые OUI TXT/CSV для автоопределения производителей
     exports/               серверные результаты экспорта
     runtime/               PID и временное состояние процессов
       tests/               временные изолированные базы тестов; автоматически очищаются
   logs/                    журналы backend и исходной программы
   portable/                результат автономной Windows-сборки (создаётся командой сборки, не хранится в Git)
+    dist/MACAnalyzerBackend/ автономная Windows-сборка с исполняемым backend
+    source/MACAnalyzerWebSource/ исходная сборка без MacAnalyzerBackend.exe; запускает server.py через Python
   START_MAC_ANALYZER.cmd    запуск переносимого backend и открытие web-интерфейса
   STOP_MAC_ANALYZER.cmd     остановка переносимого backend
   index.html               HTML-интерфейс и автономный browser fallback

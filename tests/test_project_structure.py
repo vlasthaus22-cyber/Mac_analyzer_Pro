@@ -16,6 +16,7 @@ def test_project_structure_and_maintenance_commands_exist():
         "scripts/portable_start.ps1",
         "scripts/portable_stop.ps1",
         "scripts/build_portable.ps1",
+        "scripts/build_source_portable.ps1",
         "scripts/run_tests.ps1",
         "tests/README.md",
         "tools/README.md",

@@ -170,9 +170,9 @@ DEVICE_FIELDS = ("vendor", "model", "ip", "address", "room", "switchIp", "switch
 SIGNAL_STATE: dict[str, Any] = {"lastSignal": None, "lastSignalAt": None, "shutdownRequested": False}
 ENRICHMENT_JOBS: dict[str, dict[str, Any]] = {}
 WORKSPACE_FILE_CACHE = WorkspaceFileCache(
-    ttl_seconds=int(os.environ.get("MAC_ANALYZER_WORKSPACE_CACHE_TTL", "3600")),
-    max_entries=int(os.environ.get("MAC_ANALYZER_WORKSPACE_CACHE_FILES", "24")),
-    max_rows=int(os.environ.get("MAC_ANALYZER_WORKSPACE_CACHE_ROWS", "500000")),
+    ttl_seconds=int(os.environ.get("MAC_ANALYZER_WORKSPACE_CACHE_TTL", "2592000")),
+    max_entries=int(os.environ.get("MAC_ANALYZER_WORKSPACE_CACHE_FILES", "100")),
+    max_rows=int(os.environ.get("MAC_ANALYZER_WORKSPACE_CACHE_ROWS", "250000")),
     storage_directory=STORAGE.imports / "workspace-cache",
 )
 
@@ -300,24 +300,42 @@ def save_autosave_state(state: dict[str, Any], slot: str = "main", reason: str =
     }
 
 
-def load_autosave_state(slot: str = "main") -> Optional[dict[str, Any]]:
+def load_autosave_state(slot: str = "main", hydrate: bool = True) -> Optional[dict[str, Any]]:
     autosave_slot = as_text(slot) or "main"
     with db_connection() as conn:
         row = conn.execute("SELECT slot, state_json, reason, updated_at FROM app_autosaves WHERE slot = ?", (autosave_slot,)).fetchone()
         state = json.loads(row["state_json"]) if row else None
-        snapshot_id = as_text(state.get("activeSnapshotId")) if isinstance(state, dict) else ""
-        if snapshot_id and not state.get("devices"):
-            snapshot = conn.execute("SELECT devices_json FROM snapshots WHERE id = ?", (snapshot_id,)).fetchone()
-            if snapshot:
+        snapshot_id = as_text(
+            state.get("resultSnapshotId") or state.get("activeSnapshotId")
+        ) if isinstance(state, dict) else ""
+        if snapshot_id:
+            snapshot = conn.execute(
+                "SELECT id, device_count, devices_json FROM snapshots WHERE id = ?",
+                (snapshot_id,),
+            ).fetchone()
+            if snapshot and hydrate and not state.get("devices"):
                 state["devices"] = json.loads(snapshot["devices_json"])
+            elif snapshot and not hydrate:
+                state["resultSnapshotId"] = snapshot["id"]
+                state["resultDeviceCount"] = int(snapshot["device_count"] or 0)
+                state["devices"] = []
+                state["invalid"] = []
+        if isinstance(state, dict) and not hydrate:
+            state["devices"] = []
+            state["invalid"] = []
     if not row:
         return None
     files = state.get("files") if isinstance(state, dict) else None
-    if isinstance(files, list) and any(item.get("fileToken") and not item.get("rows") for item in files if isinstance(item, dict)):
+    if hydrate and isinstance(files, list) and any(item.get("fileToken") and not item.get("rows") for item in files if isinstance(item, dict)):
         try:
             state["files"] = resolve_workspace_files(files, WORKSPACE_FILE_CACHE)
         except WorkspaceCacheMiss:
             pass
+    elif not hydrate and isinstance(files, list):
+        state["files"] = [
+            {**item, "rows": []} if isinstance(item, dict) else item
+            for item in files
+        ]
     return {
         "slot": row["slot"],
         "state": state,
@@ -1511,7 +1529,7 @@ def bootstrap_payload() -> dict[str, Any]:
     custom = preferences.get("custom") or []
     return {
         "snapshots": snapshot_state_items(),
-        "autosave": load_autosave_state("main"),
+        "autosave": load_autosave_state("main", hydrate=False),
         "columns": preferences,
         "customColumns": [item.get("key") for item in custom if item.get("key")],
         "customColumnMappings": {item.get("key"): item.get("sourceIndex") for item in custom if item.get("key")},
@@ -5502,7 +5520,8 @@ class AppHandler(BaseHTTPRequestHandler):
         elif parsed.path == "/api/autosaves":
             self.json_response(list_autosave_states(query.get("limit", ["50"])[0]))
         elif parsed.path == "/api/autosave":
-            state = load_autosave_state(query.get("slot", ["main"])[0])
+            compact = as_text(query.get("compact", [""])[0]).lower() in {"1", "true", "yes"}
+            state = load_autosave_state(query.get("slot", ["main"])[0], hydrate=not compact)
             self.json_response({"autosave": state})
         elif parsed.path == "/api/lookup":
             mac = normalize_mac(query.get("mac", [""])[0])

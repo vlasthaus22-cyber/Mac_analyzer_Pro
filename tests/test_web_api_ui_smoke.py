@@ -1236,7 +1236,7 @@ def test_rest_api_and_ui_controls_smoke():
             status, bootstrap_with_autosave = request_json(app.base_url, "GET", "/api/bootstrap")
             assert status == 200
             assert bootstrap_with_autosave["autosave"]["slot"] == "main"
-            assert bootstrap_with_autosave["autosave"]["state"]["devices"][0]["vendor"] == "SmokeVendor"
+            assert bootstrap_with_autosave["autosave"]["state"]["devices"] == []
             assert bootstrap_with_autosave["autosave"]["state"]["movementHistory"][0]["before"] == "Old"
         finally:
             if previous_main_state:
