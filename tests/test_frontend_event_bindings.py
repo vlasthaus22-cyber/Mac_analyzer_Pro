@@ -97,8 +97,9 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
 
     assert 'id="fileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
-    assert '<script src="frontend/memory-guard.js?v=20260720.2"></script>' in html
-    assert '<script src="frontend/file-readers.js?v=20260720.2"></script>' in html
+    assert '<script src="frontend/memory-guard.js?v=20260720.4"></script>' in html
+    assert '<script src="frontend/file-readers.js?v=20260720.4"></script>' in html
+    assert '<meta name="application-build" content="2026.07.20.4">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -839,8 +840,14 @@ def test_main_file_import_uses_backend_service():
     assert 'async function loadFiles(input, sourceInput=null, requestedRole="auto")' in app
     assert 'api("/files/import-binary",{method:"POST",headers:{"Content-Type":"application/octet-stream","X-File-Name":encodeURIComponent(file.name),"X-Sheet-Name":"","X-Preview-Rows":"100"},body:file})' in app
     assert 'rowCount:Number(data.rowCount??data.rows?.length??0),rowsComplete:data.compactResult!==true' in app
-    assert 'sourceFilesById.set(fileRecord.id,file)' in app
+    assert 'await rememberSourceFile(fileRecord,file)' in app
+    assert app.index('await rememberSourceFile(fileRecord,file)') < app.index('insertImportedFile(fileRecord,requestedRole,fileIndex)')
+    assert 'await rememberSourceFile(state.files[0],pendingSingleFile);' in app
+    assert 'const sourceFile=await restoreSourceFile(fileRecord);' in app
     assert 'async function refreshWorkspaceFileCache(onProgress=()=>{})' in app
+    assert 'async function ensureWorkspaceFileCache(onProgress=()=>{})' in app
+    assert 'await ensureWorkspaceFileCache((value,detail)=>updateProcess(processId,32+Math.round(value*0.08),detail));' in app
+    assert 'const keyName=String(event.key||"").toLowerCase()' in app
     assert 'files:enrichmentFilesPayload(false),refreshFileCache:true' not in app
     assert "function fileInfoDate(file)" in app
     assert "function primaryFileCreatedAt()" in app
@@ -898,13 +905,22 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260720.2"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260720.4"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
     assert 'async function storeLocalSnapshot(' in app
     assert 'devices:rows.slice(0,previewLimit)' in app
     assert 'BrowserSnapshots.prune(state.snapshots.filter((item)=>item.browserStored).map((item)=>item.id))' in app
     assert 'const snapshotStore = "snapshots";' in snapshot_store
-    assert 'window.MacAnalyzerBrowserSnapshots = Object.freeze({ save, load, prune, removeLegacyWorkspace });' in snapshot_store
+    assert 'const databaseVersion = 3;' in snapshot_store
+    assert 'const sourceFileStore = "sourceFiles";' in snapshot_store
+    assert 'function saveSourceFile(id, file)' in snapshot_store
+    assert 'async function loadSourceFile(id)' in snapshot_store
+    assert 'async function pruneSourceFiles(keepIds = [])' in snapshot_store
+    assert 'saveSourceFile,' in snapshot_store
+    assert 'loadSourceFile,' in snapshot_store
+    assert 'await BrowserSnapshots?.saveSourceFile?.(fileRecord.sourceStorageId,file)' in app
+    assert 'await restoreWorkspaceSourceFiles();' in app
+    assert 'let previousDevices=state.devices||[];' in app
     assert 'snapshotPreviewRows: 500' in memory_guard
     assert 'localExportRows: 20_000' in memory_guard
     assert 'localExportCells: 250_000' in memory_guard
@@ -1100,13 +1116,19 @@ def test_single_file_preview_uses_backend_html_payload():
 
 def test_single_file_uses_binary_token_and_compact_result():
     app = Path("app.js").read_text(encoding="utf-8")
+    file_readers = Path("frontend/file-readers.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
     assert app.count('MemoryGuard.assertImportCapacity(pendingSingleFile);') == 2
     assert 'MemoryGuard.assertImportCapacity(file,state.files);' in app
     assert 'memoryGuard.assertImportCapacity' not in app
-    assert 'const memoryGuard = MemoryGuard;' in app
+    assert 'const memoryGuard' not in app
+    assert 'const memoryGuard' not in file_readers
+    assert 'memoryGuard.' not in file_readers
+    assert 'MemoryGuard.assertImportCapacity(file);' in file_readers
     assert 'window.memoryGuard = publicApi;' in memory_guard
+    assert 'state.importErrors=[];' in app
+    assert 'merged.importErrors=[];' in app
     assert '"/files/import-binary"' in app
     assert 'fileToken,sheet:' in app
     assert 'compactResult:true,resultPageSize' in app
@@ -1940,7 +1962,7 @@ def test_role_aware_guide_is_a_separate_working_view():
         'data-guide-tab="large-files"',
         'data-guide-requires-engineering',
         'id="openGuideFromHelpButton"',
-        '<script src="frontend/guide.js?v=20260720.2"></script>',
+        '<script src="frontend/guide.js?v=20260720.4"></script>',
     ):
         assert marker in html
     for text in (

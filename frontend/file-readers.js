@@ -1,8 +1,8 @@
 (() => {
   "use strict";
 
-  const memoryGuard = window.MacAnalyzerMemoryGuard;
-  if (!memoryGuard) throw new Error("Модуль frontend/memory-guard.js не загружен");
+  const MemoryGuard = window.MacAnalyzerMemoryGuard;
+  if (!MemoryGuard) throw new Error("Модуль frontend/memory-guard.js не загружен");
 
   function textScore(text) {
     return [...text].reduce(
@@ -125,14 +125,14 @@
       entries.set(name, { method, size, uncompressedSize, start });
       position += 46 + nameLength + extraLength + commentLength;
     }
-    memoryGuard.assertZipDirectoryCapacity(entries);
+    MemoryGuard.assertZipDirectoryCapacity(entries);
     return { bytes, entries };
   }
 
-  async function clientZipEntryBytes(directory, path, maximumBytes = memoryGuard.limits.worksheetBytes) {
+  async function clientZipEntryBytes(directory, path, maximumBytes = MemoryGuard.limits.worksheetBytes) {
     const entry = directory.entries.get(path);
     if (!entry) return null;
-    memoryGuard.assertEntryCapacity(`Слишком большой раздел XLSX (${path})`, entry.uncompressedSize, maximumBytes);
+    MemoryGuard.assertEntryCapacity(`Слишком большой раздел XLSX (${path})`, entry.uncompressedSize, maximumBytes);
     const compressed = directory.bytes.subarray(entry.start, entry.start + entry.size);
     if (entry.method === 0) return compressed;
     if (entry.method === 8) return inflateRaw(compressed);
@@ -188,8 +188,8 @@
       let textMatch;
       while ((textMatch = textPattern.exec(itemMatch[1]))) value += decodeXmlText(textMatch[1]);
       strings.push(value);
-      if (strings.length > memoryGuard.limits.sharedStrings) {
-        throw memoryGuard.capacityError("Слишком много общих строк XLSX", strings.length, memoryGuard.limits.sharedStrings);
+      if (strings.length > MemoryGuard.limits.sharedStrings) {
+        throw MemoryGuard.capacityError("Слишком много общих строк XLSX", strings.length, MemoryGuard.limits.sharedStrings);
       }
     }
     return strings;
@@ -263,7 +263,7 @@
   async function xlsxWorksheetRows(directory, sheetPath, sharedStrings, onProgress = () => {}) {
     const entry = directory.entries.get(sheetPath);
     if (!entry) throw new Error("XLSX лист не найден");
-    memoryGuard.assertEntryCapacity("Слишком большой XML-лист XLSX", entry.uncompressedSize, memoryGuard.limits.worksheetBytes);
+    MemoryGuard.assertEntryCapacity("Слишком большой XML-лист XLSX", entry.uncompressedSize, MemoryGuard.limits.worksheetBytes);
     const reader = zipEntryStream(directory, entry).getReader();
     const decoder = new TextDecoder("utf-8");
     const rows = [];
@@ -286,7 +286,7 @@
         const parsed = xlsxRowFromXml(rowXml, sharedStrings);
         cellCount += parsed.cellCount;
         if (parsed.populated) rows.push(parsed.values);
-        memoryGuard.assertTableCapacity(rows.length, cellCount);
+        MemoryGuard.assertTableCapacity(rows.length, cellCount);
       }
     };
     while (true) {
@@ -298,7 +298,7 @@
       if (rows.length && rows.length % 2000 === 0) {
         const ratio = entry.uncompressedSize ? Math.min(1, processedBytes / entry.uncompressedSize) : 0;
         onProgress(78 + ratio * 20, `Строки XLSX: ${rows.length.toLocaleString("ru-RU")}`);
-        await memoryGuard.yieldToMainThread();
+        await MemoryGuard.yieldToMainThread();
       }
     }
     pending += decoder.decode();
@@ -307,7 +307,7 @@
   }
 
   async function clientXlsxTable(file, onProgress = () => {}) {
-    memoryGuard.assertImportCapacity(file);
+    MemoryGuard.assertImportCapacity(file);
     onProgress(3, "Чтение XLSX с диска");
     const buffer = await file.arrayBuffer();
     onProgress(10, "Проверка структуры XLSX");
@@ -317,7 +317,7 @@
     const relationshipBytes = await clientZipEntryBytes(directory, "xl/_rels/workbook.xml.rels", 16 * 1024 * 1024);
     const workbook = workbookBytes ? new DOMParser().parseFromString(new TextDecoder("utf-8").decode(workbookBytes), "application/xml") : null;
     const relationships = relationshipBytes ? new DOMParser().parseFromString(new TextDecoder("utf-8").decode(relationshipBytes), "application/xml") : null;
-    const sharedStringBytes = await clientZipEntryBytes(directory, "xl/sharedStrings.xml", memoryGuard.limits.sharedStringBytes);
+    const sharedStringBytes = await clientZipEntryBytes(directory, "xl/sharedStrings.xml", MemoryGuard.limits.sharedStringBytes);
     const sharedStrings = sharedStringBytes ? xlsxSharedStringsFromXml(new TextDecoder("utf-8").decode(sharedStringBytes)) : [];
     if (!workbook) throw new Error("XLSX workbook.xml не найден");
     const firstSheet = workbook.getElementsByTagName("sheet")[0];
@@ -345,7 +345,7 @@
 
   async function clientReadTable(file, onProgress = () => {}) {
     if (/\.(xlsx|xlsm)$/i.test(file.name)) return clientXlsxTable(file, onProgress);
-    memoryGuard.assertImportCapacity(file);
+    MemoryGuard.assertImportCapacity(file);
     if (/\.xls$/i.test(file.name)) {
       throw new Error("Старый XLS не поддерживается в браузере, сохраните файл как XLSX");
     }

@@ -57,4 +57,42 @@ if ($LASTEXITCODE -ne 0) { throw "Portable backend build failed." }
 $package = Join-Path $distPath "MACAnalyzerBackend"
 Copy-Item -LiteralPath (Join-Path $root "START_MAC_ANALYZER.cmd") -Destination $package -Force
 Copy-Item -LiteralPath (Join-Path $root "STOP_MAC_ANALYZER.cmd") -Destination $package -Force
+$verifiedFrontendFiles = @(
+    "index.html",
+    "app.js",
+    "styles.css",
+    "frontend\memory-guard.js",
+    "frontend\file-readers.js",
+    "frontend\state-persistence.js",
+    "frontend\browser-snapshot-store.js",
+    "frontend\guide.js"
+)
+$checksums = [ordered]@{}
+foreach ($relativePath in $verifiedFrontendFiles) {
+    $sourcePath = Join-Path $root $relativePath
+    $packagePath = Join-Path $package $relativePath
+    $sourceHash = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
+    $packageHash = (Get-FileHash -LiteralPath $packagePath -Algorithm SHA256).Hash
+    if ($sourceHash -ne $packageHash) { throw "Portable frontend is stale: $relativePath" }
+    $checksums[$relativePath.Replace("\", "/")] = $packageHash
+}
+$forbiddenGuardPattern = '(?m)\bconst\s+memoryGuard\b|\bmemoryGuard\.'
+foreach ($relativePath in @("app.js", "frontend\file-readers.js")) {
+    $content = Get-Content -LiteralPath (Join-Path $package $relativePath) -Raw -Encoding UTF8
+    if ($content -cmatch $forbiddenGuardPattern) { throw "Portable frontend contains obsolete memoryGuard code: $relativePath" }
+}
+$indexContent = Get-Content -LiteralPath (Join-Path $package "index.html") -Raw -Encoding UTF8
+$buildVersion = if ($indexContent -match 'name="application-build" content="([^"]+)"') { $Matches[1] } else { "unknown" }
+$revision = "unknown"
+$git = Get-Command git -ErrorAction SilentlyContinue
+if ($git) {
+    $candidateRevision = (& $git.Source -C $root rev-parse HEAD 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $candidateRevision) { $revision = $candidateRevision.Trim() }
+}
+[ordered]@{
+    buildVersion = $buildVersion
+    builtAt = [DateTime]::UtcNow.ToString("o")
+    sourceRevision = $revision
+    frontendChecksums = $checksums
+} | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $package "BUILD_INFO.json") -Encoding UTF8
 Write-Output "Portable package created: $package"
