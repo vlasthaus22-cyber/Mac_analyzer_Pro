@@ -97,9 +97,9 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
 
     assert 'id="fileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
-    assert '<script src="frontend/memory-guard.js?v=20260721.2"></script>' in html
-    assert '<script src="frontend/file-readers.js?v=20260721.2"></script>' in html
-    assert '<meta name="application-build" content="2026.07.21.2">' in html
+    assert '<script src="frontend/memory-guard.js?v=20260721.3"></script>' in html
+    assert '<script src="frontend/file-readers.js?v=20260721.3"></script>' in html
+    assert '<meta name="application-build" content="2026.07.21.3">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -324,7 +324,7 @@ def test_html_has_startup_fallback_for_tabs_and_file_choice():
 
     assert "window.MacAnalyzerAppReady=true" in app
     assert "window.MacAnalyzerFallbackReady = true" in html
-    assert 'if (window.MacAnalyzerAppReady) return;' in html
+    assert 'if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;' in html
     assert '$$(".nav-item").forEach((button) => button.addEventListener("click", () => fallbackView(button.dataset.view)))' in html
     assert '$("#browseFilesButton")?.addEventListener("click", () => $("#fileInput")?.click());' in html
     assert '$("#browseEnrichmentFilesButton")?.addEventListener("click", () => $("#enrichFileInput")?.click());' in html
@@ -933,7 +933,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260721.2"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260721.3"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
     assert 'async function storeLocalSnapshot(' in app
     assert 'devices:rows.slice(0,previewLimit)' in app
@@ -1923,7 +1923,8 @@ def test_primary_and_enrichment_files_are_grouped_and_local_html_can_reconnect_b
     ):
         assert marker in html
     for marker in (
-        'location.protocol === "file:" ? "http://127.0.0.1:8080/api" : "/api"',
+        'const autonomousHtmlMode = location.protocol === "file:";',
+        'const backendCandidates = autonomousHtmlMode ? []',
         'function normalizeFileRoles(files=[])',
         'function insertImportedFile(fileRecord,requestedRole="auto",batchIndex=0)',
         'loadFiles(e.target.files,e.target,"primary")',
@@ -1994,7 +1995,7 @@ def test_role_aware_guide_is_a_separate_working_view():
         'data-guide-tab="large-files"',
         'data-guide-requires-engineering',
         'id="openGuideFromHelpButton"',
-        '<script src="frontend/guide.js?v=20260721.2"></script>',
+        '<script src="frontend/guide.js?v=20260721.3"></script>',
     ):
         assert marker in html
     for text in (
@@ -2096,7 +2097,47 @@ def test_oui_reference_import_and_safe_autodetection_are_wired_end_to_end():
     assert "window.MacAnalyzerMemoryGuard?.assertEnrichmentCapacity(fallbackState.files);" in html
 
 
+def test_primary_app_bootstrap_disables_duplicate_inline_fallback():
+    app = Path("app.js").read_text(encoding="utf-8")
+    html = Path("index.html").read_text(encoding="utf-8")
+    assert "window.MacAnalyzerAppBootstrapped = true;" in app
+    assert "if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;" in html
+
+
+def test_autonomous_file_database_is_streamed_and_connected_to_workspace_saves():
+    html = Path("index.html").read_text(encoding="utf-8")
+    app = Path("app.js").read_text(encoding="utf-8")
+    database = Path("frontend/portable-database.js").read_text(encoding="utf-8")
+    for marker in (
+        'id="portableDatabaseButton"',
+        'id="portableDatabaseDialog"',
+        'id="openPortableDatabaseButton"',
+        'id="createPortableDatabaseButton"',
+        'id="portableDatabaseInput"',
+        '<script src="frontend/portable-database.js?v=20260721.3"></script>',
+    ):
+        assert marker in html
+    for marker in (
+        "function portableDatabasePayload()",
+        "async function persistPortableDatabase()",
+        "async function restorePortableDatabaseHandle()",
+        "await flushPortableDatabaseSave().catch(()=>{})",
+        'if(!autonomousHtmlMode&&backendAvailable)',
+    ):
+        assert marker in app
+    for marker in (
+        "const writeBatchRows = 250;",
+        "file.stream().getReader()",
+        'type: "snapshot-current"',
+        "maximumDatabaseBytes = 1024 * 1024 * 1024",
+    ):
+        assert marker in database
+    assert "JSON.stringify(payload)" not in database
+
+
 if __name__ == "__main__":
+    test_autonomous_file_database_is_streamed_and_connected_to_workspace_saves()
+    test_primary_app_bootstrap_disables_duplicate_inline_fallback()
     test_portable_two_file_import_is_local_first_and_race_safe()
     test_single_file_uses_binary_token_and_compact_result()
     test_full_runner_isolates_sqlite_from_working_database()

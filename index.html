@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
-  <meta name="application-build" content="2026.07.21.2">
-  <link rel="stylesheet" href="styles.css?v=20260721.2">
+  <meta name="application-build" content="2026.07.21.3">
+  <link rel="stylesheet" href="styles.css?v=20260721.3">
 </head>
 <body>
   <div class="app-shell">
@@ -38,6 +38,7 @@
           <p id="viewSubtitle">Импортируйте данные, обогатите их и сохраните результат.</p>
         </div>
         <div class="topbar-actions">
+          <button class="button secondary" id="portableDatabaseButton" type="button" title="Общая файловая база для автономного HTML">Файловая база</button>
           <button class="mode-badge user-mode" id="appModeButton" type="button" title="Переключить режим"><span id="appModeIcon">USER</span><strong id="appModeLabel">Пользовательский режим</strong><small id="appModeHint">Просмотр и поиск</small></button>
           <button class="icon-button" id="helpButton" title="Справка" aria-label="Справка">?</button>
           <button class="icon-button" id="themeButton" title="Сменить тему" aria-label="Сменить тему">◐</button>
@@ -376,12 +377,12 @@
           </div>
           <div class="tool-panel">
             <h2>Данные приложения</h2>
-            <p class="muted">Настройки, история и текущие результаты хранятся в браузере этого устройства.</p>
+            <p class="muted">Настройки, история и результаты хранятся в браузере. Для переноса между браузерами подключите общую файловую базу MADB.</p>
             <button class="button secondary" id="saveBackupButton">Скачать резервную копию</button>
-            <button class="button secondary" id="saveAutosaveButton">Save autosave to SQLite</button>
-            <button class="button secondary" id="restoreAutosaveButton">Restore autosave</button>
-            <button class="button secondary" id="deleteAutosaveButton" data-engineering-permission="write:settings">Delete autosave</button>
-            <p class="muted" id="autosaveStatus">Autosave not checked.</p>
+            <button class="button secondary" id="saveAutosaveButton">Сохранить состояние</button>
+            <button class="button secondary" id="restoreAutosaveButton">Восстановить состояние</button>
+            <button class="button secondary" id="deleteAutosaveButton" data-engineering-permission="write:settings">Удалить автосохранение</button>
+            <p class="muted" id="autosaveStatus">Автосохранение ещё не проверено.</p>
             <label class="button secondary file-button">Восстановить из копии<input id="restoreBackupInput" type="file" accept=".json" hidden></label>
           </div>
           <div class="tool-panel">
@@ -599,7 +600,7 @@
           <header class="guide-section-head"><div><p class="guide-eyebrow">Защита памяти</p><h2>Как обрабатывать большие XLSX без Out of Memory</h2></div><span class="guide-access-badge memory">Контроль ресурсов</span></header>
           <div class="guide-safety-grid">
             <section><h3>Через backend и SQLite</h3><p>Рекомендуемый вариант для больших файлов. В браузер передаётся только компактное превью и страницы результата, а полные строки остаются в файловом кэше и SQLite.</p><ul><li>Откройте программу по адресу <code>http://127.0.0.1:8080/</code>.</li><li>Убедитесь, что слева отображается «Backend и SQLite подключены».</li><li>Дождитесь завершения шкалы импорта перед запуском анализа.</li></ul></section>
-            <section><h3>Автономный HTML</h3><p>XLSX читается потоково, строки обогащаются порциями, а интерфейс показывает только текущую страницу. Перед опасным расходом памяти операция останавливается понятным сообщением.</p><ul><li>Не открывайте один файл одновременно в нескольких вкладках.</li><li>Не закрывайте страницу во время записи в IndexedDB.</li><li>При сообщении о лимите запустите backend и повторите импорт.</li></ul></section>
+            <section><h3>Автономный HTML</h3><p>XLSX читается потоково, строки обогащаются порциями, а интерфейс показывает только текущую страницу. Перед опасным расходом памяти операция останавливается понятным сообщением.</p><ul><li>Не открывайте один файл одновременно в нескольких вкладках.</li><li>Не закрывайте страницу во время записи в IndexedDB или MADB.</li><li>При сообщении о безопасном лимите разделите исходные данные на меньшие файлы.</li></ul></section>
           </div>
           <aside class="guide-callout warning"><strong>Что защищает вкладку от аварийного завершения</strong><p>Нет полных копий массивов при сортировке и фильтрации; XML листа разбирается потоково; shared strings, число строк, ячеек и размер листа ограничены; постраничный вывод результата показывает по 25–1000 строк.</p></aside>
           <div class="guide-checklist" aria-label="Проверка перед обогащением">
@@ -717,6 +718,17 @@
     </section>
     <div class="dialog-actions dashboard-settings-actions"><button class="button secondary" id="resetDashboardSettingsButton">Сбросить</button><span></span><button class="button secondary" id="cancelDashboardSettingsButton">Закрыть</button><button class="button primary" id="applyDashboardSettingsButton">Применить</button></div>
   </dialog>
+  <dialog class="device-dialog" id="portableDatabaseDialog">
+    <div class="dialog-head"><div><h2>Автономная файловая база</h2><p class="muted">Один файл MADB хранит результаты, историю и настройки без EXE, CMD и backend.</p></div><button class="icon-button" id="closePortableDatabaseDialog" aria-label="Закрыть">×</button></div>
+    <div class="portable-database-actions">
+      <button class="button primary" id="openPortableDatabaseButton" type="button">Подключить существующую</button>
+      <button class="button secondary" id="createPortableDatabaseButton" type="button">Создать новую</button>
+      <button class="button secondary" id="savePortableDatabaseButton" type="button">Сохранить сейчас</button>
+      <input id="portableDatabaseInput" type="file" accept=".madb,application/x-mac-analyzer-db" hidden>
+    </div>
+    <div class="portable-database-status" id="portableDatabaseStatus" role="status" aria-live="polite">Файловая база пока не подключена. Данные сохраняются в IndexedDB текущего браузера.</div>
+    <p class="muted">В новом браузере нажмите «Подключить существующую» и выберите тот же файл. Браузеры не имеют права открывать локальный файл без первого ручного выбора.</p>
+  </dialog>
   <dialog class="device-dialog" id="helpDialog">
     <div class="dialog-head"><div><h2>Справка</h2><p class="muted">MAC Analyzer Pro Web: режимы, сценарии и горячие клавиши.</p></div><button class="icon-button" id="closeHelpDialog" aria-label="Закрыть">×</button></div>
     <div class="device-fields"><div class="device-field"><span>Импорт и обогащение</span><strong>CSV, TSV, JSON и XLSX; основной и дополнительные файлы, ручное сопоставление по имени или букве.</strong></div><div class="device-field"><span>Сравнение</span><strong>Сравнение двух или до десяти снимков с отдельным сопоставлением полей.</strong></div><div class="device-field"><span>История MAC</span><strong>Двойной клик или контекстное меню открывают хронологию значений и перемещений.</strong></div><div class="device-field"><span>Данные</span><strong>IP-маппинг, OUI 3/4/5 байт, vendor/model, колонки и управление SQLite.</strong></div><div class="device-field"><span>Инженерный режим</span><strong>Разрешает защищённые операции удаления и системные настройки.</strong></div><div class="device-field"><span>Экспорт</span><strong>CSV, XLSX, Excel XML, TXT, YAML, JSON, HTML и PDF/печать.</strong></div></div>
@@ -724,15 +736,16 @@
     <div class="shortcut-grid"><kbd>Ctrl+O</kbd><span>выбрать файлы</span><kbd>Ctrl+S</kbd><span>экспорт XLSX</span><kbd>Ctrl+E</kbd><span>экспорт CSV</span><kbd>Ctrl+A</kbd><span>аналитика</span><kbd>Ctrl+H</kbd><span>история</span><kbd>Ctrl+F</kbd><span>поиск в результатах</span><kbd>F5</kbd><span>запустить анализ</span><kbd>F6</kbd><span>сравнение двух снимков</span><kbd>F7</kbd><span>графики</span><kbd>F8</kbd><span>топология</span><kbd>F9</kbd><span>массовое сравнение</span><kbd>F1</kbd><span>справка</span><kbd>Esc</kbd><span>отмена или закрытие окна</span></div>
     <div class="dialog-actions"><span></span><button class="button primary" id="openGuideFromHelpButton" type="button">Открыть полное руководство</button></div>
   </dialog>
-  <script src="frontend/memory-guard.js?v=20260721.2"></script>
-  <script src="frontend/file-readers.js?v=20260721.2"></script>
-  <script src="frontend/state-persistence.js?v=20260721.2"></script>
-  <script src="frontend/browser-snapshot-store.js?v=20260721.2"></script>
-  <script src="frontend/guide.js?v=20260721.2"></script>
-  <script src="app.js?v=20260721.2"></script>
+  <script src="frontend/memory-guard.js?v=20260721.3"></script>
+  <script src="frontend/file-readers.js?v=20260721.3"></script>
+  <script src="frontend/state-persistence.js?v=20260721.3"></script>
+  <script src="frontend/browser-snapshot-store.js?v=20260721.3"></script>
+  <script src="frontend/portable-database.js?v=20260721.3"></script>
+  <script src="frontend/guide.js?v=20260721.3"></script>
+  <script src="app.js?v=20260721.3"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
-      if (window.MacAnalyzerAppReady) return;
+      if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;
 
       const $ = (selector) => document.querySelector(selector);
       const $$ = (selector) => Array.from(document.querySelectorAll(selector));

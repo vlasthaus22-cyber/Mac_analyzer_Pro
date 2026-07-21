@@ -1,5 +1,6 @@
 ﻿(() => {
   "use strict";
+  window.MacAnalyzerAppBootstrapped = true;
   const fieldList = [["mac","MAC-адрес"],["vendor","Производитель"],["model","Модель"],["ip","IP"],["address","Адрес"],["room","Помещение"],["switchIp","IP коммутатора"],["switchPort","Порт"]];
   const labels = {...Object.fromEntries(fieldList),macFormatted:"MAC",oui:"OUI",switchIp:"IP коммутатора",switchPort:"Порт",source:"Источник",vendorSource:"Источник вендора",vendorConfidence:"Уверенность вендора",vendorMatchedPrefix:"Префикс вендора",modelSource:"Источник модели",modelConfidence:"Уверенность модели",modelMatchedPrefix:"Префикс модели"};
   const builtinVendorMappings={"00037F":"Apple Inc.","001A11":"Apple Inc.","18FE34":"Apple Inc.","001B44":"Intel Corporation","00A0C9":"Intel Corporation","ACDE48":"Samsung Electronics","002590":"Samsung Electronics","001122":"Cisco Systems","00055D":"Cisco Systems","0050B6":"Dell Inc.","00155F":"Hewlett Packard","0050C2":"Microsoft Corp.","005A39":"Google LLC","0025D3":"Huawei Technologies","002128":"Xiaomi Corporation","0022B0":"TP-Link Technologies","001E52":"Netgear Inc.","F832E4":"ASUSTeK Computer","B827EB":"Raspberry Pi Foundation","002314":"Lenovo Group","0022BD":"Acer Inc.","0024B2":"LG Electronics","001E58":"Sony Corporation","000E58":"Cisco-Linksys","001E13":"Nintendo","000C29":"VMware","0050F2":"Microsoft","00107B":"Dell","001EC9":"Huawei","0017C8":"Apple","00236C":"Xiaomi","001AA9":"Samsung"};
@@ -14,13 +15,15 @@
   const BrowserSnapshots = window.MacAnalyzerBrowserSnapshots;
   const MemoryGuard = window.MacAnalyzerMemoryGuard;
   const Guide = window.MacAnalyzerGuide;
+  const PortableDatabase = window.MacAnalyzerPortableDatabase;
   if(!MemoryGuard)throw new Error("Модуль frontend/memory-guard.js не загружен");
   if(!Guide)throw new Error("Модуль frontend/guide.js не загружен");
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
   const networkUnavailable = (error) => error instanceof TypeError || [404,405,501].includes(Number(error?.status||0)) || /Failed to fetch|NetworkError|Load failed|fetch failed/i.test(error?.message||"");
-  const backendCandidates = [...new Set([
-    location.protocol === "file:" ? "http://127.0.0.1:8080/api" : "/api",
+  const autonomousHtmlMode = location.protocol === "file:";
+  const backendCandidates = autonomousHtmlMode ? [] : [...new Set([
+    "/api",
     "http://127.0.0.1:8080/api",
     "http://localhost:8080/api"
   ])];
@@ -52,6 +55,7 @@
   state.columnWidths=normalizeColumnWidths(state.columnWidths);
   BrowserSnapshots?.removeLegacyWorkspace?.().catch(()=>{});
   let browserStateSaveTimer=null,browserStateSaveRevision=0,browserStateQueuedRevision=0,browserStatePersistedRevision=0,browserStateSavePromise=Promise.resolve(),browserStatePendingSavedAt="";
+  let portableDatabaseHandle=null,portableDatabaseSaveTimer=null,portableDatabaseSaveRevision=0,portableDatabaseQueuedRevision=0,portableDatabasePersistedRevision=0,portableDatabaseSavePromise=Promise.resolve();
   function openBrowserStateDb(){
     return new Promise((resolve,reject)=>{
       if(!("indexedDB" in window))return reject(new Error("IndexedDB недоступна"));
@@ -94,6 +98,143 @@
     await persistLatestBrowserState();
     return true;
   }
+  async function deleteBrowserStateRecord(){
+    const db=await openBrowserStateDb();
+    return new Promise((resolve,reject)=>{const transaction=db.transaction(browserStateStoreName,"readwrite");transaction.objectStore(browserStateStoreName).delete(browserStateRecordId);transaction.oncomplete=()=>{db.close();resolve(true);};transaction.onerror=()=>{const error=transaction.error;db.close();reject(error||new Error("Не удалось удалить IndexedDB autosave"));};});
+  }
+  function portableDatabaseStatus(message,status="ready"){
+    const target=$("#portableDatabaseStatus");
+    if(!target)return;
+    target.textContent=message;
+    target.dataset.status=status;
+  }
+  function portableDatabasePayload(){
+    const compact=StatePersistence.compactLocalState(state);
+    compact.files=[];
+    compact.resultSnapshotId="";
+    compact.resultBrowserSnapshotId="";
+    compact.resultBrowserSnapshotDirty=false;
+    compact.resultDeviceCount=(state.devices||[]).length;
+    compact.resultInvalidCount=(state.invalid||[]).length;
+    compact.resultSummary=state.resultSummary||null;
+    return{state:compact,devices:state.devices||[],invalid:state.invalid||[],movements:state.movementHistory||[],snapshotMetadata:(state.snapshots||[]).filter((item)=>item.browserStored),skipSnapshotId:state.resultBrowserSnapshotId||"",snapshotLoader:(metadata)=>loadLocalSnapshotRecord(metadata)};
+  }
+  function portableDatabaseProgress(processId,value,detail){
+    portableDatabaseStatus(detail||"Обработка файловой базы...");
+    if(processId)updateProcess(processId,Math.max(1,Math.min(100,Number(value)||0)),detail||"");
+  }
+  async function persistPortableDatabase(){
+    if(portableDatabaseSaveTimer){clearTimeout(portableDatabaseSaveTimer);portableDatabaseSaveTimer=null;}
+    if(!PortableDatabase||!portableDatabaseHandle||portableDatabaseQueuedRevision>=portableDatabaseSaveRevision)return portableDatabaseSavePromise;
+    const revision=portableDatabaseSaveRevision,payload=portableDatabasePayload();
+    portableDatabaseQueuedRevision=revision;
+    portableDatabaseSavePromise=portableDatabaseSavePromise.catch(()=>{}).then(async()=>{
+      const access=await PortableDatabase.permission(portableDatabaseHandle,"readwrite");
+      if(access!=="granted"&&access!=="unsupported")throw new Error("Откройте файловую базу кнопкой, чтобы снова разрешить запись");
+      const result=await PortableDatabase.write(portableDatabaseHandle,payload,(value,detail)=>portableDatabaseProgress("",value,detail));
+      portableDatabasePersistedRevision=Math.max(portableDatabasePersistedRevision,revision);
+      portableDatabaseStatus(`Файловая база сохранена: ${new Date(result.savedAt).toLocaleString("ru-RU")} · устройств ${result.counts.devices.toLocaleString("ru-RU")}`);
+      if(portableDatabaseSaveRevision>portableDatabaseQueuedRevision)schedulePortableDatabaseSave(500);
+      return result;
+    }).catch((error)=>{portableDatabaseStatus(error.message,"error");throw error;});
+    return portableDatabaseSavePromise;
+  }
+  function schedulePortableDatabaseSave(delay=4000){
+    if(!portableDatabaseHandle||!PortableDatabase)return;
+    portableDatabaseSaveRevision++;
+    clearTimeout(portableDatabaseSaveTimer);
+    portableDatabaseSaveTimer=setTimeout(()=>{persistPortableDatabase().catch(()=>{});},Math.max(0,delay));
+  }
+  async function flushPortableDatabaseSave(){
+    if(!portableDatabaseHandle||portableDatabasePersistedRevision>=portableDatabaseSaveRevision&&!portableDatabaseSaveTimer)return true;
+    await persistPortableDatabase();
+    return true;
+  }
+  async function applyPortableDatabase(data,sourceName="файловая база"){
+    state=normalizeRestoredState(data.state||{});
+    state.files=[];
+    state.devices=Array.isArray(data.devices)?data.devices:[];
+    state.invalid=Array.isArray(data.invalid)?data.invalid:[];
+    state.movementHistory=Array.isArray(data.movements)?data.movements:[];
+    if(Array.isArray(data.snapshots)&&data.snapshots.length){const imported=new Map(data.snapshots.map((item)=>[item.id,item]));state.snapshots=(state.snapshots||[]).map((item)=>imported.get(item.id)||item);}
+    state.resultSnapshotId="";
+    state.resultBrowserSnapshotId="";
+    state.resultBrowserSnapshotDirty=false;
+    state.resultDeviceCount=state.devices.length;
+    state.resultInvalidCount=state.invalid.length;
+    state.lastAnalysis=data.header?.savedAt||state.lastAnalysis||new Date().toISOString();
+    save({immediate:true,portable:false});
+    await flushBrowserStateSave().catch(()=>{});
+    applyTheme(state.theme);
+    applyVendorDetectorSettings(state.vendorDetectorSettings||{});
+    applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});
+    renderEngineeringState();renderAll();renderColumnPreferences();
+    portableDatabaseStatus(`Подключено: ${sourceName} · ${state.devices.length.toLocaleString("ru-RU")} устройств · ${new Date(data.header?.savedAt||Date.now()).toLocaleString("ru-RU")}`);
+    return true;
+  }
+  async function readPortableDatabaseHandle(handle,{request=false}={}){
+    if(!handle||!PortableDatabase)return false;
+    if(request&&!(await PortableDatabase.requestPermission(handle,"readwrite")))throw new Error("Доступ к файловой базе не разрешён");
+    const processId=beginProcess("Файловая база","Потоковое чтение MADB",5);
+    try{
+      const importedSnapshotIds=[];
+      const data=await PortableDatabase.read(handle,(value,detail)=>portableDatabaseProgress(processId,value,detail),{onSnapshot:async(snapshot)=>{if(BrowserSnapshots&&snapshot?.id){await BrowserSnapshots.save(snapshot);importedSnapshotIds.push(snapshot.id);}}});
+      if(BrowserSnapshots&&importedSnapshotIds.length)await BrowserSnapshots.prune(importedSnapshotIds).catch(()=>{});
+      portableDatabaseHandle=handle;
+      await PortableDatabase.saveHandle(handle).catch(()=>false);
+      await applyPortableDatabase(data,handle.name||"mac-analyzer-data.madb");
+      portableDatabaseSaveRevision=portableDatabasePersistedRevision=0;
+      finishProcess(processId,"Файловая база подключена");
+      return true;
+    }catch(error){failProcess(processId,error);portableDatabaseStatus(error.message,"error");throw error;}
+  }
+  async function connectPortableDatabase(){
+    if(!PortableDatabase)return toast("Модуль файловой базы не загружен.");
+    try{
+      if(!PortableDatabase.supportsNativePicker()){$("#portableDatabaseInput")?.click();return;}
+      const handle=await PortableDatabase.chooseOpenHandle();
+      if(handle)await readPortableDatabaseHandle(handle,{request:true});
+    }catch(error){if(error?.name!=="AbortError")toast(error.message);}
+  }
+  async function createPortableDatabase(){
+    if(!PortableDatabase)return toast("Модуль файловой базы не загружен.");
+    const processId=beginProcess("Файловая база","Создание MADB",5);
+    try{
+      if(PortableDatabase.supportsNativePicker()){
+        const handle=await PortableDatabase.chooseSaveHandle();
+        if(!handle){cancelProcess(processId,"Создание отменено");return;}
+        portableDatabaseHandle=handle;
+        portableDatabaseSaveRevision++;
+        const result=await PortableDatabase.write(handle,portableDatabasePayload(),(value,detail)=>portableDatabaseProgress(processId,value,detail));
+        portableDatabasePersistedRevision=portableDatabaseQueuedRevision=portableDatabaseSaveRevision;
+        portableDatabaseStatus(`Файловая база создана: ${handle.name} · устройств ${result.counts.devices.toLocaleString("ru-RU")}`);
+      }else{
+        const blob=await PortableDatabase.createBlob(portableDatabasePayload(),(value,detail)=>portableDatabaseProgress(processId,value,detail));
+        const link=document.createElement("a");link.href=URL.createObjectURL(blob);link.download="mac-analyzer-data.madb";link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);
+        portableDatabaseStatus("Файл MADB скачан. В этом браузере автоматическая запись в выбранный файл не поддерживается.","warning");
+      }
+      finishProcess(processId,"Файловая база сохранена");
+    }catch(error){if(error?.name==="AbortError"){cancelProcess(processId,"Создание отменено");return;}failProcess(processId,error);portableDatabaseStatus(error.message,"error");toast(error.message);}
+  }
+  async function savePortableDatabaseNow(){
+    if(!portableDatabaseHandle)return createPortableDatabase();
+    const processId=beginProcess("Файловая база","Сохранение текущего состояния",5);
+    portableDatabaseSaveRevision++;
+    try{await persistPortableDatabase();finishProcess(processId,"Файловая база обновлена");}
+    catch(error){failProcess(processId,error);toast(error.message);}
+  }
+  async function restorePortableDatabaseHandle(){
+    if(!PortableDatabase)return false;
+    const handle=await PortableDatabase.loadHandle();
+    if(!handle)return false;
+    const access=await PortableDatabase.permission(handle,"read");
+    if(access!=="granted"){
+      portableDatabaseHandle=handle;
+      portableDatabaseStatus("Файл базы найден. Нажмите «Подключить существующую», чтобы разрешить чтение.","warning");
+      return false;
+    }
+    return readPortableDatabaseHandle(handle).catch(()=>false);
+  }
   const save = (options={}) => {
     const savedAt=new Date().toISOString();
     let localCopy=true;
@@ -101,6 +242,7 @@
     catch{localCopy=false;}
     try{localStorage.setItem(browserStateSavedAtKey,savedAt);}catch{}
     scheduleBrowserStateSave(savedAt,options.immediate?0:250);
+    if(options.portable!==false)schedulePortableDatabaseSave(options.immediate?500:4000);
     return localCopy;
   };
   async function restoreBrowserStateFromIndexedDb(){
@@ -267,7 +409,7 @@
   const api = async (path, options = {}) => {
     const authHeaders=state.engineeringToken?{"Authorization":"Bearer "+state.engineeringToken}:{};
     const {headers:optionHeaders={},...fetchOptions}=options;
-    const candidates=[backendBase,...backendCandidates.filter((item)=>item!==backendBase)];
+    const candidates=[backendBase,...backendCandidates.filter((item)=>item!==backendBase)].filter(Boolean);
     let lastError=null;
     for(const base of candidates){
       try{
@@ -378,11 +520,12 @@
     const status=$("#storageStatus"),dot=$("#backendStatusDot"),button=$("#reconnectBackendButton");
     if(status)status.textContent=message||(backendAvailable?"SQLite подключена":"Автономный HTML-режим готов · данные сохраняются в браузере");
     if(dot){dot.classList.remove("offline");dot.classList.toggle("standalone",!backendAvailable);dot.classList.toggle("online",backendAvailable);}
-    if(button){button.hidden=backendAvailable;button.disabled=false;}
+    if(button){button.hidden=autonomousHtmlMode||backendAvailable;button.disabled=false;}
   }
   async function checkBackendConnection(){
     const button=$("#reconnectBackendButton");
     if(button)button.disabled=true;
+    if(autonomousHtmlMode){setBackendStatus(false,"Автономный HTML · локальная файловая база и IndexedDB");return null;}
     try{const health=await api("/health");setBackendStatus(true,"Backend и SQLite подключены");return health;}
     catch(error){setBackendStatus(false,"Автономный HTML-режим готов · XLSX и история сохраняются в браузере");throw error;}
     finally{if(button)button.disabled=false;}
@@ -1011,7 +1154,7 @@
       currentEnrichmentJobId=null;
     }
     state.snapshots=state.snapshots.slice(0,25);
-    save({immediate:true});await flushBrowserStateSave().catch(()=>{});persistAutosave("enrichment-analysis").catch(()=>{});renderAll();toast("Анализ завершён: "+currentDeviceCount()+" устройств.");
+    save({immediate:true});await flushBrowserStateSave().catch(()=>{});await flushPortableDatabaseSave().catch(()=>{});persistAutosave("enrichment-analysis").catch(()=>{});renderAll();toast("Анализ завершён: "+currentDeviceCount()+" устройств.");
     finishProcess(processId,"Обогащение завершено: "+currentDeviceCount()+" устройств");
   }
   async function loadFilteredResults() {
@@ -1975,6 +2118,7 @@
       ["Frontend","Чтение XLSX",Boolean(window.MacAnalyzerFileReaders),"Потоковый browser parser"],
       ["Большие файлы","Защита памяти",Boolean(window.MacAnalyzerMemoryGuard),"Лимиты, paging и yield"],
       ["Хранение","IndexedDB",Boolean(window.indexedDB),"Автономное хранение больших файлов"],
+      ["Хранение","Файловая база MADB",Boolean(PortableDatabase),"Потоковый перенос данных между браузерами"],
       ["Интерфейс","Руководство",Boolean(window.MacAnalyzerGuide),"Навигация и режимы"],
     ].map(([group,name,passed,detail])=>({group,name,passed,status:passed?"passed":"failed",detail}));
     const passed=checks.filter(item=>item.passed).length,total=checks.length,failed=total-passed,readinessPercent=Math.round(passed/total*100);
@@ -2220,6 +2364,17 @@
   $("#closeModelDialog").addEventListener("click",()=>$("#modelDialog").close());
   $("#helpButton").addEventListener("click",()=>$("#helpDialog").showModal());
   $("#closeHelpDialog").addEventListener("click",()=>$("#helpDialog").close());
+  $("#portableDatabaseButton")?.addEventListener("click",()=>$("#portableDatabaseDialog")?.showModal());
+  $("#closePortableDatabaseDialog")?.addEventListener("click",()=>$("#portableDatabaseDialog")?.close());
+  $("#openPortableDatabaseButton")?.addEventListener("click",connectPortableDatabase);
+  $("#createPortableDatabaseButton")?.addEventListener("click",createPortableDatabase);
+  $("#savePortableDatabaseButton")?.addEventListener("click",savePortableDatabaseNow);
+  $("#portableDatabaseInput")?.addEventListener("change",async(event)=>{
+    const file=event.target.files?.[0];event.target.value="";if(!file)return;
+    const processId=beginProcess("Файловая база","Чтение выбранного MADB",5);
+    try{const importedSnapshotIds=[];const data=await PortableDatabase.readFile(file,(value,detail)=>portableDatabaseProgress(processId,value,detail),{onSnapshot:async(snapshot)=>{if(BrowserSnapshots&&snapshot?.id){await BrowserSnapshots.save(snapshot);importedSnapshotIds.push(snapshot.id);}}});if(BrowserSnapshots&&importedSnapshotIds.length)await BrowserSnapshots.prune(importedSnapshotIds).catch(()=>{});portableDatabaseHandle=null;await applyPortableDatabase(data,file.name);finishProcess(processId,"Файловая база импортирована");}
+    catch(error){failProcess(processId,error);portableDatabaseStatus(error.message,"error");toast(error.message);}
+  });
   $("#openGuideFromHelpButton")?.addEventListener("click",()=>{$("#helpDialog").close();view("guide");});
   $("#guideView")?.addEventListener("click",(event)=>{
     const tab=event.target.closest("[data-guide-tab]");
@@ -2303,11 +2458,11 @@
   $("#refreshParityStatusButton").addEventListener("click",()=>{renderParityStatus();toast("Parity status обновлён.");});
   $("#exportParityReportButton").addEventListener("click",exportParityReport);
   $("#clearAllButton").addEventListener("click",()=>{if(confirm("Очистить текущие файлы и результаты? История сохранится.")){state.files=[];state.devices=[];state.invalid=[];sourceFilesById.clear();pruneStoredSourceFiles();clearResultReference();state.lastAnalysis=null;save();renderAll();}});
-  $("#saveBackupButton").addEventListener("click",async()=>{try{const backup=await api("/backup/export",{method:"POST",body:JSON.stringify({state:compactAnalysisAutosaveState()})});download(backup.filename||"mac-analyzer-backup.json",backup.content||"{}","application/json");}catch(error){toast(error.message);}});
-  $("#saveAutosaveButton").addEventListener("click",async()=>{try{await persistAutosave("manual");toast("Autosave saved to SQLite.");}catch(error){toast(error.message);}});
-  $("#restoreAutosaveButton").addEventListener("click",async()=>{try{await restoreAutosave();toast("Autosave restored.");}catch(error){toast(error.message);}});
-  $("#deleteAutosaveButton").addEventListener("click",async()=>{try{await deleteAutosave();toast("Autosave deleted.");renderServices();}catch(error){toast(error.message);}});
-  $("#restoreBackupInput").addEventListener("change",async(e)=>{try{const file=e.target.files[0];if(!file)return;const backup=await api("/backup/restore",{method:"POST",body:JSON.stringify({filename:file.name,contentBase64:await fileToBase64(file)})});state={...empty(),...(backup.state||{})};save();location.reload();}catch{toast("Не удалось восстановить резервную копию.");}});
+  $("#saveBackupButton").addEventListener("click",async()=>{try{const backup=await api("/backup/export",{method:"POST",body:JSON.stringify({state:compactAnalysisAutosaveState()})});download(backup.filename||"mac-analyzer-backup.json",backup.content||"{}","application/json");}catch(error){if(networkUnavailable(error))await createPortableDatabase();else toast(error.message);}});
+  $("#saveAutosaveButton").addEventListener("click",async()=>{try{await persistAutosave("manual");toast("Autosave saved to SQLite.");}catch(error){if(!networkUnavailable(error))return toast(error.message);save({immediate:true});await flushBrowserStateSave();await flushPortableDatabaseSave().catch(()=>{});toast("Автосохранение выполнено локально.");}});
+  $("#restoreAutosaveButton").addEventListener("click",async()=>{try{await restoreAutosave();toast("Autosave restored.");}catch(error){if(!networkUnavailable(error))return toast(error.message);const restored=await restoreBrowserStateFromIndexedDb();if(restored){renderAll();toast("Локальное автосохранение восстановлено.");}else toast("Локальное автосохранение отсутствует.");}});
+  $("#deleteAutosaveButton").addEventListener("click",async()=>{try{await deleteAutosave();toast("Autosave deleted.");renderServices();}catch(error){if(!networkUnavailable(error))return toast(error.message);localStorage.removeItem(key);localStorage.removeItem(browserStateSavedAtKey);await deleteBrowserStateRecord().catch(()=>{});toast("Локальное автосохранение очищено.");}});
+  $("#restoreBackupInput").addEventListener("change",async(e)=>{const file=e.target.files[0];e.target.value="";if(!file)return;try{const backup=await api("/backup/restore",{method:"POST",body:JSON.stringify({filename:file.name,contentBase64:await fileToBase64(file)})});state={...empty(),...(backup.state||{})};save();location.reload();}catch(error){if(!networkUnavailable(error))return toast("Не удалось восстановить резервную копию.");try{const payload=JSON.parse(await file.text()),restored=payload.state||payload;state=normalizeRestoredState(restored);save({immediate:true});await flushBrowserStateSave();renderAll();toast("Локальная JSON-копия восстановлена.");}catch{toast("Не удалось восстановить резервную копию.");}}});
   $("#addIpMappingButton").addEventListener("click",async()=>{const switchIp=$("#switchIpInput").value.trim(),address=$("#switchAddressInput").value.trim();if(!switchIp||!address)return toast("Укажите IP и адрес.");try{await api("/ip-mappings",{method:"POST",body:JSON.stringify({switchIp,address})});$("#switchIpInput").value="";$("#switchAddressInput").value="";renderServices();}catch(error){if(upsertLocalIpMapping(switchIp,address,"manual")){$("#switchIpInput").value="";$("#switchAddressInput").value="";renderLocalIpMappings();toast("IP-маппинг сохранён локально.");}else toast(error.message);}});
   $("#ipMappingImportInput").addEventListener("change",async(e)=>{const file=e.target.files[0];if(!file)return;try{const result=await api("/ip-mappings/import",{method:"POST",body:JSON.stringify({filename:file.name,contentBase64:await fileToBase64(file)})});renderServices();toast("Импортировано соответствий: "+result.imported+", пропущено: "+result.skipped);}catch(error){try{const result=await importLocalIpMappings(file);toast("Локально импортировано соответствий: "+result.imported+", пропущено: "+result.skipped);}catch(localError){toast("Импорт не выполнен: "+localError.message);}}e.target.value="";});
   $("#exportIpMappingsButton").addEventListener("click",async()=>{try{const data=await api("/ip-mappings/export");download(data.filename||"ip-address-mappings.csv","\uFEFF"+data.content,"text/csv");}catch(error){exportLocalIpMappings();toast("IP-маппинг экспортирован локально.");}});
@@ -2394,12 +2549,12 @@
   document.addEventListener("keydown",handleAppShortcut);
   setInterval(()=>{persistAutosave("interval").catch(()=>{});},60000);
   setInterval(()=>{if(state.engineeringMode&&!engineeringSessionActive()){clearEngineeringSession();renderEngineeringState();toast("Инженерная сессия завершена.");}},30000);
-  window.addEventListener("beforeunload",()=>{save();const autosaveState=compactAnalysisAutosaveState();fetch("/api/autosave",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slot:"main",reason:"beforeunload",state:autosaveState}),keepalive:true}).catch(()=>{});});
+  window.addEventListener("beforeunload",()=>{save();if(!autonomousHtmlMode&&backendAvailable){const autosaveState=compactAnalysisAutosaveState();fetch("/api/autosave",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slot:"main",reason:"beforeunload",state:autosaveState}),keepalive:true}).catch(()=>{});}});
   async function restoreInitialState(){
     const backendSynced=await syncFromBackend();
     if(!backendSynced){
-      const restored=await restoreBrowserStateFromIndexedDb();
-      if(restored){applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});renderEngineeringState();renderAll();renderColumnPreferences();const status=$("#autosaveStatus");if(status)status.textContent="Полный workspace восстановлен из хранилища браузера.";}
+      const portableRestored=await restorePortableDatabaseHandle();
+      if(!portableRestored){const restored=await restoreBrowserStateFromIndexedDb();if(restored){applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});renderEngineeringState();renderAll();renderColumnPreferences();const status=$("#autosaveStatus");if(status)status.textContent="Полный workspace восстановлен из хранилища браузера.";}}
     }
     await restoreWorkspaceSourceFiles();
   }

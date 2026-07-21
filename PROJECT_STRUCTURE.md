@@ -14,6 +14,7 @@ Mac_analyzer_Pro/
     memory-guard.js        ранние лимиты файла/ZIP/heap, суммы файлов обогащения, локального экспорта, paging и cooperative yield
     file-readers.js        потоковый XLSX/CSV/JSON-импорт с проверкой ZIP-каталога до распаковки XML
     browser-snapshot-store.js отдельное IndexedDB-хранилище полных локальных снимков
+    portable-database.js  потоковая файловая база MADB для переноса данных между браузерами и ПК
     state-persistence.js   компактное сохранение workspace; полный локальный результат хранится один раз в snapshot-store
     guide.js               руководство, переключение разделов и отображение текущего режима
   backend/
@@ -39,12 +40,13 @@ Mac_analyzer_Pro/
     runtime/               PID и временное состояние процессов
       tests/               временные изолированные базы тестов; автоматически очищаются
   logs/                    журналы backend и исходной программы
-  portable/                результат универсальной Windows-сборки (создаётся командой сборки, не хранится в Git)
+  portable/                готовые пользовательские сборки (создаются командами сборки, не хранятся в Git)
+    html/MAC-Analyzer-Pro.html один автономный файл без EXE, CMD, Python и backend
     dist/MACAnalyzerBackend/ единый пакет: исходный server.py, Python-first лаунчер и резервный asInvoker backend
   START_MAC_ANALYZER.cmd    запуск переносимого backend и открытие web-интерфейса
   STOP_MAC_ANALYZER.cmd     остановка переносимого backend
   index.html               HTML-интерфейс и автономный browser fallback
-  mac_analyzer_standalone.html переносимый однофайловый HTML с последовательным чтением XLSX и ограниченным превью результатов и снимков
+  mac_analyzer_standalone.html устаревший parity-артефакт; в пользовательскую сборку не включается
   app.js                   основная логика web frontend
   styles.css               стили web frontend
   server.py                HTTP API, SQLite и раздача frontend
@@ -69,4 +71,5 @@ powershell -ExecutionPolicy Bypass -File scripts/start_server.ps1 -Background
 powershell -ExecutionPolicy Bypass -File scripts/stop_server.ps1
 powershell -ExecutionPolicy Bypass -File scripts/run_tests.ps1
 powershell -ExecutionPolicy Bypass -File scripts/build_portable.ps1
+powershell -ExecutionPolicy Bypass -File scripts/build_html_portable.ps1
 ```

@@ -69,6 +69,7 @@ $verifiedFrontendFiles = @(
     "frontend\file-readers.js",
     "frontend\state-persistence.js",
     "frontend\browser-snapshot-store.js",
+    "frontend\portable-database.js",
     "frontend\guide.js"
 )
 $checksums = [ordered]@{}
