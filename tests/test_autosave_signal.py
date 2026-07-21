@@ -49,6 +49,12 @@ def test_autosave_state_and_signal_logging():
     assert hydrated["devices"][0]["mac"] == "AABBCC000001"
     assert hydrated["files"][0]["rows"] == [["MAC"], ["AABBCC000001"]]
 
+    compact = load_autosave_state("test-slot", hydrate=False)["state"]
+    assert compact["devices"] == []
+    assert compact["files"][0]["rows"] == []
+    assert compact["resultSnapshotId"] == "test-autosave-snapshot"
+    assert compact["resultDeviceCount"] == 1
+
     save_autosave_state({"theme": "light"}, slot="test-slot", reason="overwrite")
     assert load_autosave_state("test-slot")["state"]["theme"] == "light"
 

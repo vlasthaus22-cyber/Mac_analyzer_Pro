@@ -199,8 +199,9 @@
   function sourceFileStorageId(file){return [String(file?.name||"source-file"),Number(file?.size||0),Number(file?.lastModified||0)].join("|");}
   async function rememberSourceFile(fileRecord,file){
     if(!fileRecord||!file)return false;
-    fileRecord.sourceStorageId=sourceFileStorageId(file);
     sourceFilesById.set(fileRecord.id,file);
+    if(fileRecord.fileToken&&!fileRecord.clientImported)return true;
+    fileRecord.sourceStorageId=sourceFileStorageId(file);
     try{await BrowserSnapshots?.saveSourceFile?.(fileRecord.sourceStorageId,file);return true;}catch{return false;}
   }
   async function restoreSourceFile(fileRecord){
@@ -291,22 +292,40 @@
   };
   function compactAnalysisAutosaveState(){
     const activeSnapshot=state.snapshots?.[0];
-    return {...state,activeSnapshotId:activeSnapshot?.id||"",files:(state.files||[]).map((file)=>({...file,rows:[]})),devices:[],invalid:[],snapshots:(state.snapshots||[]).map((snapshot)=>({...snapshot,devices:[]}))};
+    return {
+      ...state,
+      activeSnapshotId:activeSnapshot?.id||state.resultSnapshotId||"",
+      files:(state.files||[]).map((file)=>({...file,rows:[]})),
+      devices:[],
+      invalid:[],
+      snapshots:(state.snapshots||[]).slice(0,25).map((snapshot)=>({...snapshot,devices:[]})),
+      movementHistory:(state.movementHistory||[]).slice(0,100),
+      localVendorMappings:{},
+      localModelMappings:{},
+      engineeringMode:false,
+      engineeringToken:"",
+      engineeringExpiresAt:"",
+      engineeringPermissions:[]
+    };
   }
   async function persistAutosave(reason="manual") {
     const autosaveState=compactAnalysisAutosaveState();
     const result=await api("/autosave",{method:"POST",body:JSON.stringify({slot:"main",reason,state:autosaveState})});
+    state.backendAutosaveUpdatedAt=result.updatedAt||state.backendAutosaveUpdatedAt||"";
+    save();
     const status=$("#autosaveStatus");
     if(status)status.textContent=result.statusText||"Autosaved.";
     return result;
   }
   async function restoreAutosave() {
-    const data=await api("/autosave?slot=main");
+    const data=await api("/autosave?slot=main&compact=1");
     if(!data.autosave?.state)throw new Error("Autosave is empty");
     state=normalizeRestoredState(data.autosave.state);
+    state.backendAutosaveUpdatedAt=data.autosave.updatedAt||"";
     applyVendorDetectorSettings(state.vendorDetectorSettings||{});
     applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});
     save();
+    await syncFromBackend();
     renderAll();
     const status=$("#autosaveStatus");
     if(status)status.textContent=data.autosave.statusText||"Autosave restored.";
@@ -332,13 +351,22 @@
     merged.columnWidths=normalizeColumnWidths(merged.columnWidths);
     merged.vendorDetectorSettings=normalizeVendorDetectorSettings(merged.vendorDetectorSettings||{});
     merged.historyEnrichmentSettings=normalizeHistoryEnrichmentSettings(merged.historyEnrichmentSettings||{});
+    if(!merged.resultSnapshotId&&merged.activeSnapshotId)merged.resultSnapshotId=String(merged.activeSnapshotId);
+    if(merged.resultSnapshotId&&!merged.resultDeviceCount){const snapshot=merged.snapshots.find((item)=>item.id===merged.resultSnapshotId);merged.resultDeviceCount=Number(snapshot?.deviceCount||0);}
     return merged;
   }
+  function shouldRestoreBootstrapAutosave(autosave){
+    if(!autosave?.state)return false;
+    if(currentWorkspaceIsEmpty())return true;
+    const remoteUpdatedAt=Date.parse(autosave.updatedAt||"")||0;
+    const localUpdatedAt=Date.parse(state.backendAutosaveUpdatedAt||"")||0;
+    return !localUpdatedAt||remoteUpdatedAt>localUpdatedAt;
+  }
   function restoreBootstrapAutosave(autosave){
-    if(!autosave?.state||!currentWorkspaceIsEmpty())return false;
+    if(!shouldRestoreBootstrapAutosave(autosave))return false;
     const restored=normalizeRestoredState(autosave.state);
     if(!restored.devices.length&&!restored.files.length&&!restored.snapshots.length&&!restored.movementHistory.length)return false;
-    state={...state,...restored,bootstrapAutosaveRestoredAt:autosave.updatedAt||new Date().toISOString()};
+    state={...state,...restored,backendAutosaveUpdatedAt:autosave.updatedAt||"",bootstrapAutosaveRestoredAt:autosave.updatedAt||new Date().toISOString()};
     applyVendorDetectorSettings(state.vendorDetectorSettings||{});
     applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});
     const status=$("#autosaveStatus");
@@ -393,9 +421,9 @@
         state.customColumnMappings = data.customColumnMappings || {};
         Object.assign(labels, data.customLabels || {});
       }
-      save(); renderAll(); setBackendStatus(true,restoredFromAutosave?"SQLite подключена, autosave восстановлен":"Backend и SQLite подключены");
+      save(); renderAll(); setBackendStatus(true,restoredFromAutosave?"SQLite подключена, autosave восстановлен":"Backend и SQLite подключены");return true;
     } catch {
-      setBackendStatus(false,"Автономный HTML-режим готов · XLSX и история сохраняются в браузере");
+      setBackendStatus(false,"Автономный HTML-режим готов · XLSX и история сохраняются в браузере");return false;
     }
   }
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
@@ -2367,5 +2395,13 @@
   setInterval(()=>{persistAutosave("interval").catch(()=>{});},60000);
   setInterval(()=>{if(state.engineeringMode&&!engineeringSessionActive()){clearEngineeringSession();renderEngineeringState();toast("Инженерная сессия завершена.");}},30000);
   window.addEventListener("beforeunload",()=>{save();const autosaveState=compactAnalysisAutosaveState();fetch("/api/autosave",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slot:"main",reason:"beforeunload",state:autosaveState}),keepalive:true}).catch(()=>{});});
-  applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});view(viewFromHash(),{updateHash:true,render:false});renderEngineeringState();renderAll();renderColumnPreferences();renderParityStatus();loadThemePreference();loadOuiPreference().then(()=>{renderResults();});loadVendorDetectorSettings();loadHistoryEnrichmentSettings();loadDashboardSettings();loadEngineeringSession();loadExternalApiSettings();refreshApiCacheStatus().catch(()=>{});restoreBrowserStateFromIndexedDb().then(async(restored)=>{if(restored){applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});renderEngineeringState();renderAll();renderColumnPreferences();const status=$("#autosaveStatus");if(status)status.textContent="Полный workspace восстановлен из хранилища браузера.";}await restoreWorkspaceSourceFiles();}).finally(()=>syncFromBackend());window.MacAnalyzerAppReady=true;document.documentElement.dataset.macAnalyzerApp="ready";
+  async function restoreInitialState(){
+    const backendSynced=await syncFromBackend();
+    if(!backendSynced){
+      const restored=await restoreBrowserStateFromIndexedDb();
+      if(restored){applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});renderEngineeringState();renderAll();renderColumnPreferences();const status=$("#autosaveStatus");if(status)status.textContent="Полный workspace восстановлен из хранилища браузера.";}
+    }
+    await restoreWorkspaceSourceFiles();
+  }
+  applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});view(viewFromHash(),{updateHash:true,render:false});renderEngineeringState();renderAll();renderColumnPreferences();renderParityStatus();loadThemePreference();loadOuiPreference().then(()=>{renderResults();});loadVendorDetectorSettings();loadHistoryEnrichmentSettings();loadDashboardSettings();loadEngineeringSession();loadExternalApiSettings();refreshApiCacheStatus().catch(()=>{});restoreInitialState().finally(()=>{window.MacAnalyzerAppReady=true;document.documentElement.dataset.macAnalyzerApp="ready";});
 })();

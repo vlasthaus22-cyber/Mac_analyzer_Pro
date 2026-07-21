@@ -53,7 +53,8 @@ class WorkspaceFileCache:
                 "accessed": now,
             }
             self._persist(token, self._entries[token])
-            self._enforce_limits()
+            self._enforce_memory_limits()
+            self._enforce_persisted_limit()
         return token
 
     def get(self, token: str) -> dict[str, Any]:
@@ -68,13 +69,15 @@ class WorkspaceFileCache:
                 raise WorkspaceCacheMiss(cache_token)
             entry["accessed"] = now
             self._touch_persisted(cache_token)
-            return {
+            result = {
                 "filename": entry["filename"],
                 "headers": entry["headers"],
                 "rows": entry["rows"],
                 "sheet": entry["sheet"],
                 "rowCount": entry["rowCount"],
             }
+            self._enforce_memory_limits()
+            return result
 
     def stats(self) -> dict[str, Any]:
         with self._lock:
@@ -109,17 +112,17 @@ class WorkspaceFileCache:
         ]
         for token in expired:
             self._entries.pop(token, None)
-            self._delete_persisted(token)
 
-    def _enforce_limits(self) -> None:
+    def _enforce_memory_limits(self, protected_token: str = "") -> None:
         def row_count() -> int:
             return sum(int(entry["rowCount"]) for entry in self._entries.values())
 
-        while self._entries and (len(self._entries) > self.max_entries or (len(self._entries) > 1 and row_count() > self.max_rows)):
-            oldest = min(self._entries, key=lambda token: float(self._entries[token]["accessed"]))
+        while self._entries and (len(self._entries) > self.max_entries or row_count() > self.max_rows):
+            candidates = [token for token in self._entries if token != protected_token]
+            if not candidates:
+                break
+            oldest = min(candidates, key=lambda token: float(self._entries[token]["accessed"]))
             self._entries.pop(oldest, None)
-            self._delete_persisted(oldest)
-        self._enforce_persisted_limit()
 
     def _persisted_paths(self) -> list[Path]:
         if not self.storage_directory:
@@ -171,8 +174,8 @@ class WorkspaceFileCache:
                 "accessed": now,
             }
             self._entries[token] = entry
-            self._enforce_limits()
-            return self._entries.get(token)
+            self._enforce_memory_limits()
+            return entry
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             path.unlink(missing_ok=True)
             return None

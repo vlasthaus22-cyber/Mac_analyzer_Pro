@@ -67,8 +67,30 @@ def test_persisted_table_is_restored_by_new_cache_instance():
         assert restarted_cache.stats()["persistentEntries"] == 1
 
 
+def test_memory_eviction_keeps_durable_workspace_file_for_other_browser():
+    with TemporaryDirectory() as directory:
+        cache = WorkspaceFileCache(
+            ttl_seconds=3600,
+            max_entries=4,
+            max_rows=1,
+            storage_directory=directory,
+        )
+        token = cache.put(
+            "large.xlsx",
+            {"headers": ["MAC"], "rows": [["001122334455"], ["AABBCCDDEEFF"]]},
+        )
+
+        assert cache.stats()["rows"] == 0
+        assert cache.stats()["persistentEntries"] == 1
+        restored = cache.get(token)
+        assert restored["rowCount"] == 2
+        assert restored["rows"][1][0] == "AABBCCDDEEFF"
+        assert cache.stats()["rows"] == 0
+
+
 if __name__ == "__main__":
     test_cached_table_is_resolved_without_rows_in_browser_payload()
     test_full_rows_are_valid_fallback_for_an_expired_token()
     test_persisted_table_is_restored_by_new_cache_instance()
+    test_memory_eviction_keeps_durable_workspace_file_for_other_browser()
     print("workspace cache service test passed")

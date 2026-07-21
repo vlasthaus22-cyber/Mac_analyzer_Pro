@@ -96,3 +96,5 @@ if ($git) {
     frontendChecksums = $checksums
 } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $package "BUILD_INFO.json") -Encoding UTF8
 Write-Output "Portable package created: $package"
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "build_source_portable.ps1") -OutputDirectory $outputRoot
+if ($LASTEXITCODE -ne 0) { throw "Source-only portable package build failed." }
