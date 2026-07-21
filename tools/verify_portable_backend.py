@@ -91,6 +91,8 @@ def verify(package: Path, port: int) -> dict[str, Any]:
     executable = package / "MACAnalyzerBackend.exe"
     if not executable.is_file():
         raise FileNotFoundError(executable)
+    if (package / "mac_analyzer_standalone.html").exists():
+        raise AssertionError("Universal package must expose only the primary index.html interface")
     package_info = json.loads((package / "PACKAGE_INFO.json").read_text(encoding="utf-8-sig"))
     manifest = embedded_manifest(executable)
     if package_info.get("administratorRightsRequired") is not False:
@@ -192,6 +194,7 @@ def verify(package: Path, port: int) -> dict[str, Any]:
             "package": package_info["package"],
             "administratorRightsRequired": package_info["administratorRightsRequired"],
             "embeddedManifest": "asInvoker",
+            "standaloneHtmlIncluded": False,
             "health": health["status"],
             "diagnostics": diagnostics["status"],
             "diagnosticChecks": f'{diagnostics["summary"]["passed"]}/{diagnostics["summary"]["total"]}',

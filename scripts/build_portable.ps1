@@ -26,7 +26,6 @@ $data = @(
     @("index.html", "."),
     @("app.js", "."),
     @("styles.css", "."),
-    @("mac_analyzer_standalone.html", "."),
     @("frontend", "frontend"),
     @("backend", "backend"),
     @("server.py", "."),

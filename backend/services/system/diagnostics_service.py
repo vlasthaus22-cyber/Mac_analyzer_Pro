@@ -176,10 +176,13 @@ def build_system_diagnostics(root: Path, storage: Any, db_connection: Callable[[
         ("state:autosaveState", app_text),
         ("currentDevicePayload({compactResult:true,resultPageSize})", app_text),
         ('const snapshotStore = "snapshots"', snapshot_store),
-        ("compactStandaloneState", standalone_text),
-        ("standaloneMemoryLimits", standalone_text),
-        ("zipExpandedBytes", standalone_text),
     )
+    if standalone_text:
+        memory_markers += (
+            ("compactStandaloneState", standalone_text),
+            ("standaloneMemoryLimits", standalone_text),
+            ("zipExpandedBytes", standalone_text),
+        )
     missing_memory = [marker for marker, content in memory_markers if marker not in content]
     checks.append(_check(
         "Большие файлы",

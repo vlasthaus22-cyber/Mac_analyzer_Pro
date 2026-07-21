@@ -27,6 +27,7 @@ def test_portable_build_is_self_contained_and_excludes_working_data():
     assert '"--name", "MACAnalyzerBackend"' in builder
     assert '@("frontend", "frontend")' in builder
     assert '@("backend", "backend")' in builder
+    assert '@("mac_analyzer_standalone.html", ".")' not in builder
     assert 'data\\reference' in builder
     assert "data\\databases" not in builder
     assert "data\\backups" not in builder
@@ -50,6 +51,7 @@ def test_windows_fallback_never_requests_elevation():
     verifier = _read("tools/verify_portable_backend.py")
     assert 'b"requestedExecutionLevel" not in manifest' in verifier
     assert 'b"asInvoker" not in manifest' in verifier
+    assert 'package / "mac_analyzer_standalone.html"' in verifier
 
 
 def test_source_only_portable_package_has_no_backend_executable():
