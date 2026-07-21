@@ -18,7 +18,7 @@
   if(!Guide)throw new Error("Модуль frontend/guide.js не загружен");
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
-  const networkUnavailable = (error) => error instanceof TypeError || /Failed to fetch|NetworkError|Load failed|fetch failed/i.test(error?.message||"");
+  const networkUnavailable = (error) => error instanceof TypeError || [404,405,501].includes(Number(error?.status||0)) || /Failed to fetch|NetworkError|Load failed|fetch failed/i.test(error?.message||"");
   const backendCandidates = [...new Set([
     location.protocol === "file:" ? "http://127.0.0.1:8080/api" : "/api",
     "http://127.0.0.1:8080/api",
@@ -195,6 +195,7 @@
   let mappingRenderVersion = 0;
   let pendingFileImports = [];
   const sourceFilesById = new Map();
+  const workspacePreviewDataRows = 100;
   function sourceFileStorageId(file){return [String(file?.name||"source-file"),Number(file?.size||0),Number(file?.lastModified||0)].join("|");}
   async function rememberSourceFile(fileRecord,file){
     if(!fileRecord||!file)return false;
@@ -213,6 +214,22 @@
   async function restoreWorkspaceSourceFiles(){
     for(const fileRecord of state.files||[])await restoreSourceFile(fileRecord);
     return sourceFilesById.size;
+  }
+  function compactWorkspaceFileRows(fileRecord){
+    const rows=Array.isArray(fileRecord?.rows)?fileRecord.rows:[];
+    if(rows.length<=workspacePreviewDataRows+1||!fileRecord.sourceStorageId)return false;
+    fileRecord.rows=rows.slice(0,workspacePreviewDataRows+1);
+    fileRecord.rowsComplete=false;
+    return true;
+  }
+  async function releaseRetainedWorkspaceRows(){
+    let released=0;
+    for(const fileRecord of state.files||[]){
+      if(!Array.isArray(fileRecord.rows)||fileRecord.rows.length<=workspacePreviewDataRows+1)continue;
+      if(await restoreSourceFile(fileRecord))released+=compactWorkspaceFileRows(fileRecord)?1:0;
+    }
+    if(released)await MemoryGuard.yieldToMainThread();
+    return released;
   }
   function pruneStoredSourceFiles(){return BrowserSnapshots?.pruneSourceFiles?.((state.files||[]).map((file)=>file.sourceStorageId).filter(Boolean)).catch(()=>false);}
   let activeProcessId = "";
@@ -259,7 +276,7 @@
         });
         const responseText=await response.text();
         let data={};
-        try{data=responseText?JSON.parse(responseText):{};}catch{throw new Error("Backend вернул некорректный ответ (HTTP "+response.status+")");}
+        try{data=responseText?JSON.parse(responseText):{};}catch{const apiError=new Error("Backend вернул некорректный ответ (HTTP "+response.status+")");apiError.status=response.status;throw apiError;}
         if (!response.ok){const apiError=new Error(data.error||"Ошибка API");apiError.status=response.status;throw apiError;}
         backendBase=base;
         backendAvailable=true;
@@ -438,7 +455,53 @@
   }
   function learnLocalRulesFromDevices(rows=[],minCount=2){const threshold=Math.max(1,Number(minCount||2)),vendorCounts=new Map(),modelCounts=new Map(),count=(map,prefix,value)=>{if(!prefix||!value)return;const key=prefix+"\u0000"+value;map.set(key,(map.get(key)||0)+1);};for(const device of rows||[]){const mac=normalize(device.mac||device.macFormatted),vendor=String(device.vendor||"").trim(),model=String(device.model||"").trim();if(!mac)continue;for(const length of [6,8,10])if(vendor&&vendor!=="Unknown"&&vendor!=="Не определено")count(vendorCounts,mac.slice(0,length),vendor);if(model)count(modelCounts,mac.slice(0,10),model);}const learn=(target,counts)=>{let learned=0;const best=new Map();counts.forEach((total,key)=>{const[prefix,value]=key.split("\u0000");if(total<threshold||target[prefix])return;const current=best.get(prefix);if(!current||total>current.total)best.set(prefix,{value,total});});best.forEach((item,prefix)=>{target[prefix]=item.value;learned++;});return learned;};return{vendors:learn(state.localVendorMappings,vendorCounts),models:learn(state.localModelMappings,modelCounts)};}
   function localDeviceFromRow(file,row,rowIndex,fields){const pick=(field)=>{const index=file.mapping?.[field];return index===""||index===undefined?"":String(row[Number(index)]??"").trim();};const mac=normalize(pick("mac"));if(!mac)return{invalid:{row:rowIndex+2,source:file.name,raw:row.join(" | "),error:"Некорректный MAC"}};const model=fields.model?(pick("model")||localModel(mac)):"";const vendor=fields.vendor?(pick("vendor")||localVendorFromText(model,pick("name"),row.join(" "))||localVendor(mac)):"Не определено";return{device:{mac,macFormatted:formatMac(mac),oui:formatOuiValue(mac),vendor,model,ip:fields.ip?pick("ip"):"",address:fields.address?pick("address"):"",room:fields.room?pick("room"):"",switchIp:fields.switchIp?pick("switchIp"):"",switchPort:fields.switchPort?pick("switchPort"):"",source:file.name,row:rowIndex+2,valid:true}};}
-  async function localAnalyzeFiles(fields,strategy,onProgress=()=>{}){MemoryGuard.assertEnrichmentCapacity(state.files);const deviceMap=new Map(),invalid=[],previousContext=activeLocalDetectionContext,totalRows=state.files.reduce((total,file)=>total+Math.max(0,(file.rows?.length||1)-1),0);let processed=0,invalidCount=0;activeLocalDetectionContext=createLocalDetectionContext();try{for(let fileIndex=0;fileIndex<state.files.length;fileIndex++){const file=state.files[fileIndex],rows=file.rows||[];for(let rowIndex=1;rowIndex<rows.length;rowIndex++){const result=localDeviceFromRow(file,rows[rowIndex],rowIndex-1,fields);processed++;if(result.invalid){if(fileIndex===0){invalidCount++;if(invalid.length<MemoryGuard.limits.invalidRows)invalid.push(result.invalid);}}else{const previous=deviceMap.get(result.device.mac);if(!(fileIndex>0&&strategy==="primary"&&!previous)){const merged=previous||{};for(const [field,value] of Object.entries(result.device)){if(value!==""&&value!==undefined)merged[field]=value;}deviceMap.set(result.device.mac,merged);}}if(processed%2000===0){onProgress(totalRows?processed/totalRows*100:100,`Обработано строк: ${processed.toLocaleString("ru-RU")} / ${totalRows.toLocaleString("ru-RU")}`);await MemoryGuard.yieldToMainThread();}}}const devices=Array.from(deviceMap.values());inferSwitchAddressMappings(devices,"current-file");learnLocalRulesFromDevices(devices,2);activeLocalDetectionContext=createLocalDetectionContext();applyLocalVendorModelMappings(devices);onProgress(100,`Обработано устройств: ${devices.length.toLocaleString("ru-RU")}`);return{devices,invalid,invalidCount};}finally{activeLocalDetectionContext=previousContext;}}
+  async function localRowsForAnalysis(file,fileIndex,fileCount,onProgress){
+    const inlineRows=Array.isArray(file.rows)?file.rows:[];
+    const expectedRows=Math.max(0,Number(file.rowCount||0));
+    if(file.rowsComplete!==false&&inlineRows.length>expectedRows)return{rows:inlineRows,temporary:false};
+    const sourceFile=await restoreSourceFile(file);
+    if(!sourceFile)throw new Error(`Для автономного анализа повторно выберите файл «${file.name}»: исходный файл отсутствует в хранилище браузера.`);
+    const data=await clientReadTable(sourceFile,(value,detail)=>onProgress((fileIndex+value/100)/Math.max(1,fileCount)*35,`${file.name}: ${detail}`));
+    const rows=Array.isArray(data.rows)?data.rows:[];
+    rows.unshift(data.headers||[]);
+    return{rows,temporary:true};
+  }
+  async function localAnalyzeFiles(fields,strategy,onProgress=()=>{}){
+    MemoryGuard.assertEnrichmentCapacity(state.files);
+    const deviceMap=new Map(),invalid=[],previousContext=activeLocalDetectionContext;
+    const totalRows=state.files.reduce((total,file)=>total+Math.max(0,Number(file.rowCount??Math.max(0,(file.rows?.length||1)-1))||0),0);
+    let processed=0,invalidCount=0;
+    activeLocalDetectionContext=createLocalDetectionContext();
+    try{
+      for(let fileIndex=0;fileIndex<state.files.length;fileIndex++){
+        const file=state.files[fileIndex],loaded=await localRowsForAnalysis(file,fileIndex,state.files.length,onProgress),rows=loaded.rows;
+        for(let rowIndex=1;rowIndex<rows.length;rowIndex++){
+          const result=localDeviceFromRow(file,rows[rowIndex],rowIndex-1,fields);
+          processed++;
+          if(result.invalid){
+            if(fileIndex===0){invalidCount++;if(invalid.length<MemoryGuard.limits.invalidRows)invalid.push(result.invalid);}
+          }else{
+            const previous=deviceMap.get(result.device.mac);
+            if(!(fileIndex>0&&strategy==="primary"&&!previous)){
+              const merged=previous||{};
+              for(const [field,value] of Object.entries(result.device))if(value!==""&&value!==undefined)merged[field]=value;
+              deviceMap.set(result.device.mac,merged);
+            }
+          }
+          if(processed%2000===0){onProgress(35+(totalRows?processed/totalRows*60:60),`Обработано строк: ${processed.toLocaleString("ru-RU")} / ${totalRows.toLocaleString("ru-RU")}`);await MemoryGuard.yieldToMainThread();}
+        }
+        if(loaded.temporary)rows.length=0;else compactWorkspaceFileRows(file);
+        await MemoryGuard.yieldToMainThread();
+      }
+      const devices=Array.from(deviceMap.values());
+      inferSwitchAddressMappings(devices,"current-file");
+      learnLocalRulesFromDevices(devices,2);
+      activeLocalDetectionContext=createLocalDetectionContext();
+      applyLocalVendorModelMappings(devices);
+      onProgress(100,`Обработано устройств: ${devices.length.toLocaleString("ru-RU")}`);
+      return{devices,invalid,invalidCount};
+    }finally{activeLocalDetectionContext=previousContext;}
+  }
   function renderLocalResultsHeader(){const columns=(state.visibleColumns||empty().visibleColumns).filter(Boolean);$("#resultsHeader").innerHTML=columns.map(column=>`<th>${esc(labels[column]||column)}</th>`).join("");return columns;}
   function updateResultPager(total=0,page=1,pages=1){const status=$("#resultPageStatus"),previous=$("#resultPreviousPageButton"),next=$("#resultNextPageButton"),size=$("#resultPageSizeSelect");if(status)status.textContent=`${page} / ${pages}`;if(previous)previous.disabled=page<=1;if(next)next.disabled=page>=pages;if(size)size.value=String(resultPageSize);resultPage=Math.max(1,Math.min(page,pages));}
   function localResultsTable(){const columns=renderLocalResultsHeader(),query=$("#searchInput")?.value.trim().toLowerCase()||"",vendor=$("#vendorFilter")?.value||"",vendors=new Set();for(const item of state.devices||[]){if(item.vendor)vendors.add(item.vendor);}const pageData=MemoryGuard.collectPage(state.devices,item=>(!vendor||item.vendor===vendor)&&(!query||Object.values(item).join(" ").toLowerCase().includes(query)),resultPage,resultPageSize);resultPage=pageData.page;$("#vendorFilter").innerHTML='<option value="">Все вендоры</option>'+Array.from(vendors).sort().map(v=>`<option value="${esc(v)}" ${v===vendor?"selected":""}>${esc(v)}</option>`).join("");$("#resultCount").textContent=pageData.total+" записей";updateResultPager(pageData.total,pageData.page,pageData.pages);return pageData.items.length?pageData.items.map(item=>`<tr data-mac="${esc(item.mac||normalize(item.macFormatted)||"")}">${columns.map(column=>`<td>${esc(column==="oui"?formatOuiValue(item.mac||item.macFormatted||item.oui):item[column]||"")}</td>`).join("")}</tr>`).join(""):'<tr><td colspan="'+columns.length+'" class="empty-state">Нет записей.</td></tr>';}
@@ -447,13 +510,24 @@
     const rows=Array.isArray(devices)?devices:[],snapshotId=crypto.randomUUID(),signature=devicesSignature(rows);
     const record={id:snapshotId,name,source,createdAt,deviceCount:rows.length,devices:rows,invalid:Array.isArray(invalid)?invalid:[],signature,kind};
     let browserStored=false;
-    try{if(!BrowserSnapshots)throw new Error("Хранилище локальных снимков недоступно");await BrowserSnapshots.save(record);browserStored=true;}catch{}
+    try{
+      if(!BrowserSnapshots)throw new Error("Хранилище локальных снимков недоступно");
+      const rowBudget=MemoryGuard.limits.browserSnapshotRows||300000,keepIds=[];
+      let remainingRows=Math.max(0,rowBudget-rows.length);
+      for(const item of state.snapshots.filter((entry)=>entry.browserStored)){
+        const rowsInSnapshot=Math.max(0,Number(item.deviceCount||0));
+        if(rowsInSnapshot<=remainingRows){keepIds.push(item.id);remainingRows-=rowsInSnapshot;}
+        else item.browserStored=false;
+      }
+      await BrowserSnapshots.prune(keepIds);
+      await BrowserSnapshots.save(record);
+      browserStored=true;
+    }catch{}
     const previewLimit=MemoryGuard.limits.snapshotPreviewRows||500;
     const metadata={id:snapshotId,name,source,createdAt,deviceCount:rows.length,devices:rows.slice(0,previewLimit),invalidCount:record.invalid.length,signature,kind,browserStored,devicesTruncated:rows.length>previewLimit,backendStored:false};
     state.snapshots.unshift(metadata);
     state.snapshots=state.snapshots.slice(0,25);
     if(browserStored&&kind!=="before-analysis"){state.resultSnapshotId="";state.resultBrowserSnapshotId=snapshotId;state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=rows.length;state.resultInvalidCount=record.invalid.length;state.resultSummary=null;}
-    if(browserStored)BrowserSnapshots.prune(state.snapshots.filter((item)=>item.browserStored).map((item)=>item.id)).catch(()=>{});
     return metadata;
   }
   async function loadLocalSnapshotRecord(snapshot){
@@ -474,6 +548,7 @@
   async function preserveCurrentBeforeAnalysis(source){
     if(!state.devices.length)return false;
     if(backendAvailable)return false;
+    if(state.resultBrowserSnapshotId&&state.resultBrowserSnapshotDirty!==true)return false;
     const currentSignature=devicesSignature(state.devices),latest=state.snapshots?.[0];
     if(latest&&latest.signature===currentSignature)return false;
     await storeLocalSnapshot("До анализа: "+(source||"текущие данные"),source||"browser-before-analysis",state.devices,state.invalid,new Date().toISOString(),"before-analysis");
@@ -533,7 +608,8 @@
     const data=await clientReadTable(file,onProgress),rows=[data.headers||[],...(data.rows||[])];
     if(rows.length<2)throw new Error("файл не содержит строк данных");
     const headers=rows[0].map((name,index)=>({name:String(name||headerName(index)),index}));
-    const fileRecord={id:crypto.randomUUID(),name:file.name,sheet:data.sheet||"",rows,headers,mapping:localAutoMapping(rows[0]),createdAt:fileCreatedAt,fileLastModified:file.lastModified||0,sourceBytes:file.size||0,clientImported:true,rowCount:Math.max(0,rows.length-1)};
+    const rowCount=Math.max(0,rows.length-1),previewRows=rows.slice(0,workspacePreviewDataRows+1);
+    const fileRecord={id:crypto.randomUUID(),name:file.name,sheet:data.sheet||"",rows:previewRows,headers,mapping:localAutoMapping(rows[0]),createdAt:fileCreatedAt,fileLastModified:file.lastModified||0,sourceBytes:file.size||0,clientImported:true,rowCount,rowsComplete:rowCount<=workspacePreviewDataRows};
     localMappingSummary(fileRecord);
     return fileRecord;
   }
@@ -562,6 +638,7 @@
       return;
     }
     state.importErrors=[];
+    await releaseRetainedWorkspaceRows();
     const processId=beginProcess("Загрузка файлов","Подготовка списка файлов",2);
     const status=$("#analysisStatus");
     const importStatus=$("#fileImportStatus");
@@ -803,20 +880,6 @@
   }
   async function refreshWorkspaceFileCache(onProgress=()=>{}){return uploadWorkspaceFilesToCache(state.files.filter((file)=>file.fileToken),onProgress);}
   async function ensureWorkspaceFileCache(onProgress=()=>{}){return uploadWorkspaceFilesToCache(state.files.filter((file)=>!file.fileToken),onProgress);}
-  async function hydrateWorkspaceFilesForBrowser(onProgress=()=>{}){
-    const compactFiles=state.files.filter((file)=>file.rowsComplete===false);
-    for(const [index,fileRecord] of compactFiles.entries()){
-      const sourceFile=await restoreSourceFile(fileRecord);
-      if(!sourceFile)throw new Error(`Для автономного анализа повторно выберите файл «${fileRecord.name}»: в памяти осталось только backend-превью.`);
-      const data=await clientReadTable(sourceFile,(value,detail)=>onProgress((index+value/100)/compactFiles.length*100,`${fileRecord.name}: ${detail}`));
-      fileRecord.rows=[data.headers||[],...(data.rows||[])];
-      fileRecord.headers=(data.headers||[]).map((name,columnIndex)=>({name:String(name||headerName(columnIndex)),index:columnIndex}));
-      fileRecord.rowCount=Number(data.rows?.length||0);
-      fileRecord.rowsComplete=true;
-      fileRecord.clientImported=true;
-    }
-    onProgress(100,"Полные строки подготовлены для автономного анализа");
-  }
   function currentDeviceCount(){return state.resultSnapshotId?Number(state.resultDeviceCount||0):(state.devices||[]).length;}
   function currentDevicePayload(extra={}){return state.resultSnapshotId?{...extra,snapshotId:state.resultSnapshotId,devices:[]}:{...extra,devices:state.devices||[]};}
   function clearResultReference(){state.resultSnapshotId="";state.resultBrowserSnapshotId="";state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=0;state.resultInvalidCount=0;state.resultSummary=null;}
@@ -896,7 +959,6 @@
             state.devices=[];
             await MemoryGuard.yieldToMainThread();
           }
-          await hydrateWorkspaceFilesForBrowser((value,detail)=>updateProcess(processId,45+Math.round(value*0.15),detail));
           local=await localAnalyzeFiles(enrich,strategy,(value,detail)=>updateProcess(processId,60+Math.round(value*0.25),detail));
         }catch(localError){progress.innerHTML='<p class="muted">Автономный анализ остановлен безопасно: '+esc(localError.message)+'</p>';toast(localError.message);failProcess(processId,localError);return;}
         clearResultReference();

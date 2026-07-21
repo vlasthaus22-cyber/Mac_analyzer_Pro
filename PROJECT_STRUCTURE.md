@@ -43,7 +43,7 @@ Mac_analyzer_Pro/
   START_MAC_ANALYZER.cmd    запуск переносимого backend и открытие web-интерфейса
   STOP_MAC_ANALYZER.cmd     остановка переносимого backend
   index.html               HTML-интерфейс и автономный browser fallback
-  mac_analyzer_standalone.html переносимый однофайловый HTML с ограниченным превью результатов и снимков
+  mac_analyzer_standalone.html переносимый однофайловый HTML с последовательным чтением XLSX и ограниченным превью результатов и снимков
   app.js                   основная логика web frontend
   styles.css               стили web frontend
   server.py                HTTP API, SQLite и раздача frontend

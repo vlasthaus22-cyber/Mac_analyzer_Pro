@@ -97,9 +97,9 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
 
     assert 'id="fileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
-    assert '<script src="frontend/memory-guard.js?v=20260720.4"></script>' in html
-    assert '<script src="frontend/file-readers.js?v=20260720.4"></script>' in html
-    assert '<meta name="application-build" content="2026.07.20.4">' in html
+    assert '<script src="frontend/memory-guard.js?v=20260721.1"></script>' in html
+    assert '<script src="frontend/file-readers.js?v=20260721.1"></script>' in html
+    assert '<meta name="application-build" content="2026.07.21.1">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -126,7 +126,7 @@ def test_large_second_xlsx_uses_indexeddb_without_blocking_render():
     assert 'StatePersistence.compactLocalState(source)' in app
     assert 'StatePersistence.compactIndexedState(state)' in app
     assert 'serverBackedResult ? [] : list(source.devices)' in app
-    assert 'preserveBrowserRows && !file.fileToken ? list(file.rows) : []' in app
+    assert 'preserveBrowserRows && !file.fileToken ? list(file.rows).slice(0, workspacePreviewRows) : []' in app
     assert 'localStorage.setItem(key,JSON.stringify(compactBrowserState(state)))' in app
     assert 'scheduleBrowserStateSave(savedAt,options.immediate?0:250);' in app
     assert 'async function flushBrowserStateSave()' in app
@@ -833,6 +833,8 @@ def test_main_file_import_uses_backend_service():
 
     assert "importErrors:[]" in app
     assert "const networkUnavailable = (error)" in app
+    assert "[404,405,501].includes(Number(error?.status||0))" in app
+    assert 'apiError.status=response.status;throw apiError;' in app
     assert "async function readClientTextFile(file)" in app
     assert "async function clientReadTable(file, onProgress = () => {})" in app
     assert "function clientJsonTable(text)" in app
@@ -856,6 +858,9 @@ def test_main_file_import_uses_backend_service():
     assert "state.lastAnalysis=fileCreatedAt;" in app
     assert "if(networkUnavailable(error))" in app
     assert "const data=await clientReadTable(file,onProgress),rows=[data.headers||[],...(data.rows||[])];" in app
+    assert "const rowCount=Math.max(0,rows.length-1),previewRows=rows.slice(0,workspacePreviewDataRows+1);" in app
+    assert "rows:previewRows" in app
+    assert "rowsComplete:rowCount<=workspacePreviewDataRows" in app
     assert "async function clientXlsxTable(file, onProgress = () => {})" in app
     assert "async function clientZipEntries(buffer, onProgress = () => {})" in app
     assert 'if (/\\.(xlsx|xlsm)$/i.test(file.name)) return clientXlsxTable(file, onProgress);' in app
@@ -878,11 +883,15 @@ def test_browser_mode_enrichment_keeps_basic_workflow_alive():
     app = read_app_js()
 
     assert "async function localAnalyzeFiles(fields,strategy,onProgress=()=>{})" in app
+    assert "async function localRowsForAnalysis(file,fileIndex,fileCount,onProgress)" in app
+    assert "const sourceFile=await restoreSourceFile(file);" in app
+    assert "if(loaded.temporary)rows.length=0;else compactWorkspaceFileRows(file);" in app
     assert "function localDeviceFromRow(file,row,rowIndex,fields)" in app
     assert "function localResultsTable()" in app
     assert "function localMappingGrid(file)" in app
     assert "local=await localAnalyzeFiles(enrich,strategy," in app
-    assert "async function hydrateWorkspaceFilesForBrowser(onProgress=()=>{})" in app
+    assert "async function hydrateWorkspaceFilesForBrowser(onProgress=()=>{})" not in app
+    assert "await hydrateWorkspaceFilesForBrowser(" not in app
     assert "MemoryGuard.collectPage(state.devices" in app
     assert "file.rows.slice(1).forEach" not in app
     assert "Обогащение в браузере" in app
@@ -905,11 +914,15 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260720.4"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260721.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
     assert 'async function storeLocalSnapshot(' in app
     assert 'devices:rows.slice(0,previewLimit)' in app
-    assert 'BrowserSnapshots.prune(state.snapshots.filter((item)=>item.browserStored).map((item)=>item.id))' in app
+    assert 'const rowBudget=MemoryGuard.limits.browserSnapshotRows||300000,keepIds=[];' in app
+    assert 'let remainingRows=Math.max(0,rowBudget-rows.length);' in app
+    assert 'await BrowserSnapshots.prune(keepIds);' in app
+    assert app.index('await BrowserSnapshots.prune(keepIds);') < app.index('await BrowserSnapshots.save(record);')
+    assert 'browserSnapshotRows: 300_000' in memory_guard
     assert 'const snapshotStore = "snapshots";' in snapshot_store
     assert 'const databaseVersion = 3;' in snapshot_store
     assert 'const sourceFileStore = "sourceFiles";' in snapshot_store
@@ -1962,7 +1975,7 @@ def test_role_aware_guide_is_a_separate_working_view():
         'data-guide-tab="large-files"',
         'data-guide-requires-engineering',
         'id="openGuideFromHelpButton"',
-        '<script src="frontend/guide.js?v=20260720.4"></script>',
+        '<script src="frontend/guide.js?v=20260721.1"></script>',
     ):
         assert marker in html
     for text in (

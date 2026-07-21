@@ -30,7 +30,8 @@ const source = {
 for (let round = 0; round < 4; round += 1) {
   const indexed = persistence.compactIndexedState(source);
   assert.equal(indexed.devices.length, 0, `round ${round + 1}: result rows must stay in snapshot-store only`);
-  assert.strictEqual(indexed.files[0].rows, rows, `round ${round + 1}: source rows must not be copied in JavaScript`);
+  assert.equal(indexed.files[0].rows.length, 101, `round ${round + 1}: only the header and 100 preview rows may be persisted`);
+  assert.notStrictEqual(indexed.files[0].rows, rows, `round ${round + 1}: persistence must not retain the full source array`);
   assert.equal(indexed.snapshots[0].devices.length, 0, `round ${round + 1}: snapshot metadata must stay compact`);
 
   const local = persistence.compactLocalState(source);
