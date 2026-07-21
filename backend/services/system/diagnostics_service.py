@@ -163,7 +163,7 @@ def build_system_diagnostics(root: Path, storage: Any, db_connection: Callable[[
         ("BROWSER_MEMORY_LIMIT", memory_guard),
         ("collectPage", memory_guard),
         ("xlsxWorksheetRows", file_readers),
-        ("memoryGuard.assertZipDirectoryCapacity(entries)", file_readers),
+        ("MemoryGuard.assertZipDirectoryCapacity(entries)", file_readers),
         ('fileToken,sheet:', app_text),
         ("compactResult:true,resultPageSize", app_text),
         ("MemoryGuard.yieldToMainThread", app_text),

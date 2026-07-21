@@ -30,6 +30,9 @@ def test_portable_build_is_self_contained_and_excludes_working_data():
     assert 'data\\reference' in builder
     assert "data\\databases" not in builder
     assert "data\\backups" not in builder
+    assert "Portable frontend contains obsolete memoryGuard code" in builder
+    assert "Portable frontend is stale" in builder
+    assert "BUILD_INFO.json" in builder
 
 
 def test_portable_launcher_resolves_a_relocated_cyrillic_path():
