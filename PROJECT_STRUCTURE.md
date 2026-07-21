@@ -42,6 +42,7 @@ Mac_analyzer_Pro/
   logs/                    журналы backend и исходной программы
   portable/                готовые пользовательские сборки (создаются командами сборки, не хранятся в Git)
     html/MAC-Analyzer-Pro.html один автономный файл без EXE, CMD, Python и backend
+    complete/*.zip        полный проект, автономный HTML и локальные данные без EXE/DLL/CMD
     dist/MACAnalyzerBackend/ единый пакет: исходный server.py, Python-first лаунчер и резервный asInvoker backend
   START_MAC_ANALYZER.cmd    запуск переносимого backend и открытие web-интерфейса
   STOP_MAC_ANALYZER.cmd     остановка переносимого backend
@@ -72,4 +73,5 @@ powershell -ExecutionPolicy Bypass -File scripts/stop_server.ps1
 powershell -ExecutionPolicy Bypass -File scripts/run_tests.ps1
 powershell -ExecutionPolicy Bypass -File scripts/build_portable.ps1
 powershell -ExecutionPolicy Bypass -File scripts/build_html_portable.ps1
+powershell -ExecutionPolicy Bypass -File scripts/build_complete_release.ps1
 ```

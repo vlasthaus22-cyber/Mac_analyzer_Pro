@@ -41,6 +41,13 @@ powershell -ExecutionPolicy Bypass -File scripts/build_html_portable.ps1
 Исходные `index.html`, `app.js` и модули остаются раздельными для разработки.
 Пользовательская HTML-сборка содержит их встроенными и передаётся одним файлом.
 
+Полный архив для приватного Release создаётся командой
+`scripts/build_complete_release.ps1`. Он содержит автономный HTML, исходный
+PyQt-файл, frontend/backend, Python API, сервисы, тесты, инструменты и локальные
+`data`, `config`, `logs`. Старые вложенные релизы, временные build/runtime-файлы,
+EXE, DLL и CMD исключаются; состав и SHA-256 каждого файла записываются в
+`FILE_MANIFEST.sha256`.
+
 ### Вариант с Python/SQLite backend
 
 Для передачи пользователю или инженеру создайте один универсальный пакет на
