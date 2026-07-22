@@ -30,6 +30,7 @@ REQUIRED_TABLES = {
 REQUIRED_API_MARKERS = (
     "/api/health",
     "/api/files/import-binary",
+    "/api/workspace/cache/discard",
     "/api/single-file/analyze",
     "/api/enrichment/run",
     "/api/results/filter",
@@ -150,6 +151,7 @@ def build_system_diagnostics(root: Path, storage: Any, db_connection: Callable[[
     file_readers = _read(root / "frontend" / "file-readers.js")
     app_text = _read(root / "app.js")
     snapshot_store = _read(root / "frontend" / "browser-snapshot-store.js")
+    workspace_cache = _read(root / "backend" / "services" / "workspace" / "workspace_cache_service.py")
     standalone_text = _read(root / "mac_analyzer_standalone.html")
     memory_markers = (
         ("browserRows: 150_000", memory_guard),
@@ -173,6 +175,10 @@ def build_system_diagnostics(root: Path, storage: Any, db_connection: Callable[[
         ("BrowserSnapshots.save", app_text),
         ("resultBrowserSnapshotId", app_text),
         ("createLocalComparisonIndex", app_text),
+        ("browserEnrichmentFallbackAllowed", app_text),
+        ('self.database_path = self.storage_directory / "workspace_cache.db"', workspace_cache),
+        ("def iter_rows", workspace_cache),
+        ("memoryRows", workspace_cache),
         ("state:autosaveState", app_text),
         ("currentDevicePayload({compactResult:true,resultPageSize})", app_text),
         ('const snapshotStore = "snapshots"', snapshot_store),

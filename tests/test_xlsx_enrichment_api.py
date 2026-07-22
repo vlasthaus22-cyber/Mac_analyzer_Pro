@@ -283,6 +283,9 @@ def test_large_binary_import_response_is_bounded_to_preview_rows():
         assert imported["previewRowCount"] == 100
         assert len(imported["rows"]) == 100
         assert len(json.dumps(imported, ensure_ascii=False)) < 100_000
+        discarded = post_json(base_url, "/api/workspace/cache/discard", {"tokens": [imported["fileToken"]]})
+        assert discarded["discarded"] == 1
+        assert discarded["cache"]["memoryRows"] == 0
     finally:
         if locals().get("imported"):
             WORKSPACE_FILE_CACHE.discard(imported.get("fileToken", ""))

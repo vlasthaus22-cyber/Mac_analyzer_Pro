@@ -42,7 +42,7 @@ from backend.services.workspace.xlsx_service import read_xlsx
 from backend.services.workspace.file_import_service import read_table
 from backend.services.detection.column_detector_service import detect as detect_columns
 from backend.services.exporting.export_manager_service import export_managed, supported_export_formats
-from backend.services.workspace.enrichment_service import enrich_files
+from backend.services.workspace.enrichment_service import enrich_files, enrich_workspace_files
 from backend.services.detection.oui_service import format_oui_for_devices
 from backend.services.workspace.single_file_service import analyze_single_file, analyze_single_file_table, summarize_single_file
 from backend.services.comparison.comparison_service import compare_devices, compare_many_devices, compare_many_snapshots, compare_snapshots, export_comparison
@@ -69,7 +69,7 @@ from backend.services.system.legacy_migration_service import migrate_legacy_sqli
 from backend.services.system.parity_service import build_parity_report, build_parity_status
 from backend.services.system.diagnostics_service import build_system_diagnostics
 from backend.services.system.storage_paths import initialize_storage
-from backend.services.workspace.workspace_cache_service import WorkspaceCacheMiss, WorkspaceFileCache, resolve_workspace_files
+from backend.services.workspace.workspace_cache_service import WorkspaceCacheMiss, WorkspaceFileCache, prepare_workspace_files, resolve_workspace_files
 
 ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 STORAGE, STORAGE_MIGRATION_REPORT = initialize_storage(ROOT)
@@ -172,7 +172,7 @@ ENRICHMENT_JOBS: dict[str, dict[str, Any]] = {}
 WORKSPACE_FILE_CACHE = WorkspaceFileCache(
     ttl_seconds=int(os.environ.get("MAC_ANALYZER_WORKSPACE_CACHE_TTL", "2592000")),
     max_entries=int(os.environ.get("MAC_ANALYZER_WORKSPACE_CACHE_FILES", "100")),
-    max_rows=int(os.environ.get("MAC_ANALYZER_WORKSPACE_CACHE_ROWS", "250000")),
+    max_rows=int(os.environ.get("MAC_ANALYZER_WORKSPACE_CACHE_ROWS", "2000000")),
     storage_directory=STORAGE.imports / "workspace-cache",
 )
 
@@ -5252,11 +5252,15 @@ class AppHandler(BaseHTTPRequestHandler):
         all_rows = table.get("rows") or []
         preview_size = max(25, min(500, int(preview_rows or 100)))
         response_rows = all_rows[:preview_size] if compact_result else all_rows
+        row_count = len(all_rows)
+        if compact_result:
+            table["rows"] = response_rows
+            del all_rows
         self.json_response({
             **table,
             "rows": response_rows,
             "fileToken": file_token,
-            "rowCount": len(all_rows),
+            "rowCount": row_count,
             "previewRowCount": len(response_rows),
             "compactResult": compact_result,
         })
@@ -5596,6 +5600,19 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.json_response({
                     "progressHtml": enrichment_progress_html(payload.get("progress"), as_text(payload.get("status")) or "running")
                 })
+            elif parsed.path == "/api/workspace/cache/discard":
+                tokens = payload.get("tokens", [])
+                if not isinstance(tokens, list) or len(tokens) > 20:
+                    self.error_response("tokens must be an array up to 20 items")
+                    return
+                discarded = 0
+                for token in tokens:
+                    normalized_token = as_text(token)
+                    if not normalized_token:
+                        continue
+                    WORKSPACE_FILE_CACHE.discard(normalized_token)
+                    discarded += 1
+                self.json_response({"ok": True, "discarded": discarded, "cache": WORKSPACE_FILE_CACHE.stats()})
             elif parsed.path == "/api/enrichment/run":
                 started_at = time.perf_counter()
                 files = payload.get("files", [])
@@ -5603,7 +5620,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     self.error_response("files must be an array up to 10 items")
                     return
                 try:
-                    files = resolve_workspace_files(files, WORKSPACE_FILE_CACHE)
+                    files = prepare_workspace_files(files, WORKSPACE_FILE_CACHE)
                 except WorkspaceCacheMiss:
                     self.json_response(
                         {
@@ -5630,8 +5647,9 @@ class AppHandler(BaseHTTPRequestHandler):
                 source = as_text(payload.get("source")) or (as_text(files[0].get("name")) if files else "")
                 source_created_at = as_text(payload.get("createdAt")) or as_text(files[0].get("createdAt") if files and isinstance(files[0], dict) else "")
                 job = start_enrichment_job(as_text(payload.get("jobId")), source, strategy)
-                merged = enrich_files(
+                merged = enrich_workspace_files(
                     files,
+                    WORKSPACE_FILE_CACHE,
                     strategy,
                     progress_callback=lambda progress: update_enrichment_job(job["id"], progress),
                     is_cancelled=lambda: bool(ENRICHMENT_JOBS.get(job["id"], {}).get("cancelRequested")),

@@ -6,6 +6,7 @@
 - `state-persistence.js` prevents large server-backed XLSX rows and result pages from being cloned into browser storage.
 - `browser-snapshot-store.js` keeps complete browser-only snapshots in a dedicated IndexedDB store; the live workspace keeps only metadata and a 500-row preview.
 - Repeated browser enrichment streams worksheets and shared strings, releases transient dashboard/result references, and removes consumed input files from the next workspace.
-- Backend imports send the original binary file and retain only a bounded 100-row preview in browser memory.
+- Backend imports send the original binary file, retain only a bounded 100-row preview in browser memory, and stream full rows from `data/imports/workspace-cache/workspace_cache.db` during enrichment.
+- Large enrichment never falls back to browser processing when the backend is unavailable; small autonomous multi-file workflows remain available.
 - `app.js` remains the application controller while modules are extracted from it.
 - `index.html` loads modules with classic scripts so local `file://` startup keeps working.

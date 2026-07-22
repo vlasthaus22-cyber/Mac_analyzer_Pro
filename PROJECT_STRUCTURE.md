@@ -41,7 +41,7 @@ Mac_analyzer_Pro/
     legacy/                базы исходной PyQt-программы
     backups/               резервные копии
     imports/               входные файлы и ограниченный workspace-cache для больших таблиц
-      workspace-cache/     полные таблицы по токену с долговременным TTL; RAM-кэш освобождается отдельно от дисковых файлов
+      workspace-cache/     workspace_cache.db со строками импортов; backend читает их пакетами без RAM-кэша таблиц
     reference/             переносимые OUI TXT/CSV для автоопределения производителей
     exports/               серверные результаты экспорта
     runtime/               PID и временное состояние процессов
@@ -82,3 +82,12 @@ powershell -ExecutionPolicy Bypass -File scripts/build_portable.ps1
 powershell -ExecutionPolicy Bypass -File scripts/build_html_portable.ps1
 powershell -ExecutionPolicy Bypass -File scripts/build_complete_release.ps1
 ```
+
+## SQLite-обогащение без накопления памяти браузера
+
+Backend хранит импортированные строки в `data/imports/workspace-cache/workspace_cache.db`.
+Frontend сохраняет только токен файла, заголовки и не более 100 строк предпросмотра.
+`/api/enrichment/run` читает строки из SQLite пакетами; полный результат и история
+записываются в `data/databases/mac_analyzer_web.db`, а браузер получает одну страницу.
+После успешного запуска использованный файл обогащения удаляется из рабочего SQLite-кэша
+при выборе следующего файла. Снимки, история MAC и журнал изменений при этом сохраняются.

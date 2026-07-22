@@ -211,3 +211,12 @@ powershell -ExecutionPolicy Bypass -File scripts\run_tests.ps1
 ```powershell
 .venv\Scripts\python.exe -m tools.generate_parity_status
 ```
+
+### Повторное обогащение через локальную SQLite
+
+При работе через `http://127.0.0.1:8080` исходные строки XLSX находятся в
+`data/imports/workspace-cache/workspace_cache.db` и читаются backend построчно.
+В браузере остаются только метаданные, 100 строк предпросмотра и текущая страница результата.
+Для наборов больше 10 000 строк или 16 МБ опасный JavaScript fallback отключён:
+при недоступном backend операция останавливается до запуска локального сервиса, не завершая
+вкладку с ошибкой Out of Memory.

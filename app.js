@@ -461,6 +461,8 @@
     if(!removed.length)return 0;
     state.files=selection.files;
     for(const file of removed)sourceFilesById.delete(file.id);
+    const tokens=removed.map((file)=>file.fileToken).filter(Boolean);
+    if(tokens.length&&backendAvailable)await api("/workspace/cache/discard",{method:"POST",body:JSON.stringify({tokens})}).catch(()=>{});
     ensureMappingSelection();
     await pruneStoredSourceFiles();
     await MemoryGuard.yieldToMainThread();
@@ -944,7 +946,8 @@
         fileProgress(1,"начало чтения");
         if(backendAvailable)try{fileRecord=await backendFileRecord(file,fileCreatedAt,fileProgress);}catch(error){backendError=error;if(networkUnavailable(error))setBackendStatus(false,"Автономный HTML-режим · файлы обрабатываются в браузере");}
         if(!fileRecord)fileRecord=await clientFileRecord(file,fileCreatedAt,fileProgress);
-        await rememberSourceFile(fileRecord,file);
+        if(fileRecord.clientImported)await rememberSourceFile(fileRecord,file);
+        else{sourceFilesById.delete(fileRecord.id);fileRecord.sourceStorageId="";}
         insertImportedFile(fileRecord,requestedRole,fileIndex);
         imported++;
         ensureMappingSelection();
@@ -1227,6 +1230,11 @@
   }
   async function refreshWorkspaceFileCache(onProgress=()=>{}){return uploadWorkspaceFilesToCache(state.files.filter((file)=>file.fileToken),onProgress);}
   async function ensureWorkspaceFileCache(onProgress=()=>{}){return uploadWorkspaceFilesToCache(state.files.filter((file)=>!file.fileToken),onProgress);}
+  function browserEnrichmentFallbackAllowed(){
+    const totalRows=(state.files||[]).reduce((sum,file)=>sum+Math.max(0,Number(file.rowCount||0)),0);
+    const totalBytes=(state.files||[]).reduce((sum,file)=>sum+Math.max(0,Number(file.sourceBytes||0)),0);
+    return totalRows<=10000&&totalBytes<=16*1024*1024;
+  }
   function currentDeviceCount(){return state.resultSnapshotId?Number(state.resultDeviceCount||0):(state.devices||[]).length;}
   function currentDevicePayload(extra={}){return state.resultSnapshotId?{...extra,snapshotId:state.resultSnapshotId,devices:[]}:{...extra,devices:state.devices||[]};}
   function clearResultReference(){state.resultSnapshotId="";state.resultBrowserSnapshotId="";state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=0;state.resultInvalidCount=0;state.resultSummary=null;}
@@ -1296,6 +1304,14 @@
     } catch(error) {
       if(error.name==="AbortError"){progress.innerHTML='<p class="muted">Обогащение отменено.</p>';toast("Обогащение отменено.");cancelProcess(processId,"Обогащение отменено пользователем");cancelButton.disabled=true;return;}
       if(networkUnavailable(error)){
+        if(!browserEnrichmentFallbackAllowed()){
+          const message="Безопасное обогащение крупного набора выполняется только локальным backend через SQLite. Откройте http://127.0.0.1:8080 и повторите запуск.";
+          setBackendStatus(false,"Backend недоступен · браузерное обогащение отключено для защиты памяти");
+          progress.innerHTML='<p class="muted">'+esc(message)+'</p>';
+          toast(message);
+          failProcess(processId,message);
+          return;
+        }
         updateProcess(processId,45,"Backend недоступен: локальное обогащение в браузере");
         let local,previousComparisonIndex=null;
         try{

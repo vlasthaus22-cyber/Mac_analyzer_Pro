@@ -1,5 +1,7 @@
 import re
-from typing import Any
+from typing import Any, Callable, Iterable
+
+from .workspace_cache_service import WorkspaceFileCache, workspace_row_iterator
 
 
 ENRICH_FIELDS = ["vendor", "model", "ip", "address", "room", "switchIp", "switchPort"]
@@ -78,7 +80,29 @@ def merge_device(previous: dict[str, Any], current: dict[str, Any]) -> dict[str,
     return merged
 
 
-def enrich_files(files: list[dict[str, Any]], strategy: str = "primary", progress_callback=None, is_cancelled=None) -> dict[str, Any]:
+def _inline_rows(file_info: dict[str, Any]) -> Iterable[list[Any]]:
+    rows = file_info.get("rows") or []
+    return rows[1:] if rows and isinstance(rows[0], list) else rows
+
+
+def _row_count(file_info: dict[str, Any]) -> int:
+    declared = file_info.get("rowCount")
+    if declared not in (None, ""):
+        try:
+            return max(0, int(declared))
+        except (TypeError, ValueError):
+            pass
+    rows = file_info.get("rows") or []
+    return len(rows[1:] if rows and isinstance(rows[0], list) else rows)
+
+
+def _enrich_row_streams(
+    files: list[dict[str, Any]],
+    strategy: str,
+    row_provider: Callable[[dict[str, Any]], Iterable[list[Any]]],
+    progress_callback=None,
+    is_cancelled=None,
+) -> dict[str, Any]:
     if not files:
         return {"devices": [], "invalid": [], "progress": {"files": 0, "rows": 0, "valid": 0, "invalid": 0, "status": "completed", "percent": 100}}
     allow_new_from_secondary = strategy == "merge"
@@ -87,16 +111,13 @@ def enrich_files(files: list[dict[str, Any]], strategy: str = "primary", progres
     rows_processed = 0
     total_rows = 0
     for file_info in files:
-        rows = file_info.get("rows") or []
-        total_rows += len(rows[1:] if rows and isinstance(rows[0], list) else rows)
+        total_rows += _row_count(file_info)
     if progress_callback:
         progress_callback({"status": "running", "files": len(files), "rows": 0, "totalRows": total_rows, "valid": 0, "invalid": 0, "percent": 0, "strategy": strategy})
     for file_index, file_info in enumerate(files):
-        rows = file_info.get("rows") or []
-        data_rows = rows[1:] if rows and isinstance(rows[0], list) else rows
         compiled_mapping = compile_mapping(file_info.get("mapping") or {})
         progress_interval = max(1, min(250, total_rows // 100 or 1))
-        for row_index, row in enumerate(data_rows):
+        for row_index, row in enumerate(row_provider(file_info)):
             if is_cancelled and is_cancelled():
                 progress = {
                     "files": len(files),
@@ -149,3 +170,24 @@ def enrich_files(files: list[dict[str, Any]], strategy: str = "primary", progres
             "percent": 100,
         },
     }
+
+
+def enrich_files(files: list[dict[str, Any]], strategy: str = "primary", progress_callback=None, is_cancelled=None) -> dict[str, Any]:
+    return _enrich_row_streams(files, strategy, _inline_rows, progress_callback, is_cancelled)
+
+
+def enrich_workspace_files(
+    files: list[dict[str, Any]],
+    cache: WorkspaceFileCache,
+    strategy: str = "primary",
+    progress_callback=None,
+    is_cancelled=None,
+) -> dict[str, Any]:
+    """Merge cached imports by streaming rows from the local SQLite cache."""
+    return _enrich_row_streams(
+        files,
+        strategy,
+        lambda file_info: workspace_row_iterator(file_info, cache),
+        progress_callback,
+        is_cancelled,
+    )
