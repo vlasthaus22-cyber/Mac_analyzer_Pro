@@ -12,13 +12,15 @@ require("../frontend/file-readers.js");
 const readers = global.MacAnalyzerFileReaders;
 const workbookPath = path.join(__dirname, "..", "data", "imports", "oom-browser-test.xlsx");
 const workbookBytes = fs.readFileSync(workbookPath);
-const workbookBuffer = workbookBytes.buffer.slice(
-  workbookBytes.byteOffset,
-  workbookBytes.byteOffset + workbookBytes.byteLength,
-);
+const workbookFile = new Blob([workbookBytes], {
+  type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+});
+Object.defineProperty(workbookFile, "name", { value: "oom-browser-test.xlsx" });
 
 (async () => {
-  const directory = readers.clientZipDirectory(workbookBuffer);
+  const directory = await readers.clientZipFileDirectory(workbookFile);
+  assert.equal(directory.file, workbookFile, "XLSX directory must retain only the file-backed source");
+  assert.equal(directory.bytes, undefined, "streamed XLSX parsing must not retain a full workbook ArrayBuffer");
   const sharedStrings = await readers.xlsxSharedStringsFromDirectory(directory);
   const sheetPath = [...directory.entries.keys()]
     .find((name) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(name));

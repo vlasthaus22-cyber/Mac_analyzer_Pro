@@ -67,6 +67,7 @@ def test_complete_release_contains_program_layers_without_executables():
             )
             for expected in required:
                 assert any(name.endswith("/" + expected) for name in names), expected
+            assert not any(name.endswith("/mac_analyzer_standalone.html") for name in names)
             assert not suffixes.intersection({".exe", ".dll", ".cmd", ".bat", ".com", ".msi"})
 
 

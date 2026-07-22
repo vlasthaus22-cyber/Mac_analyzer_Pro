@@ -233,6 +233,30 @@
     });
   }
 
+  async function pruneEnrichmentRows(maxAgeMs = 12 * 60 * 60 * 1000) {
+    const cutoff = Date.now() - Math.max(60_000, Number(maxAgeMs) || 0);
+    const database = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const current = database.transaction(enrichmentRowStore, "readwrite");
+      const request = current.objectStore(enrichmentRowStore).openCursor();
+      let removed = 0;
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        const updatedAt = Number(cursor.value?.updatedAt || 0);
+        if (!updatedAt || updatedAt < cutoff) {
+          cursor.delete();
+          removed += 1;
+        }
+        cursor.continue();
+      };
+      request.onerror = () => reject(request.error || new Error("Unable to prune temporary enrichment rows"));
+      current.oncomplete = () => { database.close(); resolve(removed); };
+      current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Temporary enrichment prune failed")); };
+      current.onabort = current.onerror;
+    });
+  }
+
   async function mergeEnrichmentRows(jobId, devices, options = {}) {
     const id = String(jobId || "");
     const rows = Array.isArray(devices) ? devices : [];
@@ -255,7 +279,7 @@
           for (const [field, value] of Object.entries(device)) {
             if (value !== "" && value !== undefined) merged[field] = value;
           }
-          store.put({ key, jobId: id, mac, device: merged });
+          store.put({ key, jobId: id, mac, device: merged, updatedAt: Date.now() });
           written += 1;
         };
         request.onerror = () => current.abort();
@@ -554,6 +578,7 @@
     page,
     createPageCollector,
     clearEnrichment,
+    pruneEnrichmentRows,
     mergeEnrichmentRows,
     streamEnrichmentRows,
     transformEnrichmentRows,

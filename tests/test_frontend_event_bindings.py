@@ -98,8 +98,8 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
     assert 'id="fileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert '<script src="frontend/memory-guard.js?v=20260722.7"></script>' in html
-    assert '<script src="frontend/file-readers.js?v=20260722.7"></script>' in html
-    assert '<meta name="application-build" content="2026.07.22.7">' in html
+    assert '<script src="frontend/file-readers.js?v=20260722.8"></script>' in html
+    assert '<meta name="application-build" content="2026.07.22.8">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -953,7 +953,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260722.7"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260722.8"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
     assert 'async function storeLocalSnapshot(' in app
     assert 'devices:rows.slice(0,previewLimit)' in app
@@ -966,6 +966,9 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert 'const databaseVersion = 5;' in snapshot_store
     assert 'const enrichmentRowStore = "enrichmentRows";' in snapshot_store
     assert 'async function mergeEnrichmentRows(jobId, devices, options = {})' in snapshot_store
+    assert 'async function pruneEnrichmentRows(maxAgeMs = 12 * 60 * 60 * 1000)' in snapshot_store
+    assert 'updatedAt: Date.now()' in snapshot_store
+    assert 'await BrowserSnapshots?.pruneEnrichmentRows?.().catch(()=>0);' in app
     assert 'async function saveEnrichmentSnapshot(jobId, snapshot, invalid = [], onProgress = () => {})' in snapshot_store
     assert 'async function localAnalyzeFilesToSnapshot(fields,strategy,source,createdAt,onProgress=()=>{})' in app
     assert 'local=await localAnalyzeFilesToSnapshot(enrich,strategy,source,sourceCreatedAt' in app
@@ -989,6 +992,20 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert 'Полный результат сохранён порциями в IndexedDB; в памяти оставлена только текущая страница.' in app
     assert 'function createPageCollector(options = {})' in snapshot_store
     assert 'async function page(id, options = {})' in snapshot_store
+
+
+def test_xlsx_reader_uses_file_backed_zip_slices():
+    readers = Path("frontend/file-readers.js").read_text(encoding="utf-8")
+    app = read_app_js()
+    memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
+    xlsx_reader = readers.split("async function clientXlsxTable", 1)[1].split("async function clientReadTable", 1)[0]
+
+    assert "async function clientZipFileDirectory(file)" in readers
+    assert 'file.slice(tailOffset, fileSize).arrayBuffer()' in readers
+    assert 'file.slice(centralOffset, centralOffset + centralSize).arrayBuffer()' in readers
+    assert '? directory.file.slice(entry.start, entry.start + entry.size)' in readers
+    assert "const directory = await clientZipFileDirectory(file);" in xlsx_reader
+    assert "file.arrayBuffer()" not in xlsx_reader
     assert 'await restoreWorkspaceSourceFiles();' in app
     assert 'let previousDevices=state.devices||[];' in app
     assert 'snapshotPreviewRows: 500' in memory_guard
@@ -2157,6 +2174,8 @@ def test_autonomous_file_database_is_streamed_and_connected_to_workspace_saves()
         '<script src="frontend/portable-database.js?v=20260722.7"></script>',
     ):
         assert marker in html
+    assert 'if(theme){saveThemePreference(theme);$("#themeDialog").close();}' in app
+    assert '$("#themeDialog")?.close();' in html
     for marker in (
         "function portableDatabasePayload()",
         "async function persistPortableDatabase()",

@@ -10,6 +10,7 @@ Mac_analyzer_Pro/
     frontend_repeated_persistence_memory.test.js четыре сохранения 100 000 локальных устройств без второй копии результата
     frontend_snapshot_chunking_memory.test.js четыре порционных снимка по 120 000 устройств
     frontend_real_xlsx_repeated_enrichment.test.js три полных чтения реального XLSX на 100 000 строк с контролем удержанной heap-памяти
+    browser_xlsx_memory_harness.html браузерный трёхкратный XLSX/IndexedDB стресс-тест, запрещающий полное чтение книги в ArrayBuffer
     frontend_xlsx_shared_strings_streaming.test.js три потоковых чтения 120 000 shared strings без удержания XML
     workspace_file_lifecycle.test.js замена использованных файлов обогащения без удаления снимков и истории
     local_folder_store.test.js создание локальной структуры, базы, манифеста, архива импорта и журнала
@@ -17,7 +18,7 @@ Mac_analyzer_Pro/
   tools/                   parity, benchmark и legacy-утилиты
   frontend/                браузерные модули импорта, контроля памяти и безопасного хранения состояния
     memory-guard.js        ранние лимиты файла/ZIP/heap, суммы файлов обогащения, локального экспорта, paging и cooperative yield
-    file-readers.js        потоковый XLSX/CSV/JSON-импорт с проверкой ZIP-каталога до распаковки XML
+    file-readers.js        XLSX ZIP-каталог и листы читаются срезами File.slice без полного ArrayBuffer книги
     browser-snapshot-store.js порционное IndexedDB-хранилище локальных снимков без полной копии при записи
     portable-database.js  потоковая файловая база MADB для переноса данных между браузерами и ПК
     local-folder-store.js локальная структура database/imports/exports/settings/logs/backups, сохранённая ссылка браузера и дедупликация повторных импортов
@@ -51,8 +52,8 @@ Mac_analyzer_Pro/
     html/MAC-Analyzer-Pro.html один автономный файл без EXE, CMD, Python и backend
     complete/*.zip        полный проект, автономный HTML и локальные данные без EXE/DLL/CMD
     dist/MACAnalyzerBackend/ единый пакет: исходный server.py, Python-first лаунчер и резервный asInvoker backend
-  START_MAC_ANALYZER.cmd    запуск переносимого backend и открытие web-интерфейса
-  STOP_MAC_ANALYZER.cmd     остановка переносимого backend
+  START_MAC_ANALYZER.cmd    необязательный legacy-запуск backend для разработки
+  STOP_MAC_ANALYZER.cmd     остановка необязательного backend
   index.html               HTML-интерфейс и автономный browser fallback
   mac_analyzer_standalone.html устаревший parity-артефакт; в пользовательскую сборку не включается
   app.js                   основная логика web frontend
@@ -93,8 +94,9 @@ Frontend сохраняет только токен файла, заголовк
 при выборе следующего файла. Снимки, история MAC и журнал изменений при этом сохраняются.
 
 Автономный HTML не использует backend: полные результаты находятся в IndexedDB-базе
-`mac-analyzer-browser-storage-v1`, в хранилищах `snapshots` и `snapshotChunks`. Снимки
-Временное хранилище `enrichmentRows` объединяет строки автономного обогащения пакетами и очищается после завершения.
-записываются и читаются блоками по 1 000 строк, а `state.devices` содержит только открытую
+`mac-analyzer-browser-storage-v1`, в хранилищах `snapshots` и `snapshotChunks`.
+Временное хранилище `enrichmentRows` объединяет строки автономного обогащения пакетами,
+очищается после завершения, а остатки аварийных запусков удаляются при следующем старте.
+Снимки записываются и читаются блоками по 1 000 строк, а `state.devices` содержит только открытую
 страницу. Это локальная дисковая база профиля браузера; изолированный HTML не может напрямую
 открывать SQLite-файл без разрешения браузера или серверного процесса.

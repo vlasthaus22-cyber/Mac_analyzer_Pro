@@ -2735,7 +2735,7 @@
   $("#themeButton").addEventListener("click",showThemeSelection);
   $("#closeThemeDialog").addEventListener("click",()=>$("#themeDialog").close());
   $("#themeDialogCloseButton").addEventListener("click",()=>$("#themeDialog").close());
-  $("#themeDialog").addEventListener("click",(e)=>{const theme=e.target.closest("[data-theme-dialog-choice]")?.dataset.themeDialogChoice;if(theme)saveThemePreference(theme);});
+  $("#themeDialog").addEventListener("click",(e)=>{const theme=e.target.closest("[data-theme-dialog-choice]")?.dataset.themeDialogChoice;if(theme){saveThemePreference(theme);$("#themeDialog").close();}});
   $("#vendorDetectorThreshold")?.addEventListener("input",()=>{if($("#vendorDetectorThresholdLabel"))$("#vendorDetectorThresholdLabel").textContent=($("#vendorDetectorThreshold")?.value||60)+"%";});
   $("#saveVendorDetectorSettingsButton")?.addEventListener("click",saveVendorDetectorSettings);
   $("#importOuiReferenceButton")?.addEventListener("click",importOuiReference);
@@ -2842,6 +2842,7 @@
   setInterval(()=>{if(state.engineeringMode&&!engineeringSessionActive()){clearEngineeringSession();renderEngineeringState();toast("Инженерная сессия завершена.");}},30000);
   window.addEventListener("beforeunload",()=>{save();if(!autonomousHtmlMode&&backendAvailable){const autosaveState=compactAnalysisAutosaveState();fetch("/api/autosave",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slot:"main",reason:"beforeunload",state:autosaveState}),keepalive:true}).catch(()=>{});}});
   async function restoreInitialState(){
+    await BrowserSnapshots?.pruneEnrichmentRows?.().catch(()=>0);
     const backendSynced=browserOnlyMode?false:await syncFromBackend();
     if(!backendSynced){
       const restored=await restoreBrowserStateFromIndexedDb();

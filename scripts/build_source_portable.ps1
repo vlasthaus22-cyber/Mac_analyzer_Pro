@@ -33,7 +33,6 @@ $files = @(
     "index.html",
     "app.js",
     "styles.css",
-    "mac_analyzer_standalone.html",
     "server.py",
     "requirements-web.txt",
     "PARITY_REGISTRY.md",

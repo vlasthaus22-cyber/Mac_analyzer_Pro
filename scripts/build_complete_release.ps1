@@ -17,6 +17,7 @@ function Test-SkippedPath([string]$RelativePath) {
     $normalized = $RelativePath.Replace("\", "/")
     $segments = $normalized.Split("/")
     if ($segments -contains "__pycache__" -or $segments -contains ".git" -or $segments -contains ".venv" -or $segments -contains ".venv-portable") { return $true }
+    if ($normalized -eq "mac_analyzer_standalone.html") { return $true }
     if ($normalized -match "(^|/)data/build(/|$)" -or $normalized -match "(^|/)data/runtime(/|$)" -or $normalized -match "(^|/)data/exports/releases(/|$)") { return $true }
     if ($normalized -match "(^|/)portable(/|$)") { return $true }
     return $forbiddenExtensions -contains [IO.Path]::GetExtension($normalized).ToLowerInvariant()

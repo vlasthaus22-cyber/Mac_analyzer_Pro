@@ -129,10 +129,84 @@
     return { bytes, entries };
   }
 
+  async function clientZipFileDirectory(file) {
+    if (!file || typeof file.slice !== "function") {
+      throw new Error("XLSX file does not support streamed reads");
+    }
+    const fileSize = Math.max(0, Number(file.size || 0));
+    const tailOffset = Math.max(0, fileSize - 66000);
+    const tailBuffer = await file.slice(tailOffset, fileSize).arrayBuffer();
+    const tailBytes = new Uint8Array(tailBuffer);
+    const tailView = new DataView(tailBuffer);
+    let endOfDirectory = -1;
+    for (let index = tailBytes.length - 22; index >= 0; index -= 1) {
+      if (tailView.getUint32(index, true) === 0x06054b50) {
+        endOfDirectory = index;
+        break;
+      }
+    }
+    if (endOfDirectory < 0) throw new Error("XLSX does not contain a ZIP directory");
+
+    const total = tailView.getUint16(endOfDirectory + 10, true);
+    const centralSize = tailView.getUint32(endOfDirectory + 12, true);
+    const centralOffset = tailView.getUint32(endOfDirectory + 16, true);
+    if (centralOffset === 0xffffffff || centralSize === 0xffffffff) {
+      throw new Error("ZIP64 XLSX is not supported in autonomous browser mode");
+    }
+    if (centralOffset + centralSize > fileSize) throw new Error("XLSX ZIP directory is damaged");
+
+    const centralBuffer = await file.slice(centralOffset, centralOffset + centralSize).arrayBuffer();
+    const centralBytes = new Uint8Array(centralBuffer);
+    const centralView = new DataView(centralBuffer);
+    const pendingEntries = [];
+    let position = 0;
+    for (let index = 0; index < total; index += 1) {
+      if (position + 46 > centralBytes.length || centralView.getUint32(position, true) !== 0x02014b50) break;
+      const method = centralView.getUint16(position + 10, true);
+      const size = centralView.getUint32(position + 20, true);
+      const uncompressedSize = centralView.getUint32(position + 24, true);
+      const nameLength = centralView.getUint16(position + 28, true);
+      const extraLength = centralView.getUint16(position + 30, true);
+      const commentLength = centralView.getUint16(position + 32, true);
+      const localOffset = centralView.getUint32(position + 42, true);
+      const nextPosition = position + 46 + nameLength + extraLength + commentLength;
+      if (nextPosition > centralBytes.length) throw new Error("XLSX ZIP directory is damaged");
+      const name = new TextDecoder()
+        .decode(centralBytes.slice(position + 46, position + 46 + nameLength))
+        .replace(/\\/g, "/");
+      pendingEntries.push({ name, method, size, uncompressedSize, localOffset });
+      position = nextPosition;
+    }
+
+    const entries = new Map();
+    for (const item of pendingEntries) {
+      const localBuffer = await file.slice(item.localOffset, item.localOffset + 30).arrayBuffer();
+      if (localBuffer.byteLength < 30 || new DataView(localBuffer).getUint32(0, true) !== 0x04034b50) {
+        throw new Error(`XLSX ZIP entry is damaged (${item.name})`);
+      }
+      const localView = new DataView(localBuffer);
+      const localNameLength = localView.getUint16(26, true);
+      const localExtraLength = localView.getUint16(28, true);
+      const start = item.localOffset + 30 + localNameLength + localExtraLength;
+      if (start + item.size > fileSize) throw new Error(`XLSX ZIP entry is truncated (${item.name})`);
+      entries.set(item.name, {
+        method: item.method,
+        size: item.size,
+        uncompressedSize: item.uncompressedSize,
+        start,
+      });
+    }
+    MemoryGuard.assertZipDirectoryCapacity(entries);
+    return { file, entries };
+  }
+
   async function clientZipEntryBytes(directory, path, maximumBytes = MemoryGuard.limits.worksheetBytes) {
     const entry = directory.entries.get(path);
     if (!entry) return null;
     MemoryGuard.assertEntryCapacity(`Слишком большой раздел XLSX (${path})`, entry.uncompressedSize, maximumBytes);
+    if (directory.file) {
+      return new Uint8Array(await new Response(zipEntryStream(directory, entry)).arrayBuffer());
+    }
     const compressed = directory.bytes.subarray(entry.start, entry.start + entry.size);
     if (entry.method === 0) return compressed;
     if (entry.method === 8) return inflateRaw(compressed);
@@ -300,8 +374,10 @@
   }
 
   function zipEntryStream(directory, entry) {
-    const compressed = directory.bytes.subarray(entry.start, entry.start + entry.size);
-    let stream = new Blob([compressed]).stream();
+    const compressed = directory.file
+      ? directory.file.slice(entry.start, entry.start + entry.size)
+      : new Blob([directory.bytes.subarray(entry.start, entry.start + entry.size)]);
+    let stream = compressed.stream();
     if (entry.method === 8) stream = stream.pipeThrough(new DecompressionStream("deflate-raw"));
     else if (entry.method !== 0) throw new Error(`XLSX использует неподдерживаемый ZIP-метод ${entry.method}`);
     return stream;
@@ -428,9 +504,8 @@
   async function clientXlsxTable(file, onProgress = () => {}, options = {}) {
     MemoryGuard.assertImportCapacity(file);
     onProgress(3, "Чтение XLSX с диска");
-    const buffer = await file.arrayBuffer();
     onProgress(10, "Проверка структуры XLSX");
-    const directory = clientZipDirectory(buffer);
+    const directory = await clientZipFileDirectory(file);
     onProgress(20, "Чтение структуры книги без распаковки лишних разделов");
     const workbookBytes = await clientZipEntryBytes(directory, "xl/workbook.xml", 16 * 1024 * 1024);
     const relationshipBytes = await clientZipEntryBytes(directory, "xl/_rels/workbook.xml.rels", 16 * 1024 * 1024);
@@ -524,6 +599,7 @@
     clientTableRows,
     clientJsonTable,
     clientZipDirectory,
+    clientZipFileDirectory,
     clientZipEntryBytes,
     clientZipEntries,
     xlsxSharedStringsFromXml,

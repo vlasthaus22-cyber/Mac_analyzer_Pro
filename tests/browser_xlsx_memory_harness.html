@@ -18,6 +18,13 @@
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const blob = await response.blob();
         const sourceFile = new File([blob], filename.split("/").pop() || "test.xlsx");
+        let fullFileReads = 0;
+        Object.defineProperty(sourceFile, "arrayBuffer", {
+          value: async () => {
+            fullFileReads += 1;
+            throw new Error("XLSX parser attempted to allocate the complete workbook");
+          },
+        });
         const started = performance.now();
         const heapBefore = performance.memory?.usedJSHeapSize || 0;
         let progressUpdates = 0;
@@ -77,6 +84,7 @@
           diskRounds,
           heapDelta: heapBefore && heapAfter ? heapAfter - heapBefore : null,
           progressUpdates,
+          fullFileReads,
           elapsedMs: Math.round(performance.now() - started),
         });
       } catch (error) {
