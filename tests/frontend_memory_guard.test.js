@@ -53,6 +53,25 @@ assert.throws(
   ], null, { deviceMemory: 4 }),
   (error) => error.code === "BROWSER_MEMORY_LIMIT" && /операция остановлена/.test(error.message),
 );
+
+assert.deepEqual(
+  guard.streamingEnrichmentSize([
+    { rowCount: 100_000, rows: [["MAC", "Vendor"]] },
+    { rowCount: 100_000, rows: [["MAC", "Room"]] },
+  ], "primary"),
+  { rows: 100_000, cells: 800_000, textBytes: 32 },
+);
+assert.doesNotThrow(() => guard.assertStreamingEnrichmentCapacity([
+  { rowCount: 100_000, rows: [["MAC", "Vendor"]] },
+  { rowCount: 100_000, rows: [["MAC", "Room"]] },
+], "primary", null, { deviceMemory: 4 }));
+assert.throws(
+  () => guard.assertStreamingEnrichmentCapacity([
+    { rowCount: 100_000, rows: [["MAC", "Vendor"]] },
+    { rowCount: 100_000, rows: [["MAC", "Room"]] },
+  ], "union", null, { deviceMemory: 4 }),
+  (error) => error.code === "BROWSER_MEMORY_LIMIT",
+);
 assert.deepEqual(
   guard.enrichmentSize([{ rows: [["MAC", "Vendor"], ["001122334455", "Cisco"]], headers: ["MAC", "Vendor"] }]),
   { rows: 2, cells: 4, textBytes: 52 },

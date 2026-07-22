@@ -97,6 +97,31 @@
     return size;
   }
 
+  function streamingEnrichmentSize(files, strategy = "primary") {
+    const source = Array.isArray(files) ? files : [];
+    const rowCounts = source.map((file) => Math.max(0, Number(file?.rowCount ?? file?.rows?.length ?? 0) || 0));
+    const primaryRows = rowCounts[0] || 0;
+    const resultRows = strategy === "primary" ? primaryRows : rowCounts.reduce((total, rows) => total + rows, 0);
+    const resultColumns = 8;
+    let textBytes = 0;
+    for (const file of source) {
+      for (const row of Array.isArray(file?.rows) ? file.rows : []) {
+        for (const value of Array.isArray(row) ? row : []) textBytes += typeof value === "string" ? value.length * 2 : 16;
+      }
+    }
+    return { rows: resultRows, cells: resultRows * resultColumns, textBytes };
+  }
+
+  function assertStreamingEnrichmentCapacity(files, strategy = "primary", memoryInfo = globalThis.performance?.memory, navigatorInfo = globalThis.navigator) {
+    const size = streamingEnrichmentSize(files, strategy);
+    const effective = effectiveEnrichmentLimits(navigatorInfo);
+    if (size.rows > effective.rows) throw capacityError("Слишком много результирующих устройств для потокового обогащения", size.rows, effective.rows);
+    if (size.cells > effective.cells) throw capacityError("Слишком большой результирующий набор для потокового обогащения", size.cells, effective.cells);
+    if (size.textBytes > effective.textBytes) throw capacityError("Слишком большой объём текста в предпросмотре файлов", size.textBytes, effective.textBytes);
+    assertHeapHeadroom(size, memoryInfo);
+    return size;
+  }
+
   function sourceFileBytes(files) {
     return (Array.isArray(files) ? files : []).reduce(
       (total, file) => total + Math.max(0, Number(file?.sourceBytes ?? file?.size ?? 0) || 0),
@@ -221,6 +246,8 @@
     effectiveEnrichmentLimits,
     assertHeapHeadroom,
     assertEnrichmentCapacity,
+    streamingEnrichmentSize,
+    assertStreamingEnrichmentCapacity,
     sourceFileBytes,
     assertImportCapacity,
     assertZipDirectoryCapacity,

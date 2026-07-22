@@ -260,18 +260,31 @@
     return stream;
   }
 
-  async function xlsxWorksheetRows(directory, sheetPath, sharedStrings, onProgress = () => {}) {
+  async function xlsxWorksheetRows(directory, sheetPath, sharedStrings, onProgress = () => {}, options = {}) {
     const entry = directory.entries.get(sheetPath);
     if (!entry) throw new Error("XLSX лист не найден");
     MemoryGuard.assertEntryCapacity("Слишком большой XML-лист XLSX", entry.uncompressedSize, MemoryGuard.limits.worksheetBytes);
     const reader = zipEntryStream(directory, entry).getReader();
     const decoder = new TextDecoder("utf-8");
     const rows = [];
+    const collectRows = options.collectRows !== false;
+    const onRow = typeof options.onRow === "function" ? options.onRow : null;
+    const maximumRows = Math.max(0, Number(options.maxRows || 0) || 0);
     let pending = "";
     let cellCount = 0;
     let processedBytes = 0;
+    let rowCount = 0;
+    let declaredRowCount = 0;
+    let stopped = false;
+    let lastYieldRowCount = 0;
+    const captureDimension = () => {
+      if (declaredRowCount) return;
+      const reference = /<dimension\b[^>]*\bref="([^"]+)"/i.exec(pending)?.[1] || "";
+      const finalRow = /(\d+)$/.exec(reference)?.[1];
+      if (finalRow) declaredRowCount = Math.max(0, Number(finalRow) || 0);
+    };
     const drainRows = () => {
-      while (true) {
+      while (!stopped) {
         const rowStart = pending.search(/<row\b/i);
         if (rowStart < 0) {
           if (pending.length > 32) pending = pending.slice(-32);
@@ -285,8 +298,14 @@
         pending = pending.slice(rowEnd + closing.length);
         const parsed = xlsxRowFromXml(rowXml, sharedStrings);
         cellCount += parsed.cellCount;
-        if (parsed.populated) rows.push(parsed.values);
-        MemoryGuard.assertTableCapacity(rows.length, cellCount);
+        if (parsed.populated) {
+          const rowIndex = rowCount;
+          rowCount += 1;
+          if (collectRows) rows.push(parsed.values);
+          if (onRow) onRow(parsed.values, rowIndex);
+          if (maximumRows && rowCount >= maximumRows) stopped = true;
+        }
+        MemoryGuard.assertTableCapacity(rowCount, cellCount);
       }
     };
     while (true) {
@@ -294,19 +313,33 @@
       if (chunk.done) break;
       processedBytes += chunk.value.byteLength;
       pending += decoder.decode(chunk.value, { stream: true });
+      captureDimension();
       drainRows();
-      if (rows.length && rows.length % 2000 === 0) {
+      if (stopped) {
+        await reader.cancel().catch(() => {});
+        break;
+      }
+      if (rowCount - lastYieldRowCount >= 2000) {
+        lastYieldRowCount = rowCount;
         const ratio = entry.uncompressedSize ? Math.min(1, processedBytes / entry.uncompressedSize) : 0;
-        onProgress(78 + ratio * 20, `Строки XLSX: ${rows.length.toLocaleString("ru-RU")}`);
+        onProgress(78 + ratio * 20, `Строки XLSX: ${rowCount.toLocaleString("ru-RU")}`);
         await MemoryGuard.yieldToMainThread();
       }
     }
-    pending += decoder.decode();
-    drainRows();
+    if (!stopped) {
+      pending += decoder.decode();
+      captureDimension();
+      drainRows();
+    }
+    Object.defineProperties(rows, {
+      parsedRowCount: { value: rowCount, enumerable: false },
+      declaredRowCount: { value: declaredRowCount, enumerable: false },
+      truncated: { value: stopped, enumerable: false },
+    });
     return rows;
   }
 
-  async function clientXlsxTable(file, onProgress = () => {}) {
+  async function clientXlsxTable(file, onProgress = () => {}, options = {}) {
     MemoryGuard.assertImportCapacity(file);
     onProgress(3, "Чтение XLSX с диска");
     const buffer = await file.arrayBuffer();
@@ -335,16 +368,41 @@
       sheetPath = [...directory.entries.keys()].find((name) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(name)) || "";
     }
     onProgress(78, `Чтение строк листа ${firstSheet.getAttribute("name") || "1"}`);
-    const rows = await xlsxWorksheetRows(directory, sheetPath, sharedStrings, onProgress);
-    if (!rows.length) throw new Error("XLSX не содержит строк");
-    if (!rows[0].some(Boolean)) throw new Error("Первая строка XLSX не содержит заголовков");
-    onProgress(100, `XLSX прочитан: ${Math.max(0, rows.length - 1)} строк`);
-    const headers = rows.shift();
-    return { headers, rows, sheet: firstSheet.getAttribute("name") || "" };
+    let headers = null;
+    let dataRowCount = 0;
+    const collectedRows = [];
+    const collectRows = options.collectRows !== false;
+    const maximumDataRows = Math.max(0, Number(options.maxRows || 0) || 0);
+    const rawRows = await xlsxWorksheetRows(directory, sheetPath, sharedStrings, onProgress, {
+      collectRows: false,
+      maxRows: maximumDataRows ? maximumDataRows + 1 : 0,
+      onRow: (row, rawIndex) => {
+        if (rawIndex === 0) {
+          headers = row;
+          return;
+        }
+        const dataIndex = dataRowCount;
+        dataRowCount += 1;
+        if (collectRows) collectedRows.push(row);
+        if (typeof options.onRow === "function") options.onRow(row, dataIndex);
+      },
+    });
+    if (!headers) throw new Error("XLSX не содержит строк");
+    if (!headers.some(Boolean)) throw new Error("Первая строка XLSX не содержит заголовков");
+    const declaredDataRows = Math.max(0, Number(rawRows.declaredRowCount || 0) - 1);
+    const rowCount = Math.max(dataRowCount, declaredDataRows);
+    onProgress(100, `XLSX прочитан: ${rowCount} строк`);
+    return {
+      headers,
+      rows: collectedRows,
+      rowCount,
+      truncated: Boolean(rawRows.truncated || rowCount > collectedRows.length),
+      sheet: firstSheet.getAttribute("name") || "",
+    };
   }
 
-  async function clientReadTable(file, onProgress = () => {}) {
-    if (/\.(xlsx|xlsm)$/i.test(file.name)) return clientXlsxTable(file, onProgress);
+  async function clientReadTable(file, onProgress = () => {}, options = {}) {
+    if (/\.(xlsx|xlsm)$/i.test(file.name)) return clientXlsxTable(file, onProgress, options);
     MemoryGuard.assertImportCapacity(file);
     if (/\.xls$/i.test(file.name)) {
       throw new Error("Старый XLS не поддерживается в браузере, сохраните файл как XLSX");
@@ -355,14 +413,20 @@
     if (/\.json$/i.test(file.name) || text.trim().startsWith("[") || text.trim().startsWith("{")) {
       const table = clientJsonTable(text);
       onProgress(100, `JSON прочитан: ${table.rows.length} строк`);
-      return table;
+      const rowCount = table.rows.length;
+      const selectedRows = options.maxRows ? table.rows.slice(0, Math.max(0, Number(options.maxRows) || 0)) : table.rows;
+      if (typeof options.onRow === "function") selectedRows.forEach((row, index) => options.onRow(row, index));
+      return { ...table, rows: options.collectRows === false ? [] : selectedRows, rowCount, truncated: selectedRows.length < rowCount };
     }
     const rows = clientTableRows(text, clientDelimiter(text, file.name));
     if (!rows.length) throw new Error("Файл не содержит строк");
     if (!rows[0].some(Boolean)) throw new Error("Первая строка файла не содержит заголовков");
     onProgress(100, `Файл прочитан: ${Math.max(0, rows.length - 1)} строк`);
     const headers = rows.shift();
-    return { headers, rows };
+    const rowCount = rows.length;
+    const selectedRows = options.maxRows ? rows.slice(0, Math.max(0, Number(options.maxRows) || 0)) : rows;
+    if (typeof options.onRow === "function") selectedRows.forEach((row, index) => options.onRow(row, index));
+    return { headers, rows: options.collectRows === false ? [] : selectedRows, rowCount, truncated: selectedRows.length < rowCount };
   }
 
   window.MacAnalyzerFileReaders = Object.freeze({

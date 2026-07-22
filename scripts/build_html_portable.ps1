@@ -49,7 +49,7 @@ foreach ($relativePath in $scripts) {
 $fallbackPattern = '(?s)\s*<script>\s*window\.addEventListener\("DOMContentLoaded", \(\) => \{\s*if \(window\.MacAnalyzerAppBootstrapped.*?</script>\s*(?=</body>)'
 $html = [regex]::Replace($html, $fallbackPattern, "`n", 1)
 
-$html = $html.Replace('<meta name="application-build" content="2026.07.22.1">', '<meta name="application-build" content="2026.07.22.1-html">')
+$html = $html.Replace('<meta name="application-build" content="2026.07.22.2">', '<meta name="application-build" content="2026.07.22.2-html">')
 Set-Content -LiteralPath $outputFile -Value $html -Encoding UTF8
 
 $built = Get-Content -LiteralPath $outputFile -Raw -Encoding UTF8

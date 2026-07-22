@@ -97,13 +97,13 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
 
     assert 'id="fileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
-    assert '<script src="frontend/memory-guard.js?v=20260722.1"></script>' in html
-    assert '<script src="frontend/file-readers.js?v=20260722.1"></script>' in html
-    assert '<meta name="application-build" content="2026.07.22.1">' in html
+    assert '<script src="frontend/memory-guard.js?v=20260722.2"></script>' in html
+    assert '<script src="frontend/file-readers.js?v=20260722.2"></script>' in html
+    assert '<meta name="application-build" content="2026.07.22.2">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
-    assert 'async function clientXlsxTable(file, onProgress = () => {})' in app
+    assert 'async function clientXlsxTable(file, onProgress = () => {}, options = {})' in app
     assert 'async function clientFileRecord(file,fileCreatedAt,onProgress=()=>{})' in app
     assert 'if(backendAvailable)try{fileRecord=await backendFileRecord(file,fileCreatedAt,fileProgress);}' in app
     assert 'if(!fileRecord)fileRecord=await clientFileRecord(file,fileCreatedAt,fileProgress);' in app
@@ -859,7 +859,7 @@ def test_main_file_import_uses_backend_service():
     assert "[404,405,501].includes(Number(error?.status||0))" in app
     assert 'apiError.status=response.status;throw apiError;' in app
     assert "async function readClientTextFile(file)" in app
-    assert "async function clientReadTable(file, onProgress = () => {})" in app
+    assert "async function clientReadTable(file, onProgress = () => {}, options = {})" in app
     assert "function clientJsonTable(text)" in app
     assert "function localAutoMapping(headers)" in app
     assert 'async function loadFiles(input, sourceInput=null, requestedRole="auto")' in app
@@ -880,13 +880,13 @@ def test_main_file_import_uses_backend_service():
     assert "mapping:singleManualMapping(),createdAt:fileCreatedAt,saveHistory:true,saveSnapshot:true" in app
     assert "state.lastAnalysis=fileCreatedAt;" in app
     assert "if(networkUnavailable(error))" in app
-    assert "const data=await clientReadTable(file,onProgress),rows=[data.headers||[],...(data.rows||[])];" in app
-    assert "const rowCount=Math.max(0,rows.length-1),previewRows=rows.slice(0,workspacePreviewDataRows+1);" in app
+    assert "const data=await clientReadTable(file,onProgress,{maxRows:workspacePreviewDataRows}),rows=[data.headers||[],...(data.rows||[])];" in app
+    assert "const rowCount=Math.max(0,Number(data.rowCount??rows.length-1)||0),previewRows=rows.slice(0,workspacePreviewDataRows+1);" in app
     assert "rows:previewRows" in app
-    assert "rowsComplete:rowCount<=workspacePreviewDataRows" in app
-    assert "async function clientXlsxTable(file, onProgress = () => {})" in app
+    assert "rowsComplete:data.truncated!==true&&rowCount<=workspacePreviewDataRows" in app
+    assert "async function clientXlsxTable(file, onProgress = () => {}, options = {})" in app
     assert "async function clientZipEntries(buffer, onProgress = () => {})" in app
-    assert 'if (/\\.(xlsx|xlsm)$/i.test(file.name)) return clientXlsxTable(file, onProgress);' in app
+    assert 'if (/\\.(xlsx|xlsm)$/i.test(file.name)) return clientXlsxTable(file, onProgress, options);' in app
     assert "Excel/XLSX читается через backend" not in app
     assert 'const rows=[data.headers||[],...(data.rows||[])];' in app
     assert 'state.importErrors.push({filename:file.name,message})' in app
@@ -906,9 +906,10 @@ def test_browser_mode_enrichment_keeps_basic_workflow_alive():
     app = read_app_js()
 
     assert "async function localAnalyzeFiles(fields,strategy,onProgress=()=>{})" in app
-    assert "async function localRowsForAnalysis(file,fileIndex,fileCount,onProgress)" in app
+    assert "async function visitLocalRowsForAnalysis(file,fileIndex,fileCount,onProgress,onRow)" in app
     assert "const sourceFile=await restoreSourceFile(file);" in app
-    assert "if(loaded.temporary)rows.length=0;else compactWorkspaceFileRows(file);" in app
+    assert "const data=await clientReadTable(sourceFile,progress,{collectRows:false,onRow});" in app
+    assert "await releaseTransientAnalysisMemory();" in app
     assert "function localDeviceFromRow(file,row,rowIndex,fields)" in app
     assert "function localResultsTable()" in app
     assert "function localMappingGrid(file)" in app
@@ -937,7 +938,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260722.1"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260722.2"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
     assert 'async function storeLocalSnapshot(' in app
     assert 'devices:rows.slice(0,previewLimit)' in app
@@ -2005,7 +2006,7 @@ def test_role_aware_guide_is_a_separate_working_view():
         'data-guide-tab="large-files"',
         'data-guide-requires-engineering',
         'id="openGuideFromHelpButton"',
-        '<script src="frontend/guide.js?v=20260722.1"></script>',
+        '<script src="frontend/guide.js?v=20260722.2"></script>',
     ):
         assert marker in html
     for text in (
@@ -2103,7 +2104,7 @@ def test_oui_reference_import_and_safe_autodetection_are_wired_end_to_end():
     assert "browserEnrichmentTextBytes: 64 * 1024 * 1024" in memory_guard
     assert "function assertHeapHeadroom(size, memoryInfo" in memory_guard
     assert "resultBrowserSnapshotId" in app
-    assert "MemoryGuard.assertEnrichmentCapacity(state.files);" in app
+    assert "MemoryGuard.assertStreamingEnrichmentCapacity(state.files,strategy);" in app
     assert "window.MacAnalyzerMemoryGuard?.assertEnrichmentCapacity(fallbackState.files);" in html
 
 
@@ -2124,7 +2125,7 @@ def test_autonomous_file_database_is_streamed_and_connected_to_workspace_saves()
         'id="openPortableDatabaseButton"',
         'id="createPortableDatabaseButton"',
         'id="portableDatabaseInput"',
-        '<script src="frontend/portable-database.js?v=20260722.1"></script>',
+        '<script src="frontend/portable-database.js?v=20260722.2"></script>',
     ):
         assert marker in html
     for marker in (
@@ -2152,7 +2153,7 @@ def test_browser_only_mode_uses_a_structured_local_folder():
     for marker in (
         'id="chooseLocalFolderButton"',
         'id="localFolderStatus"',
-        '<script src="frontend/local-folder-store.js?v=20260722.1"></script>',
+        '<script src="frontend/local-folder-store.js?v=20260722.2"></script>',
         "Выбрать локальную папку",
     ):
         assert marker in html
