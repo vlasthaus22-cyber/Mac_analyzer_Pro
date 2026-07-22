@@ -176,6 +176,8 @@ def build_system_diagnostics(root: Path, storage: Any, db_connection: Callable[[
         ("BrowserSnapshots.page", app_text),
         ("state.devices.length=0;state.invalid.length=0", app_text),
         ("function createPageCollector", snapshot_store),
+        ("mergeEnrichmentRows", snapshot_store),
+        ("saveEnrichmentSnapshot", snapshot_store),
         ("resultBrowserSnapshotId", app_text),
         ("createLocalComparisonIndex", app_text),
         ("browserEnrichmentFallbackAllowed", app_text),

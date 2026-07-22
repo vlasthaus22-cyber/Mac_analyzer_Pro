@@ -97,9 +97,9 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
 
     assert 'id="fileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
-    assert '<script src="frontend/memory-guard.js?v=20260722.6"></script>' in html
-    assert '<script src="frontend/file-readers.js?v=20260722.6"></script>' in html
-    assert '<meta name="application-build" content="2026.07.22.6">' in html
+    assert '<script src="frontend/memory-guard.js?v=20260722.7"></script>' in html
+    assert '<script src="frontend/file-readers.js?v=20260722.7"></script>' in html
+    assert '<meta name="application-build" content="2026.07.22.7">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -934,7 +934,7 @@ def test_browser_mode_enrichment_keeps_basic_workflow_alive():
     assert "function markEnrichmentFilesConsumed(consumedAt=new Date().toISOString())" in app
     assert "WorkspaceFileLifecycle.markConsumed(state.files,consumedAt)" in app
     assert "markEnrichmentFilesConsumed();" in app
-    assert '<script src="frontend/workspace-file-lifecycle.js?v=20260722.6"></script>' in read_index_html()
+    assert '<script src="frontend/workspace-file-lifecycle.js?v=20260722.7"></script>' in read_index_html()
     assert 'previousComparisonIndex=createLocalComparisonIndex(previousDevices)' in app
     assert 'previousDevices=[];' in app
     assert 'state.devices=[];' in app
@@ -953,7 +953,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260722.6"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260722.7"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
     assert 'async function storeLocalSnapshot(' in app
     assert 'devices:rows.slice(0,previewLimit)' in app
@@ -963,7 +963,12 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert app.index('await BrowserSnapshots.prune(keepIds);') < app.index('await BrowserSnapshots.save(record,(percent)=>')
     assert 'browserSnapshotRows: 300_000' in memory_guard
     assert 'const snapshotStore = "snapshots";' in snapshot_store
-    assert 'const databaseVersion = 4;' in snapshot_store
+    assert 'const databaseVersion = 5;' in snapshot_store
+    assert 'const enrichmentRowStore = "enrichmentRows";' in snapshot_store
+    assert 'async function mergeEnrichmentRows(jobId, devices, options = {})' in snapshot_store
+    assert 'async function saveEnrichmentSnapshot(jobId, snapshot, invalid = [], onProgress = () => {})' in snapshot_store
+    assert 'async function localAnalyzeFilesToSnapshot(fields,strategy,source,createdAt,onProgress=()=>{})' in app
+    assert 'local=await localAnalyzeFilesToSnapshot(enrich,strategy,source,sourceCreatedAt' in app
     assert 'const snapshotChunkStore = "snapshotChunks";' in snapshot_store
     assert 'const snapshotChunkRows = 1_000;' in snapshot_store
     assert 'function* chunkRows(rows, size = snapshotChunkRows)' in snapshot_store
@@ -2030,7 +2035,7 @@ def test_role_aware_guide_is_a_separate_working_view():
         'data-guide-tab="large-files"',
         'data-guide-requires-engineering',
         'id="openGuideFromHelpButton"',
-        '<script src="frontend/guide.js?v=20260722.6"></script>',
+        '<script src="frontend/guide.js?v=20260722.7"></script>',
     ):
         assert marker in html
     for text in (
@@ -2149,7 +2154,7 @@ def test_autonomous_file_database_is_streamed_and_connected_to_workspace_saves()
         'id="openPortableDatabaseButton"',
         'id="createPortableDatabaseButton"',
         'id="portableDatabaseInput"',
-        '<script src="frontend/portable-database.js?v=20260722.6"></script>',
+        '<script src="frontend/portable-database.js?v=20260722.7"></script>',
     ):
         assert marker in html
     for marker in (
@@ -2177,7 +2182,7 @@ def test_browser_only_mode_uses_a_structured_local_folder():
     for marker in (
         'id="chooseLocalFolderButton"',
         'id="localFolderStatus"',
-        '<script src="frontend/local-folder-store.js?v=20260722.6"></script>',
+        '<script src="frontend/local-folder-store.js?v=20260722.7"></script>',
         "Выбрать локальную папку",
     ):
         assert marker in html

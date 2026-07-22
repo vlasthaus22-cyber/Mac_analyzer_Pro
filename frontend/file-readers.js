@@ -366,7 +366,7 @@
       const finalRow = /(\d+)$/.exec(reference)?.[1];
       if (finalRow) declaredRowCount = Math.max(0, Number(finalRow) || 0);
     };
-    const drainRows = () => {
+    const drainRows = async () => {
       while (!stopped) {
         const rowStart = pending.search(/<row\b/i);
         if (rowStart < 0) {
@@ -385,7 +385,7 @@
           const rowIndex = rowCount;
           rowCount += 1;
           if (collectRows) rows.push(parsed.values);
-          if (onRow) onRow(parsed.values, rowIndex);
+          if (onRow) await onRow(parsed.values, rowIndex);
           if (maximumRows && rowCount >= maximumRows) stopped = true;
         }
         if (retainsRows) MemoryGuard.assertTableCapacity(rowCount, cellCount);
@@ -400,7 +400,7 @@
       processedBytes += chunk.value.byteLength;
       pending += decoder.decode(chunk.value, { stream: true });
       captureDimension();
-      drainRows();
+      await drainRows();
       if (stopped) {
         await reader.cancel().catch(() => {});
         break;
@@ -415,7 +415,7 @@
     if (!stopped) {
       pending += decoder.decode();
       captureDimension();
-      drainRows();
+      await drainRows();
     }
     Object.defineProperties(rows, {
       parsedRowCount: { value: rowCount, enumerable: false },
@@ -462,7 +462,7 @@
       collectRows: false,
       retainedRows: collectRows,
       maxRows: maximumDataRows ? maximumDataRows + 1 : 0,
-      onRow: (row, rawIndex) => {
+      onRow: async (row, rawIndex) => {
         if (rawIndex === 0) {
           headers = row;
           return;
@@ -470,7 +470,7 @@
         const dataIndex = dataRowCount;
         dataRowCount += 1;
         if (collectRows) collectedRows.push(row);
-        if (typeof options.onRow === "function") options.onRow(row, dataIndex);
+        if (typeof options.onRow === "function") await options.onRow(row, dataIndex);
       },
     });
     if (!headers) throw new Error("XLSX не содержит строк");

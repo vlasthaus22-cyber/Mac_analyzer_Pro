@@ -61,8 +61,8 @@
   function openBrowserStateDb(){
     return new Promise((resolve,reject)=>{
       if(!("indexedDB" in window))return reject(new Error("IndexedDB недоступна"));
-      const request=indexedDB.open(browserStateDbName,4);
-      request.onupgradeneeded=()=>{const db=request.result;if(!db.objectStoreNames.contains(browserStateStoreName))db.createObjectStore(browserStateStoreName,{keyPath:"id"});if(!db.objectStoreNames.contains("snapshots"))db.createObjectStore("snapshots",{keyPath:"id"});if(!db.objectStoreNames.contains("snapshotChunks")){const chunks=db.createObjectStore("snapshotChunks",{keyPath:"key"});chunks.createIndex("snapshotId","snapshotId",{unique:false});}if(!db.objectStoreNames.contains("sourceFiles"))db.createObjectStore("sourceFiles",{keyPath:"id"});};
+      const request=indexedDB.open(browserStateDbName,5);
+      request.onupgradeneeded=()=>{const db=request.result;if(!db.objectStoreNames.contains(browserStateStoreName))db.createObjectStore(browserStateStoreName,{keyPath:"id"});if(!db.objectStoreNames.contains("snapshots"))db.createObjectStore("snapshots",{keyPath:"id"});if(!db.objectStoreNames.contains("snapshotChunks")){const chunks=db.createObjectStore("snapshotChunks",{keyPath:"key"});chunks.createIndex("snapshotId","snapshotId",{unique:false});}if(!db.objectStoreNames.contains("sourceFiles"))db.createObjectStore("sourceFiles",{keyPath:"id"});if(!db.objectStoreNames.contains("enrichmentRows")){const rows=db.createObjectStore("enrichmentRows",{keyPath:"key"});rows.createIndex("jobId","jobId",{unique:false});}};
       request.onsuccess=()=>resolve(request.result);
       request.onerror=()=>reject(request.error||new Error("Не удалось открыть IndexedDB"));
     });
@@ -732,7 +732,7 @@
     const expectedRows=Math.max(0,Number(file.rowCount||0));
     if(file.rowsComplete!==false&&inlineRows.length>expectedRows){
       for(let rowIndex=1;rowIndex<inlineRows.length;rowIndex++){
-        onRow(inlineRows[rowIndex],rowIndex-1);
+        await onRow(inlineRows[rowIndex],rowIndex-1);
         if(rowIndex%2000===0)await MemoryGuard.yieldToMainThread();
       }
       compactWorkspaceFileRows(file);
@@ -749,7 +749,7 @@
     }
     const data=await clientReadTable(sourceFile,progress),rows=Array.isArray(data.rows)?data.rows:[];
     for(let rowIndex=0;rowIndex<rows.length;rowIndex++){
-      onRow(rows[rowIndex],rowIndex);
+      await onRow(rows[rowIndex],rowIndex);
       if((rowIndex+1)%2000===0)await MemoryGuard.yieldToMainThread();
     }
     const rowCount=rows.length;
@@ -790,6 +790,59 @@
       onProgress(100,`Обработано устройств: ${devices.length.toLocaleString("ru-RU")}`);
       return{devices,invalid,invalidCount};
     }finally{activeLocalDetectionContext=previousContext;}
+  }
+  async function localAnalyzeFilesToSnapshot(fields,strategy,source,createdAt,onProgress=()=>{}){
+    if(!BrowserSnapshots?.mergeEnrichmentRows||!BrowserSnapshots?.saveEnrichmentSnapshot)return null;
+    MemoryGuard.assertStreamingEnrichmentCapacity(state.files,strategy);
+    const jobId="enrichment-"+(currentEnrichmentJobId||crypto.randomUUID()),batchSize=750,invalid=[],deviceBatch=new Map(),vendorCounts=new Map(),modelCounts=new Map();
+    const totalRows=state.files.reduce((total,file)=>total+Math.max(0,Number(file.rowCount??Math.max(0,(file.rows?.length||1)-1))||0),0);
+    const switchAddresses=new Map(localIpMappingRows().map((item)=>[normalizeIp(item.switchIp),item.address]));
+    let processed=0,invalidCount=0,storedRows=0,previousContext=activeLocalDetectionContext;
+    const observe=(map,key,value)=>{if(!key||!value||map.size>=50000&&!map.has(key+"\u0000"+value))return;const item=key+"\u0000"+value;map.set(item,(map.get(item)||0)+1);};
+    const observeDevice=(device)=>{const mac=normalize(device.mac||device.macFormatted),vendor=String(device.vendor||"").trim(),model=String(device.model||"").trim();if(!mac)return;for(const length of [6,8,10])if(vendor&&vendor!=="Unknown"&&vendor!=="Не определено")observe(vendorCounts,mac.slice(0,length),vendor);if(model)observe(modelCounts,mac.slice(0,10),model);if(device.switchIp&&device.address){const ip=normalizeIp(device.switchIp);if(ip){switchAddresses.set(ip,device.address);upsertLocalIpMapping(ip,device.address,source||"current-file");}}};
+    const flush=async(allowNew)=>{if(!deviceBatch.size)return;const devices=Array.from(deviceBatch.values());deviceBatch.clear();storedRows+=await BrowserSnapshots.mergeEnrichmentRows(jobId,devices,{allowNew});devices.length=0;await MemoryGuard.yieldToMainThread();};
+    const learn=(target,counts,threshold=2)=>{const best=new Map();counts.forEach((count,key)=>{if(count<threshold)return;const split=key.indexOf("\u0000"),prefix=key.slice(0,split),value=key.slice(split+1);if(!prefix||!value||target[prefix])return;const current=best.get(prefix);if(!current||count>current.count)best.set(prefix,{value,count});});let learned=0;best.forEach((item,prefix)=>{target[prefix]=item.value;learned++;});return learned;};
+    await BrowserSnapshots.clearEnrichment(jobId).catch(()=>false);
+    activeLocalDetectionContext=createLocalDetectionContext();
+    try{
+      for(let fileIndex=0;fileIndex<state.files.length;fileIndex++){
+        const file=state.files[fileIndex],allowNew=!(fileIndex>0&&strategy==="primary");
+        await visitLocalRowsForAnalysis(file,fileIndex,state.files.length,onProgress,async(row,rowIndex)=>{
+          const result=localDeviceFromRow(file,row,rowIndex,fields);processed++;
+          if(result.invalid){if(fileIndex===0){invalidCount++;if(invalid.length<MemoryGuard.limits.invalidRows)invalid.push(result.invalid);}}
+          else{
+            const device=result.device,previous=deviceBatch.get(device.mac),merged=previous?{...previous}:{};
+            for(const [field,value] of Object.entries(device))if(value!==""&&value!==undefined)merged[field]=value;
+            deviceBatch.set(device.mac,merged);observeDevice(merged);
+            if(deviceBatch.size>=batchSize)await flush(allowNew);
+          }
+          if(processed%2000===0)onProgress(35+(totalRows?processed/totalRows*45:45),`Потоково обработано строк: ${processed.toLocaleString("ru-RU")} / ${totalRows.toLocaleString("ru-RU")}`);
+        });
+        await flush(allowNew);
+      }
+      learn(state.localVendorMappings,vendorCounts,2);learn(state.localModelMappings,modelCounts,2);
+      activeLocalDetectionContext=createLocalDetectionContext();
+      await BrowserSnapshots.transformEnrichmentRows(jobId,(device)=>{
+        let changed=false;const ip=normalizeIp(device.switchIp),address=switchAddresses.get(ip),vendor=localVendor(device.mac),model=localModel(device.mac);
+        if(address&&!device.address){device.address=address;changed=true;}
+        if((!device.vendor||device.vendor==="Unknown"||device.vendor==="Не определено")&&vendor!=="Unknown"){device.vendor=vendor;changed=true;}
+        if(!device.model&&model){device.model=model;changed=true;}
+        return changed;
+      });
+      const snapshotId=crypto.randomUUID(),name="Анализ: "+source,rowBudget=MemoryGuard.limits.browserSnapshotRows||300000,keepIds=[];
+      let remainingRows=Math.max(0,rowBudget-Math.max(0,storedRows));
+      for(const item of state.snapshots.filter((entry)=>entry.browserStored)){const count=Math.max(0,Number(item.deviceCount||0));if(count<=remainingRows){keepIds.push(item.id);remainingRows-=count;}else item.browserStored=false;}
+      await BrowserSnapshots.prune(keepIds);
+      const metadata=await BrowserSnapshots.saveEnrichmentSnapshot(jobId,{id:snapshotId,name,source,createdAt,kind:"analysis",signature:"stream:"+snapshotId},invalid,(count)=>onProgress(82+Math.min(14,Math.round(count/Math.max(1,storedRows)*14)),`Запись результата в локальную базу: ${count.toLocaleString("ru-RU")}`));
+      const page=await BrowserSnapshots.page(snapshotId,{offset:0,limit:resultPageSize});
+      const snapshotMetadata={id:snapshotId,name,source,createdAt,deviceCount:Number(metadata.deviceCount||0),invalidCount:Number(metadata.invalidCount||invalidCount),devices:[],signature:metadata.signature,kind:"analysis",browserStored:true,devicesTruncated:true,backendStored:false};
+      state.snapshots.unshift(snapshotMetadata);state.snapshots=state.snapshots.slice(0,25);
+      state.resultSnapshotId="";state.resultBrowserSnapshotId=snapshotId;state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=snapshotMetadata.deviceCount;state.resultInvalidCount=invalidCount;state.resultSummary=page?.summary||null;
+      return{streamed:true,devices:(page?.items||[]).filter((item)=>item?.valid!==false&&!item?.invalid),invalid:(page?.items||[]).filter((item)=>item?.valid===false||item?.invalid),invalidCount,deviceCount:snapshotMetadata.deviceCount,summary:page?.summary||null};
+    }finally{
+      deviceBatch.clear();vendorCounts.clear();modelCounts.clear();activeLocalDetectionContext=previousContext;
+      await BrowserSnapshots.clearEnrichment(jobId).catch(()=>false);
+    }
   }
   function renderLocalResultsHeader(){const columns=(state.visibleColumns||empty().visibleColumns).filter(Boolean);$("#resultsHeader").innerHTML=columns.map(column=>`<th>${esc(labels[column]||column)}</th>`).join("");return columns;}
   function updateResultPager(total=0,page=1,pages=1){const status=$("#resultPageStatus"),previous=$("#resultPreviousPageButton"),next=$("#resultNextPageButton"),size=$("#resultPageSizeSelect");if(status)status.textContent=`${page} / ${pages}`;if(previous)previous.disabled=page<=1;if(next)next.disabled=page>=pages;if(size)size.value=String(resultPageSize);resultPage=Math.max(1,Math.min(page,pages));}
@@ -1321,6 +1374,7 @@
         let local,previousComparisonIndex=null;
         try{
           await releaseTransientAnalysisMemory();
+          clearResultReference();
           if(previousDevices.length>(MemoryGuard.limits.inlineComparisonRows||20000)){
             updateProcess(processId,48,"Освобождение памяти предыдущего результата");
             previousComparisonIndex=createLocalComparisonIndex(previousDevices);
@@ -1328,18 +1382,21 @@
             state.devices=[];
             await MemoryGuard.yieldToMainThread();
           }
-          local=await localAnalyzeFiles(enrich,strategy,(value,detail)=>updateProcess(processId,60+Math.round(value*0.25),detail));
+          local=await localAnalyzeFilesToSnapshot(enrich,strategy,source,sourceCreatedAt,(value,detail)=>updateProcess(processId,45+Math.round(value*0.45),detail));
+          if(!local)local=await localAnalyzeFiles(enrich,strategy,(value,detail)=>updateProcess(processId,60+Math.round(value*0.25),detail));
         }catch(localError){progress.innerHTML='<p class="muted">Автономный анализ остановлен безопасно: '+esc(localError.message)+'</p>';toast(localError.message);failProcess(processId,localError);return;}
-        clearResultReference();
         state.devices=local.devices;
         state.invalid=local.invalid;
         state.resultInvalidCount=local.invalidCount;
         state.lastAnalysis=sourceCreatedAt;
         if(previousComparisonIndex)recordLocalMovementsFromIndex(previousComparisonIndex,state.devices,source,state.lastAnalysis);else recordLocalMovements(previousDevices,state.devices,source,state.lastAnalysis);
-        await storeLocalSnapshot("Анализ: "+source,source,state.devices,state.invalid,sourceCreatedAt,"analysis");
-        const fullDeviceCount=state.devices.length,knownCount=state.devices.filter((item)=>item.vendor&&item.vendor!=="Unknown"&&item.vendor!=="Не определено").length,vendorCount=new Set(state.devices.map((item)=>item.vendor).filter(Boolean)).size;
-        const firstPage=state.devices.slice(0,resultPageSize),invalidPreview=state.invalid.slice(0,Math.min(resultPageSize,MemoryGuard.limits.invalidRows||5000));
-        state.devices.length=0;state.invalid.length=0;state.devices=firstPage;state.invalid=invalidPreview;state.resultDeviceCount=fullDeviceCount;state.resultInvalidCount=local.invalidCount;state.resultSummary={devices:fullDeviceCount,invalid:local.invalidCount,vendors:vendorCount,knownPercent:fullDeviceCount?Math.round(knownCount/fullDeviceCount*100):0};
+        let fullDeviceCount=Number(local.deviceCount||state.devices.length);
+        if(!local.streamed){
+          await storeLocalSnapshot("Анализ: "+source,source,state.devices,state.invalid,sourceCreatedAt,"analysis");
+          let knownCount=0;const vendors=new Set();for(const item of state.devices){if(item.vendor)vendors.add(item.vendor);if(item.vendor&&item.vendor!=="Unknown"&&item.vendor!=="Не определено")knownCount++;}
+          fullDeviceCount=state.devices.length;const firstPage=state.devices.slice(0,resultPageSize),invalidPreview=state.invalid.slice(0,Math.min(resultPageSize,MemoryGuard.limits.invalidRows||5000));
+          state.devices.length=0;state.invalid.length=0;state.devices=firstPage;state.invalid=invalidPreview;state.resultDeviceCount=fullDeviceCount;state.resultInvalidCount=local.invalidCount;state.resultSummary={devices:fullDeviceCount,invalid:local.invalidCount,vendors:vendors.size,knownPercent:fullDeviceCount?Math.round(knownCount/fullDeviceCount*100):0};
+        }else{state.resultDeviceCount=fullDeviceCount;state.resultInvalidCount=local.invalidCount;state.resultSummary=local.summary||state.resultSummary;}
         progress.innerHTML='<div class="bar-item"><div class="bar-label"><span>Автономная локальная база</span><strong>'+fullDeviceCount+' устройств</strong></div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><p class="muted">Полный результат сохранён порциями в IndexedDB; в памяти оставлена только текущая страница.</p></div>';
         updateProcess(processId,90,"Сохранение локального снимка и истории");
         $("#storageStatus").textContent="Автономная локальная база IndexedDB · результат хранится постранично";

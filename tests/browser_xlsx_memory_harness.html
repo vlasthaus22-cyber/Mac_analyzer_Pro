@@ -36,22 +36,36 @@
           );
           rounds.push({ rows, reportedRows: table.rowCount, retainedRows: table.rows.length });
         }
-        const snapshotId = `oom-idb-${Date.now()}`;
-        const devices = Array.from({ length: 100000 }, (_, index) => ({
-          mac: `A1B2C3${index.toString(16).padStart(6, "0").toUpperCase()}`,
-          macFormatted: `A1:B2:C3:${(index >> 16 & 255).toString(16).padStart(2, "0")}:${(index >> 8 & 255).toString(16).padStart(2, "0")}:${(index & 255).toString(16).padStart(2, "0")}`.toUpperCase(),
-          vendor: "Stress Vendor",
-          model: `Model ${index % 20}`,
-          valid: true,
-        }));
-        await window.MacAnalyzerBrowserSnapshots.save({ id: snapshotId, name: "OOM IndexedDB", devices, invalid: [] });
-        devices.length = 0;
-        const storedPages = [];
-        for (const offset of [0, 49750, 99750]) {
-          const page = await window.MacAnalyzerBrowserSnapshots.page(snapshotId, { offset, limit: 250 });
-          storedPages.push({ offset, rows: page.items.length, total: page.pagination.total });
+        const diskRounds = [];
+        const snapshotIds = [];
+        for (let round = 0; round < 3; round += 1) {
+          const jobId = `oom-job-${Date.now()}-${round}`;
+          const snapshotId = `oom-idb-${Date.now()}-${round}`;
+          snapshotIds.push(snapshotId);
+          await window.MacAnalyzerBrowserSnapshots.clearEnrichment(jobId);
+          for (let offset = 0; offset < 100000; offset += 750) {
+            const batch = [];
+            for (let index = offset; index < Math.min(100000, offset + 750); index += 1) {
+              batch.push({
+                mac: `A1B2C3${index.toString(16).padStart(6, "0").toUpperCase()}`,
+                macFormatted: `A1:B2:C3:${(index >> 16 & 255).toString(16).padStart(2, "0")}:${(index >> 8 & 255).toString(16).padStart(2, "0")}:${(index & 255).toString(16).padStart(2, "0")}`.toUpperCase(),
+                vendor: "Stress Vendor",
+                model: `Model ${(index + round) % 20}`,
+                valid: true,
+              });
+            }
+            await window.MacAnalyzerBrowserSnapshots.mergeEnrichmentRows(jobId, batch);
+            batch.length = 0;
+          }
+          const metadata = await window.MacAnalyzerBrowserSnapshots.saveEnrichmentSnapshot(
+            jobId,
+            { id: snapshotId, name: `OOM IndexedDB ${round + 1}` },
+          );
+          const page = await window.MacAnalyzerBrowserSnapshots.page(snapshotId, { offset: 99750, limit: 250 });
+          diskRounds.push({ round: round + 1, stored: metadata.deviceCount, pageRows: page.items.length, total: page.pagination.total });
+          await window.MacAnalyzerBrowserSnapshots.clearEnrichment(jobId);
         }
-        await window.MacAnalyzerBrowserSnapshots.removeSnapshot(snapshotId);
+        for (const snapshotId of snapshotIds) await window.MacAnalyzerBrowserSnapshots.removeSnapshot(snapshotId);
         const heapAfter = performance.memory?.usedJSHeapSize || 0;
         output.dataset.status = "complete";
         output.textContent = JSON.stringify({
@@ -60,7 +74,7 @@
           headers: preview.headers,
           sheet: preview.sheet,
           rounds,
-          storedPages,
+          diskRounds,
           heapDelta: heapBefore && heapAfter ? heapAfter - heapBefore : null,
           progressUpdates,
           elapsedMs: Math.round(performance.now() - started),

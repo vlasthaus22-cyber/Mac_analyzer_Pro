@@ -2,11 +2,12 @@
   "use strict";
 
   const databaseName = "mac-analyzer-browser-storage-v1";
-  const databaseVersion = 4;
+  const databaseVersion = 5;
   const workspaceStore = "workspaces";
   const snapshotStore = "snapshots";
   const snapshotChunkStore = "snapshotChunks";
   const sourceFileStore = "sourceFiles";
+  const enrichmentRowStore = "enrichmentRows";
   const snapshotChunkRows = 1_000;
 
   function openDatabase() {
@@ -27,6 +28,10 @@
         }
         if (!database.objectStoreNames.contains(sourceFileStore)) {
           database.createObjectStore(sourceFileStore, { keyPath: "id" });
+        }
+        if (!database.objectStoreNames.contains(enrichmentRowStore)) {
+          const rows = database.createObjectStore(enrichmentRowStore, { keyPath: "key" });
+          rows.createIndex("jobId", "jobId", { unique: false });
         }
       };
       request.onsuccess = () => resolve(request.result);
@@ -208,6 +213,171 @@
     return metadata ? { ...metadata, devices, invalid } : null;
   }
 
+  async function clearEnrichment(jobId) {
+    const id = String(jobId || "");
+    if (!id) return false;
+    const database = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const current = database.transaction(enrichmentRowStore, "readwrite");
+      const request = current.objectStore(enrichmentRowStore).index("jobId").openCursor(IDBKeyRange.only(id));
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        cursor.delete();
+        cursor.continue();
+      };
+      request.onerror = () => reject(request.error || new Error("Unable to clear temporary enrichment rows"));
+      current.oncomplete = () => { database.close(); resolve(true); };
+      current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Temporary enrichment cleanup failed")); };
+      current.onabort = current.onerror;
+    });
+  }
+
+  async function mergeEnrichmentRows(jobId, devices, options = {}) {
+    const id = String(jobId || "");
+    const rows = Array.isArray(devices) ? devices : [];
+    const allowNew = options.allowNew !== false;
+    if (!id || !rows.length) return 0;
+    const database = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const current = database.transaction(enrichmentRowStore, "readwrite");
+      const store = current.objectStore(enrichmentRowStore);
+      let written = 0;
+      for (const device of rows) {
+        const mac = String(device?.mac || "");
+        if (!mac) continue;
+        const key = `${id}:${mac}`;
+        const request = store.get(key);
+        request.onsuccess = () => {
+          const previous = request.result?.device;
+          if (!previous && !allowNew) return;
+          const merged = previous ? { ...previous } : {};
+          for (const [field, value] of Object.entries(device)) {
+            if (value !== "" && value !== undefined) merged[field] = value;
+          }
+          store.put({ key, jobId: id, mac, device: merged });
+          written += 1;
+        };
+        request.onerror = () => current.abort();
+      }
+      current.oncomplete = () => { database.close(); resolve(written); };
+      current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Temporary enrichment merge failed")); };
+      current.onabort = current.onerror;
+    });
+  }
+
+  async function readEnrichmentPage(jobId, afterKey = "", limit = snapshotChunkRows) {
+    const id = String(jobId || "");
+    const prefix = `${id}:`;
+    const upper = `${prefix}\uffff`;
+    const database = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const rows = [];
+      let lastKey = "";
+      const current = database.transaction(enrichmentRowStore, "readonly");
+      const store = current.objectStore(enrichmentRowStore);
+      const range = afterKey
+        ? IDBKeyRange.bound(String(afterKey), upper, true, false)
+        : IDBKeyRange.bound(prefix, upper, false, false);
+      const request = store.openCursor(range);
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor || rows.length >= limit) return;
+        rows.push(cursor.value?.device || {});
+        lastKey = String(cursor.key);
+        if (rows.length < limit) cursor.continue();
+      };
+      request.onerror = () => reject(request.error || new Error("Temporary enrichment read failed"));
+      current.oncomplete = () => { database.close(); resolve({ rows, lastKey }); };
+      current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Temporary enrichment read failed")); };
+    });
+  }
+
+  async function streamEnrichmentRows(jobId, onChunk = async () => {}, chunkSize = snapshotChunkRows) {
+    let afterKey = "";
+    let count = 0;
+    while (true) {
+      const page = await readEnrichmentPage(jobId, afterKey, chunkSize);
+      if (!page.rows.length) break;
+      await onChunk(page.rows, count);
+      count += page.rows.length;
+      afterKey = page.lastKey;
+      page.rows.length = 0;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (!afterKey) break;
+    }
+    return count;
+  }
+
+  async function transformEnrichmentRows(jobId, transform) {
+    let afterKey = "";
+    let changed = 0;
+    while (true) {
+      const page = await readEnrichmentPage(jobId, afterKey, snapshotChunkRows);
+      if (!page.rows.length) break;
+      for (const device of page.rows) {
+        if (await transform(device)) changed += 1;
+      }
+      await mergeEnrichmentRows(jobId, page.rows, { allowNew: true });
+      afterKey = page.lastKey;
+      page.rows.length = 0;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (!afterKey) break;
+    }
+    return changed;
+  }
+
+  async function saveEnrichmentSnapshot(jobId, snapshot, invalid = [], onProgress = () => {}) {
+    if (!snapshot?.id) throw new Error("Snapshot id is required");
+    const snapshotId = String(snapshot.id);
+    await removeSnapshot(snapshotId);
+    const metadata = {
+      ...snapshot,
+      id: snapshotId,
+      devices: [],
+      invalid: [],
+      chunked: true,
+      complete: false,
+      chunkSize: snapshotChunkRows,
+      deviceChunks: 0,
+      invalidChunks: Math.ceil((Array.isArray(invalid) ? invalid.length : 0) / snapshotChunkRows),
+      deviceCount: 0,
+      invalidCount: Array.isArray(invalid) ? invalid.length : 0,
+    };
+    await transaction(snapshotStore, "readwrite", (store) => store.put(metadata));
+    try {
+      let chunkIndex = 0;
+      await streamEnrichmentRows(jobId, async (rows, completedRows) => {
+        await transaction(snapshotChunkStore, "readwrite", (store) => store.put({
+          key: `${snapshotId}:device:${String(chunkIndex).padStart(8, "0")}`,
+          snapshotId,
+          kind: "device",
+          index: chunkIndex,
+          rows,
+        }));
+        chunkIndex += 1;
+        metadata.deviceCount = completedRows + rows.length;
+        onProgress(metadata.deviceCount);
+      });
+      metadata.deviceChunks = chunkIndex;
+      for (const chunk of chunkRows(invalid)) {
+        await transaction(snapshotChunkStore, "readwrite", (store) => store.put({
+          key: `${snapshotId}:invalid:${String(chunk.index).padStart(8, "0")}`,
+          snapshotId,
+          kind: "invalid",
+          index: chunk.index,
+          rows: chunk.rows,
+        }));
+      }
+      metadata.complete = true;
+      await transaction(snapshotStore, "readwrite", (store) => store.put(metadata));
+      return metadata;
+    } catch (error) {
+      await removeSnapshot(snapshotId).catch(() => false);
+      throw error;
+    }
+  }
+
   function createPageCollector(options = {}) {
     const query = String(options.query || "").trim().toLowerCase();
     const vendor = String(options.vendor || "");
@@ -383,6 +553,11 @@
     streamSnapshot,
     page,
     createPageCollector,
+    clearEnrichment,
+    mergeEnrichmentRows,
+    streamEnrichmentRows,
+    transformEnrichmentRows,
+    saveEnrichmentSnapshot,
     snapshotChunkRows,
     removeLegacyWorkspace,
     saveSourceFile,
