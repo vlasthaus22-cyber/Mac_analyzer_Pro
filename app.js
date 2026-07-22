@@ -118,14 +118,18 @@
   }
   function portableDatabasePayload(){
     const compact=StatePersistence.compactLocalState(state);
+    const currentBrowserSnapshotId=String(state.resultBrowserSnapshotId||"");
+    const streamCurrentResult=currentBrowserSnapshotId&&BrowserSnapshots?.streamSnapshot
+      ?async(onChunk)=>BrowserSnapshots.streamSnapshot(currentBrowserSnapshotId,onChunk)
+      :null;
     compact.files=[];
     compact.resultSnapshotId="";
     compact.resultBrowserSnapshotId="";
     compact.resultBrowserSnapshotDirty=false;
-    compact.resultDeviceCount=(state.devices||[]).length;
-    compact.resultInvalidCount=(state.invalid||[]).length;
+    compact.resultDeviceCount=currentBrowserSnapshotId?Number(state.resultDeviceCount||0):(state.devices||[]).length;
+    compact.resultInvalidCount=currentBrowserSnapshotId?Number(state.resultInvalidCount||0):(state.invalid||[]).length;
     compact.resultSummary=state.resultSummary||null;
-    return{state:compact,devices:state.devices||[],invalid:state.invalid||[],movements:state.movementHistory||[],snapshotMetadata:(state.snapshots||[]).filter((item)=>item.browserStored),skipSnapshotId:state.resultBrowserSnapshotId||"",snapshotStreamer:BrowserSnapshots?.streamSnapshot?(metadata,onChunk)=>BrowserSnapshots.streamSnapshot(metadata.id,onChunk):null,snapshotLoader:(metadata)=>loadLocalSnapshotRecord(metadata)};
+    return{state:compact,devices:streamCurrentResult?[]:state.devices||[],invalid:streamCurrentResult?[]:state.invalid||[],deviceCount:compact.resultDeviceCount,invalidCount:compact.resultInvalidCount,currentResultStreamer:streamCurrentResult,movements:state.movementHistory||[],snapshotMetadata:(state.snapshots||[]).filter((item)=>item.browserStored),skipSnapshotId:currentBrowserSnapshotId,snapshotStreamer:BrowserSnapshots?.streamSnapshot?(metadata,onChunk)=>BrowserSnapshots.streamSnapshot(metadata.id,onChunk):null,snapshotLoader:(metadata)=>loadLocalSnapshotRecord(metadata)};
   }
   function portableDatabaseProgress(processId,value,detail){
     portableDatabaseStatus(detail||"Обработка файловой базы...");
@@ -320,9 +324,9 @@
       const localSavedAt=Date.parse(localStorage.getItem(browserStateSavedAtKey)||"")||0,indexedSavedAt=Date.parse(record.savedAt||"")||0;
       if(!state.browserStateInIndexedDb&&localSavedAt>indexedSavedAt)return false;
       state=normalizeRestoredState(record.state);
-      if(state.resultBrowserSnapshotId&&!state.devices.length&&BrowserSnapshots){
-        const stored=await BrowserSnapshots.load(state.resultBrowserSnapshotId).catch(()=>null);
-        if(stored){state.devices=stored.devices||[];state.invalid=stored.invalid||[];state.resultDeviceCount=Number(stored.deviceCount||state.devices.length);state.resultInvalidCount=state.invalid.length;state.resultBrowserSnapshotDirty=false;}
+      if(state.resultBrowserSnapshotId&&BrowserSnapshots){
+        const stored=await BrowserSnapshots.page?.(state.resultBrowserSnapshotId,{offset:0,limit:resultPageSize}).catch(()=>null);
+        if(stored){state.devices=(stored.items||[]).filter((item)=>item?.valid!==false&&!item?.invalid);state.invalid=(stored.items||[]).filter((item)=>item?.valid===false||item?.invalid);state.resultDeviceCount=Number(stored.metadata?.deviceCount||stored.summary?.devices||state.devices.length);state.resultInvalidCount=Number(stored.metadata?.invalidCount||stored.summary?.invalid||state.invalid.length);state.resultSummary=stored.summary||null;state.resultBrowserSnapshotDirty=false;}
         else{const metadata=(state.snapshots||[]).find((item)=>item.id===state.resultBrowserSnapshotId);state.devices=metadata?.devices||[];state.invalid=[];state.resultBrowserSnapshotId="";state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=state.devices.length;state.resultInvalidCount=0;}
       }
       return true;
@@ -789,6 +793,7 @@
   }
   function renderLocalResultsHeader(){const columns=(state.visibleColumns||empty().visibleColumns).filter(Boolean);$("#resultsHeader").innerHTML=columns.map(column=>`<th>${esc(labels[column]||column)}</th>`).join("");return columns;}
   function updateResultPager(total=0,page=1,pages=1){const status=$("#resultPageStatus"),previous=$("#resultPreviousPageButton"),next=$("#resultNextPageButton"),size=$("#resultPageSizeSelect");if(status)status.textContent=`${page} / ${pages}`;if(previous)previous.disabled=page<=1;if(next)next.disabled=page>=pages;if(size)size.value=String(resultPageSize);resultPage=Math.max(1,Math.min(page,pages));}
+  function localResultPageRows(items,columns){return(items||[]).length?(items||[]).map((item)=>item?.invalid||item?.valid===false?`<tr><td colspan="${Math.max(1,columns.length)}"><strong>Ошибка:</strong> строка ${esc(item.row||"")} в ${esc(item.source||"")}: ${esc(item.raw||"")}</td></tr>`:`<tr data-mac="${esc(item.mac||normalize(item.macFormatted)||"")}">${columns.map((column)=>`<td>${esc(column==="oui"?formatOuiValue(item.mac||item.macFormatted||item.oui):item[column]||"")}</td>`).join("")}</tr>`).join(""):'<tr><td colspan="'+Math.max(1,columns.length)+'" class="empty-state">Нет записей.</td></tr>';}
   function localResultsTable(){const columns=renderLocalResultsHeader(),query=$("#searchInput")?.value.trim().toLowerCase()||"",vendor=$("#vendorFilter")?.value||"",vendors=new Set();for(const item of state.devices||[]){if(item.vendor)vendors.add(item.vendor);}const pageData=MemoryGuard.collectPage(state.devices,item=>(!vendor||item.vendor===vendor)&&(!query||Object.values(item).join(" ").toLowerCase().includes(query)),resultPage,resultPageSize);resultPage=pageData.page;$("#vendorFilter").innerHTML='<option value="">Все вендоры</option>'+Array.from(vendors).sort().map(v=>`<option value="${esc(v)}" ${v===vendor?"selected":""}>${esc(v)}</option>`).join("");$("#resultCount").textContent=pageData.total+" записей";updateResultPager(pageData.total,pageData.page,pageData.pages);return pageData.items.length?pageData.items.map(item=>`<tr data-mac="${esc(item.mac||normalize(item.macFormatted)||"")}">${columns.map(column=>`<td>${esc(column==="oui"?formatOuiValue(item.mac||item.macFormatted||item.oui):item[column]||"")}</td>`).join("")}</tr>`).join(""):'<tr><td colspan="'+columns.length+'" class="empty-state">Нет записей.</td></tr>';}
   function devicesSignature(devices=[]){return MemoryGuard.datasetSignature(devices,["vendor","model","ip","address","room","switchIp","switchPort"],normalize);}
   async function storeLocalSnapshot(name,source,devices,invalid=[],createdAt=new Date().toISOString(),kind="analysis"){
@@ -1233,9 +1238,9 @@
   function browserEnrichmentFallbackAllowed(){
     const totalRows=(state.files||[]).reduce((sum,file)=>sum+Math.max(0,Number(file.rowCount||0)),0);
     const totalBytes=(state.files||[]).reduce((sum,file)=>sum+Math.max(0,Number(file.sourceBytes||0)),0);
-    return totalRows<=10000&&totalBytes<=16*1024*1024;
+    return totalRows<=(MemoryGuard.limits.browserEnrichmentRows||220000)&&totalBytes<=(MemoryGuard.limits.browserInputBatchBytes||96*1024*1024);
   }
-  function currentDeviceCount(){return state.resultSnapshotId?Number(state.resultDeviceCount||0):(state.devices||[]).length;}
+  function currentDeviceCount(){return state.resultSnapshotId||state.resultBrowserSnapshotId?Number(state.resultDeviceCount||0):(state.devices||[]).length;}
   function currentDevicePayload(extra={}){return state.resultSnapshotId?{...extra,snapshotId:state.resultSnapshotId,devices:[]}:{...extra,devices:state.devices||[]};}
   function clearResultReference(){state.resultSnapshotId="";state.resultBrowserSnapshotId="";state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=0;state.resultInvalidCount=0;state.resultSummary=null;}
   function applyRefreshedFileTokens(fileTokens=[]){
@@ -1305,8 +1310,8 @@
       if(error.name==="AbortError"){progress.innerHTML='<p class="muted">Обогащение отменено.</p>';toast("Обогащение отменено.");cancelProcess(processId,"Обогащение отменено пользователем");cancelButton.disabled=true;return;}
       if(networkUnavailable(error)){
         if(!browserEnrichmentFallbackAllowed()){
-          const message="Безопасное обогащение крупного набора выполняется только локальным backend через SQLite. Откройте http://127.0.0.1:8080 и повторите запуск.";
-          setBackendStatus(false,"Backend недоступен · браузерное обогащение отключено для защиты памяти");
+          const message="Набор превышает безопасный автономный предел. Разделите файлы на части; операция остановлена до выделения опасного объёма памяти.";
+          setBackendStatus(false,"Автономная локальная база · превышен безопасный предел набора");
           progress.innerHTML='<p class="muted">'+esc(message)+'</p>';
           toast(message);
           failProcess(processId,message);
@@ -1332,9 +1337,12 @@
         state.lastAnalysis=sourceCreatedAt;
         if(previousComparisonIndex)recordLocalMovementsFromIndex(previousComparisonIndex,state.devices,source,state.lastAnalysis);else recordLocalMovements(previousDevices,state.devices,source,state.lastAnalysis);
         await storeLocalSnapshot("Анализ: "+source,source,state.devices,state.invalid,sourceCreatedAt,"analysis");
-        progress.innerHTML='<div class="bar-item"><div class="bar-label"><span>Обогащение в браузере</span><strong>'+state.devices.length+' устройств</strong></div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><p class="muted">Backend не ответил, поэтому выполнена базовая обработка текущих файлов.</p></div>';
+        const fullDeviceCount=state.devices.length,knownCount=state.devices.filter((item)=>item.vendor&&item.vendor!=="Unknown"&&item.vendor!=="Не определено").length,vendorCount=new Set(state.devices.map((item)=>item.vendor).filter(Boolean)).size;
+        const firstPage=state.devices.slice(0,resultPageSize),invalidPreview=state.invalid.slice(0,Math.min(resultPageSize,MemoryGuard.limits.invalidRows||5000));
+        state.devices.length=0;state.invalid.length=0;state.devices=firstPage;state.invalid=invalidPreview;state.resultDeviceCount=fullDeviceCount;state.resultInvalidCount=local.invalidCount;state.resultSummary={devices:fullDeviceCount,invalid:local.invalidCount,vendors:vendorCount,knownPercent:fullDeviceCount?Math.round(knownCount/fullDeviceCount*100):0};
+        progress.innerHTML='<div class="bar-item"><div class="bar-label"><span>Автономная локальная база</span><strong>'+fullDeviceCount+' устройств</strong></div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><p class="muted">Полный результат сохранён порциями в IndexedDB; в памяти оставлена только текущая страница.</p></div>';
         updateProcess(processId,90,"Сохранение локального снимка и истории");
-        $("#storageStatus").textContent="Backend недоступен: данные сохранены в браузере";
+        $("#storageStatus").textContent="Автономная локальная база IndexedDB · результат хранится постранично";
       }else{
         progress.innerHTML='<p class="muted">Backend analysis error: '+esc(error.message)+'</p>';
         toast("Backend analysis error: "+error.message);
@@ -1375,7 +1383,18 @@
       $("#resultCount").textContent=data.summaryText||"0 записей";
       updateResultPager(data.pagination?.total||0,data.pagination?.page||1,data.pagination?.pages||1);
     }catch(error){
-      if(state.devices.length&&networkUnavailable(error)){
+      if(state.resultBrowserSnapshotId&&BrowserSnapshots?.page&&networkUnavailable(error)){
+        const selectedVendor=$("#vendorFilter")?.value||"";
+        const localPage=await BrowserSnapshots.page(state.resultBrowserSnapshotId,{query:$("#searchInput")?.value||"",vendor:selectedVendor,validity:$("#validityFilter")?.value||"",offset:(resultPage-1)*resultPageSize,limit:resultPageSize});
+        if(renderRevision!==resultRenderRevision)return;
+        const items=localPage?.items||[];
+        renderLocalResultsHeader();
+        body.innerHTML=localResultPageRows(items,columns);
+        $("#vendorFilter").innerHTML='<option value="">Все вендоры</option>'+((localPage?.vendors||[]).map((value)=>`<option value="${esc(value)}" ${value===selectedVendor?"selected":""}>${esc(value)}</option>`).join(""));
+        $("#resultCount").textContent=(localPage?.pagination?.total||0)+" записей";
+        updateResultPager(localPage?.pagination?.total||0,localPage?.pagination?.page||1,localPage?.pagination?.pages||1);
+        state.devices=items.filter((item)=>item?.valid!==false&&!item?.invalid);state.invalid=items.filter((item)=>item?.valid===false||item?.invalid);state.resultSummary=localPage?.summary||state.resultSummary;
+      }else if(state.devices.length&&networkUnavailable(error)){
         body.innerHTML=localResultsTable();
       }else{
         renderLocalResultsHeader();
@@ -2612,7 +2631,26 @@
   $("#exportXlsxButton").addEventListener("click",async()=>{try{await exportManagedBinary("xlsx");}catch(error){toast(error.message);}});
   $("#exportPdfButton").addEventListener("click",async()=>{try{await exportManagedBinary("pdf");}catch(error){toast(error.message);}});
   $("#comparisonFilters").addEventListener("click",(e)=>{const filter=e.target.dataset.comparisonFilter;if(!filter)return;$$("[data-comparison-filter]").forEach((button)=>button.classList.toggle("active-filter",button.dataset.comparisonFilter===filter));const types={added:"Добавлено",removed:"Удалено",modified:"Изменено"};$$("#comparisonBody tr").forEach((row)=>{const type=row.children[1]?.textContent;row.hidden=filter!=="all"&&type!==types[filter];});});
-  $("#historyBody").addEventListener("click",async(e)=>{const id=e.target.dataset.loadSnapshot||e.target.dataset.localSnapshot;if(id){try{let opened;if(e.target.dataset.localSnapshot){const localSnapshot=(state.snapshots||[]).find((entry)=>entry.id===id);if(!localSnapshot)throw new Error("Локальный снимок не найден.");const stored=await loadLocalSnapshotRecord(localSnapshot);opened={devices:stored?.devices||[],invalid:stored?.invalid||[],lastAnalysis:stored?.createdAt||localSnapshot.createdAt||new Date().toISOString()};clearResultReference();if(localSnapshot.browserStored){state.resultBrowserSnapshotId=id;state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=Number(stored?.deviceCount||opened.devices.length);state.resultInvalidCount=opened.invalid.length;}}else{clearResultReference();opened=await api("/snapshots/open",{method:"POST",body:JSON.stringify({id,snapshots:state.snapshots,compactResult:true,resultPageSize})});const reference=opened.resultReference||{};state.resultSnapshotId=String(reference.snapshotId||id);state.resultDeviceCount=Number(reference.deviceCount||0);state.resultInvalidCount=Number(reference.invalidCount||0);state.resultSummary=opened.resultSummary||opened.resultPage?.summary||null;}state.devices=opened.resultPage?.items||opened.devices||[];state.invalid=opened.invalid||[];state.lastAnalysis=opened.lastAnalysis||new Date().toISOString();resultPage=1;save();renderAll();view("workspace");toast("Снимок открыт.");}catch(error){toast(error.message);}}});
+  $("#historyBody").addEventListener("click",async(e)=>{
+    const id=e.target.dataset.loadSnapshot||e.target.dataset.localSnapshot;if(!id)return;
+    try{
+      let opened;
+      if(e.target.dataset.localSnapshot){
+        const localSnapshot=(state.snapshots||[]).find((entry)=>entry.id===id);if(!localSnapshot)throw new Error("Локальный снимок не найден.");
+        clearResultReference();
+        if(localSnapshot.browserStored&&BrowserSnapshots?.page){
+          const localPage=await BrowserSnapshots.page(id,{offset:0,limit:resultPageSize});
+          opened={resultPage:localPage,devices:localPage?.items||[],invalid:[],lastAnalysis:localSnapshot.createdAt||new Date().toISOString()};
+          state.resultBrowserSnapshotId=id;state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=Number(localPage?.metadata?.deviceCount||localPage?.summary?.devices||0);state.resultInvalidCount=Number(localPage?.metadata?.invalidCount||localPage?.summary?.invalid||0);state.resultSummary=localPage?.summary||null;
+        }else{
+          const stored=await loadLocalSnapshotRecord(localSnapshot);opened={devices:stored?.devices||[],invalid:stored?.invalid||[],lastAnalysis:stored?.createdAt||localSnapshot.createdAt||new Date().toISOString()};
+        }
+      }else{
+        clearResultReference();opened=await api("/snapshots/open",{method:"POST",body:JSON.stringify({id,snapshots:state.snapshots,compactResult:true,resultPageSize})});const reference=opened.resultReference||{};state.resultSnapshotId=String(reference.snapshotId||id);state.resultDeviceCount=Number(reference.deviceCount||0);state.resultInvalidCount=Number(reference.invalidCount||0);state.resultSummary=opened.resultSummary||opened.resultPage?.summary||null;
+      }
+      const openedItems=opened.resultPage?.items||opened.devices||[];state.devices=openedItems.filter((item)=>item?.valid!==false&&!item?.invalid);state.invalid=(opened.invalid||[]).concat(openedItems.filter((item)=>item?.valid===false||item?.invalid));state.lastAnalysis=opened.lastAnalysis||new Date().toISOString();resultPage=1;save();renderAll();view("workspace");toast("Снимок открыт.");
+    }catch(error){toast(error.message);}
+  });
   $("#historySearchInput").addEventListener("input",renderHistory);
   $("#historyDateFrom").addEventListener("change",renderHistory);$("#historyDateTo").addEventListener("change",renderHistory);
   $("#clearHistoryFiltersButton").addEventListener("click",()=>{$("#historySearchInput").value="";$("#historyDateFrom").value="";$("#historyDateTo").value="";renderHistory();});

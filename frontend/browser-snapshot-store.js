@@ -208,6 +208,70 @@
     return metadata ? { ...metadata, devices, invalid } : null;
   }
 
+  function createPageCollector(options = {}) {
+    const query = String(options.query || "").trim().toLowerCase();
+    const vendor = String(options.vendor || "");
+    const validity = String(options.validity || "").toLowerCase();
+    const limit = Math.max(25, Math.min(Number(options.limit || options.pageSize || 250), 1000));
+    const offset = Math.max(0, Number(options.offset || 0));
+    const items = [];
+    const vendors = new Set();
+    let total = 0;
+    let validCount = 0;
+    let invalidCount = 0;
+    let deviceCount = 0;
+    let knownCount = 0;
+    const matches = (row) => {
+      if (vendor && String(row?.vendor || "") !== vendor) return false;
+      if (!query) return true;
+      return Object.values(row || {}).join(" ").toLowerCase().includes(query);
+    };
+    return {
+      accept(kind, rows) {
+        const isValid = kind !== "invalid";
+        if (isValid && validity === "invalid") return;
+        if (!isValid && validity === "valid") return;
+        for (const row of Array.isArray(rows) ? rows : []) {
+          if (isValid) {
+            deviceCount += 1;
+            const currentVendor = String(row?.vendor || "");
+            if (currentVendor) vendors.add(currentVendor);
+            if (currentVendor && currentVendor !== "Unknown" && currentVendor !== "Не определено") knownCount += 1;
+          }
+          if (!matches(row)) continue;
+          if (isValid) validCount += 1;
+          else invalidCount += 1;
+          if (total >= offset && items.length < limit) items.push(row);
+          total += 1;
+        }
+      },
+      result() {
+        const pages = Math.max(1, Math.ceil(total / limit));
+        const page = Math.max(1, Math.min(Math.floor(offset / limit) + 1, pages));
+        return {
+          items,
+          vendors: Array.from(vendors).sort(),
+          pagination: { total, page, pages, limit, offset },
+          summary: {
+            devices: deviceCount,
+            valid: validCount,
+            invalid: invalidCount,
+            vendors: vendors.size,
+            knownPercent: deviceCount ? Math.round(knownCount / deviceCount * 100) : 0,
+          },
+        };
+      },
+    };
+  }
+
+  async function page(id, options = {}) {
+    const collector = createPageCollector(options);
+    const metadata = await streamSnapshot(id, async (kind, rows) => {
+      collector.accept(kind, rows);
+    });
+    return metadata ? { ...collector.result(), metadata } : null;
+  }
+
   async function prune(keepIds = []) {
     const keep = new Set(keepIds.map(String));
     const database = await openDatabase();
@@ -317,6 +381,8 @@
     removeSnapshot,
     chunkRows,
     streamSnapshot,
+    page,
+    createPageCollector,
     snapshotChunkRows,
     removeLegacyWorkspace,
     saveSourceFile,

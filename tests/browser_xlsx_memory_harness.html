@@ -8,6 +8,7 @@
   <pre id="result">running</pre>
   <script src="../frontend/memory-guard.js"></script>
   <script src="../frontend/file-readers.js"></script>
+  <script src="../frontend/browser-snapshot-store.js"></script>
   <script>
     (async () => {
       const output = document.querySelector("#result");
@@ -35,6 +36,22 @@
           );
           rounds.push({ rows, reportedRows: table.rowCount, retainedRows: table.rows.length });
         }
+        const snapshotId = `oom-idb-${Date.now()}`;
+        const devices = Array.from({ length: 100000 }, (_, index) => ({
+          mac: `A1B2C3${index.toString(16).padStart(6, "0").toUpperCase()}`,
+          macFormatted: `A1:B2:C3:${(index >> 16 & 255).toString(16).padStart(2, "0")}:${(index >> 8 & 255).toString(16).padStart(2, "0")}:${(index & 255).toString(16).padStart(2, "0")}`.toUpperCase(),
+          vendor: "Stress Vendor",
+          model: `Model ${index % 20}`,
+          valid: true,
+        }));
+        await window.MacAnalyzerBrowserSnapshots.save({ id: snapshotId, name: "OOM IndexedDB", devices, invalid: [] });
+        devices.length = 0;
+        const storedPages = [];
+        for (const offset of [0, 49750, 99750]) {
+          const page = await window.MacAnalyzerBrowserSnapshots.page(snapshotId, { offset, limit: 250 });
+          storedPages.push({ offset, rows: page.items.length, total: page.pagination.total });
+        }
+        await window.MacAnalyzerBrowserSnapshots.removeSnapshot(snapshotId);
         const heapAfter = performance.memory?.usedJSHeapSize || 0;
         output.dataset.status = "complete";
         output.textContent = JSON.stringify({
@@ -43,6 +60,7 @@
           headers: preview.headers,
           sheet: preview.sheet,
           rounds,
+          storedPages,
           heapDelta: heapBefore && heapAfter ? heapAfter - heapBefore : null,
           progressUpdates,
           elapsedMs: Math.round(performance.now() - started),

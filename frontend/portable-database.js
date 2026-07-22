@@ -90,6 +90,9 @@
       state,
       devices: Array.isArray(payload.devices) ? payload.devices : [],
       invalid: Array.isArray(payload.invalid) ? payload.invalid : [],
+      deviceCount: Math.max(0, Number(payload.deviceCount ?? payload.devices?.length ?? 0) || 0),
+      invalidCount: Math.max(0, Number(payload.invalidCount ?? payload.invalid?.length ?? 0) || 0),
+      currentResultStreamer: typeof payload.currentResultStreamer === "function" ? payload.currentResultStreamer : null,
       movements: Array.isArray(payload.movements) ? payload.movements : [],
       snapshotMetadata: (Array.isArray(payload.snapshotMetadata) ? payload.snapshotMetadata : []).filter((item) => item?.id),
       snapshotLoader: typeof payload.snapshotLoader === "function" ? payload.snapshotLoader : null,
@@ -104,8 +107,8 @@
       version,
       savedAt,
       counts: {
-        devices: payload.devices.length,
-        invalid: payload.invalid.length,
+        devices: payload.deviceCount,
+        invalid: payload.invalidCount,
         movements: payload.movements.length,
         snapshots: payload.snapshotMetadata.length,
       },
@@ -132,7 +135,7 @@
   async function writeToSink(write, payload, onProgress = () => {}) {
     const data = normalizePayload(payload);
     const savedAt = new Date().toISOString();
-    const total = data.devices.length + data.invalid.length + data.movements.length;
+    const total = data.deviceCount + data.invalidCount + data.movements.length;
     const completed = { value: 0 };
     await write(JSON.stringify(headerFor(data, savedAt)) + "\n");
     await write(JSON.stringify({ type: "state", value: data.state }) + "\n");
@@ -167,10 +170,16 @@
         await write(JSON.stringify({ type: "snapshot-end", value: { id: metadata.id } }) + "\n");
       }
     }
-    await writeRows(write, "device", data.devices, onProgress, completed, total);
-    await writeRows(write, "invalid", data.invalid, onProgress, completed, total);
+    if (data.currentResultStreamer) {
+      await data.currentResultStreamer(async (kind, rows) => {
+        await writeRows(write, kind === "invalid" ? "invalid" : "device", Array.isArray(rows) ? rows : [], onProgress, completed, total);
+      });
+    } else {
+      await writeRows(write, "device", data.devices, onProgress, completed, total);
+      await writeRows(write, "invalid", data.invalid, onProgress, completed, total);
+    }
     await writeRows(write, "movement", data.movements, onProgress, completed, total);
-    onProgress(100, `Файловая база сохранена: ${data.devices.length.toLocaleString("ru-RU")} устройств`);
+    onProgress(100, `Файловая база сохранена: ${data.deviceCount.toLocaleString("ru-RU")} устройств`);
     return { savedAt, counts: headerFor(data, savedAt).counts };
   }
 

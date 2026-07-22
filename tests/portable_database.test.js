@@ -85,6 +85,31 @@ class MemoryFileHandle {
   assert.equal(headerOnly.counts.devices, 60_000);
   assert.ok(handle.maximumChunkBytes < 512 * 1024, "database writer must use bounded chunks");
 
+  const streamedHandle = new MemoryFileHandle("streamed-current.madb");
+  const streamedPayload = {
+    state: { theme: "light" },
+    devices: [],
+    invalid: [],
+    deviceCount: devices.length,
+    invalidCount: 1,
+    movements: [],
+    snapshotMetadata: [{ id: "snapshot-current", name: "Current enrichment", browserStored: true, deviceCount: devices.length }],
+    skipSnapshotId: "snapshot-current",
+    currentResultStreamer: async (onChunk) => {
+      for (let offset = 0; offset < devices.length; offset += 1_000) {
+        await onChunk("device", devices.slice(offset, offset + 1_000));
+      }
+      await onChunk("invalid", [{ row: 7, raw: "bad-mac" }]);
+    },
+  };
+  const streamedResult = await database.write(streamedHandle, streamedPayload);
+  assert.equal(streamedResult.counts.devices, 60_000);
+  assert.equal(streamedResult.counts.invalid, 1);
+  const streamedRestored = await database.read(streamedHandle);
+  assert.equal(streamedRestored.devices.length, 60_000);
+  assert.equal(streamedRestored.invalid.length, 1);
+  assert.ok(streamedHandle.maximumChunkBytes < 512 * 1024, "current result streamer must keep writes bounded");
+
   console.log("portable database streaming stress test passed");
 })().catch((error) => {
   console.error(error);

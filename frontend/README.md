@@ -7,6 +7,7 @@
 - `browser-snapshot-store.js` keeps complete browser-only snapshots in a dedicated IndexedDB store; the live workspace keeps only metadata and a 500-row preview.
 - Repeated browser enrichment streams worksheets and shared strings, releases transient dashboard/result references, and removes consumed input files from the next workspace.
 - Backend imports send the original binary file, retain only a bounded 100-row preview in browser memory, and stream full rows from `data/imports/workspace-cache/workspace_cache.db` during enrichment.
-- Large enrichment never falls back to browser processing when the backend is unavailable; small autonomous multi-file workflows remain available.
+- Autonomous enrichment stores complete results in chunked IndexedDB snapshots and keeps only the current result page in live JavaScript state.
+- Reopening, filtering and paging an autonomous snapshot stream its 1,000-row chunks instead of hydrating the complete result array.
 - `app.js` remains the application controller while modules are extracted from it.
 - `index.html` loads modules with classic scripts so local `file://` startup keeps working.

@@ -30,4 +30,14 @@ for (let round = 0; round < 4; round += 1) {
   assert.equal(rows, devices.length);
 }
 
+const collector = snapshots.createPageCollector({ offset: 75_000, limit: 250, query: "stress vendor" });
+for (const chunk of snapshots.chunkRows(devices)) collector.accept("device", chunk.rows);
+const page = collector.result();
+assert.equal(page.items.length, 250);
+assert.equal(page.pagination.total, 120_000);
+assert.equal(page.pagination.page, 301);
+assert.equal(page.summary.devices, 120_000);
+assert.equal(page.summary.vendors, 1);
+assert.ok(page.items.length < devices.length / 100);
+
 console.log("frontend snapshot chunking memory test passed");

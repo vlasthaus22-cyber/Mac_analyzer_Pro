@@ -97,9 +97,9 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
 
     assert 'id="fileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
-    assert '<script src="frontend/memory-guard.js?v=20260722.4"></script>' in html
-    assert '<script src="frontend/file-readers.js?v=20260722.4"></script>' in html
-    assert '<meta name="application-build" content="2026.07.22.4">' in html
+    assert '<script src="frontend/memory-guard.js?v=20260722.6"></script>' in html
+    assert '<script src="frontend/file-readers.js?v=20260722.6"></script>' in html
+    assert '<meta name="application-build" content="2026.07.22.6">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -915,7 +915,7 @@ def test_browser_mode_enrichment_keeps_basic_workflow_alive():
     assert "function localMappingGrid(file)" in app
     assert "local=await localAnalyzeFiles(enrich,strategy," in app
     assert "function browserEnrichmentFallbackAllowed()" in app
-    assert "return totalRows<=10000&&totalBytes<=16*1024*1024;" in app
+    assert "return totalRows<=(MemoryGuard.limits.browserEnrichmentRows||220000)&&totalBytes<=(MemoryGuard.limits.browserInputBatchBytes||96*1024*1024);" in app
     assert "if(!browserEnrichmentFallbackAllowed())" in app
     assert app.index("if(!browserEnrichmentFallbackAllowed())") < app.index("local=await localAnalyzeFiles(enrich,strategy,")
     assert 'if(fileRecord.clientImported)await rememberSourceFile(fileRecord,file);' in app
@@ -924,7 +924,7 @@ def test_browser_mode_enrichment_keeps_basic_workflow_alive():
     assert "await hydrateWorkspaceFilesForBrowser(" not in app
     assert "MemoryGuard.collectPage(state.devices" in app
     assert "file.rows.slice(1).forEach" not in app
-    assert "Обогащение в браузере" in app
+    assert "Автономная локальная база" in app
     assert 'await storeLocalSnapshot("Анализ: "+source,source,state.devices,state.invalid,sourceCreatedAt,"analysis")' in app
     assert "async function replaceConsumedEnrichmentFiles(requestedRole)" in app
     assert "WorkspaceFileLifecycle.selectForNextImport(state.files,requestedRole)" in app
@@ -934,15 +934,15 @@ def test_browser_mode_enrichment_keeps_basic_workflow_alive():
     assert "function markEnrichmentFilesConsumed(consumedAt=new Date().toISOString())" in app
     assert "WorkspaceFileLifecycle.markConsumed(state.files,consumedAt)" in app
     assert "markEnrichmentFilesConsumed();" in app
-    assert '<script src="frontend/workspace-file-lifecycle.js?v=20260722.4"></script>' in read_index_html()
+    assert '<script src="frontend/workspace-file-lifecycle.js?v=20260722.6"></script>' in read_index_html()
     assert 'previousComparisonIndex=createLocalComparisonIndex(previousDevices)' in app
     assert 'previousDevices=[];' in app
     assert 'state.devices=[];' in app
     assert 'await MemoryGuard.yieldToMainThread();' in app
     assert "body.innerHTML=localResultsTable();" in app
     assert "Колонки определены в браузере." in app
-    assert "Backend не ответил, поэтому выполнена базовая обработка текущих файлов." in app
-    assert "Backend недоступен: данные сохранены в браузере" in app
+    assert "Полный результат сохранён порциями в IndexedDB; в памяти оставлена только текущая страница." in app
+    assert "Автономная локальная база IndexedDB · результат хранится постранично" in app
     assert 'file.name.toLowerCase().endsWith(".json")' not in app
     assert 'file.name.toLowerCase().endsWith(".xlsx")' not in app
 
@@ -953,7 +953,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260722.4"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260722.6"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
     assert 'async function storeLocalSnapshot(' in app
     assert 'devices:rows.slice(0,previewLimit)' in app
@@ -976,6 +976,14 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert 'saveSourceFile,' in snapshot_store
     assert 'loadSourceFile,' in snapshot_store
     assert 'await BrowserSnapshots?.saveSourceFile?.(fileRecord.sourceStorageId,file)' in app
+    assert 'BrowserSnapshots.page?.(state.resultBrowserSnapshotId,{offset:0,limit:resultPageSize})' in app
+    assert 'if(state.resultBrowserSnapshotId&&BrowserSnapshots)' in app
+    assert 'if(state.resultBrowserSnapshotId&&!state.devices.length&&BrowserSnapshots)' not in app
+    assert 'BrowserSnapshots.page(state.resultBrowserSnapshotId,{query:' in app
+    assert 'state.devices.length=0;state.invalid.length=0;state.devices=firstPage;state.invalid=invalidPreview;' in app
+    assert 'Полный результат сохранён порциями в IndexedDB; в памяти оставлена только текущая страница.' in app
+    assert 'function createPageCollector(options = {})' in snapshot_store
+    assert 'async function page(id, options = {})' in snapshot_store
     assert 'await restoreWorkspaceSourceFiles();' in app
     assert 'let previousDevices=state.devices||[];' in app
     assert 'snapshotPreviewRows: 500' in memory_guard
@@ -1439,7 +1447,8 @@ def test_history_screen_uses_backend_statistics():
     assert 'new Date(s.createdAt).toLocaleString("ru-RU")' not in app
     assert 'api("/snapshots/open",{method:"POST",body:JSON.stringify({id,snapshots:state.snapshots,compactResult:true,resultPageSize})})' in app
     assert 'state.resultSnapshotId=String(reference.snapshotId||id);' in app
-    assert 'state.devices=opened.resultPage?.items||opened.devices||[];' in app
+    assert 'const openedItems=opened.resultPage?.items||opened.devices||[];' in app
+    assert 'state.devices=openedItems.filter((item)=>item?.valid!==false&&!item?.invalid);' in app
     assert 's=await api("/snapshots/"+encodeURIComponent(id))' not in app
     assert 'let s=state.snapshots.find((x)=>x.id===id)' not in app
     assert 'structuredClone(s.devices||[])' not in app
@@ -2021,7 +2030,7 @@ def test_role_aware_guide_is_a_separate_working_view():
         'data-guide-tab="large-files"',
         'data-guide-requires-engineering',
         'id="openGuideFromHelpButton"',
-        '<script src="frontend/guide.js?v=20260722.4"></script>',
+        '<script src="frontend/guide.js?v=20260722.6"></script>',
     ):
         assert marker in html
     for text in (
@@ -2140,7 +2149,7 @@ def test_autonomous_file_database_is_streamed_and_connected_to_workspace_saves()
         'id="openPortableDatabaseButton"',
         'id="createPortableDatabaseButton"',
         'id="portableDatabaseInput"',
-        '<script src="frontend/portable-database.js?v=20260722.4"></script>',
+        '<script src="frontend/portable-database.js?v=20260722.6"></script>',
     ):
         assert marker in html
     for marker in (
@@ -2168,7 +2177,7 @@ def test_browser_only_mode_uses_a_structured_local_folder():
     for marker in (
         'id="chooseLocalFolderButton"',
         'id="localFolderStatus"',
-        '<script src="frontend/local-folder-store.js?v=20260722.4"></script>',
+        '<script src="frontend/local-folder-store.js?v=20260722.6"></script>',
         "Выбрать локальную папку",
     ):
         assert marker in html
