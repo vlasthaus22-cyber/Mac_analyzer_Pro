@@ -1,6 +1,6 @@
 param(
     [string]$OutputDirectory = "",
-    [string]$Version = "v1.0.7",
+    [string]$Version = "v1.0.16",
     [switch]$ExcludeRuntimeData
 )
 
