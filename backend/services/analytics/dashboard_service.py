@@ -27,7 +27,7 @@ def normalize_dashboard_settings(settings: dict[str, Any] | None = None) -> dict
         refresh_interval = 60
     change_mode = _text(settings.get("changeMode")).lower()
     if change_mode not in {"period", "snapshots"}:
-        change_mode = "period"
+        change_mode = "snapshots"
     return {
         "vendor": _text(settings.get("vendor")),
         "room": _text(settings.get("room")),
@@ -78,14 +78,20 @@ def _snapshot_id(snapshot: dict[str, Any], index: int) -> str:
     return _text(snapshot.get("id") or snapshot.get("snapshotId") or snapshot.get("name") or f"snapshot-{index + 1}")
 
 
-def dashboard_snapshot_options(snapshots: list[dict[str, Any]]) -> list[dict[str, str]]:
+def dashboard_snapshot_options(snapshots: list[dict[str, Any]]) -> list[dict[str, Any]]:
     options = []
     for index, snapshot in enumerate(snapshots):
         if not isinstance(snapshot, dict):
             continue
         snapshot_id = _snapshot_id(snapshot, index)
         date = _text(snapshot.get("fileCreatedAt") or snapshot.get("createdAt") or snapshot.get("created_at"))
-        options.append({"id": snapshot_id, "name": _text(snapshot.get("name") or snapshot_id), "date": date})
+        options.append({
+            "id": snapshot_id,
+            "name": _text(snapshot.get("name") or snapshot_id),
+            "date": date,
+            "order": snapshot.get("snapshotOrder") or snapshot.get("snapshot_order") or 0,
+        })
+    options.sort(key=lambda item: (int(item.get("order") or 0), item.get("date", ""), item["id"]))
     return options
 
 
@@ -116,9 +122,10 @@ def _change_row(
 
 def analyze_dashboard_changes(
     snapshots: list[dict[str, Any]], movements: list[dict[str, Any]], settings: dict[str, Any],
+    snapshot_options: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     normalized = normalize_dashboard_settings(settings)
-    options = dashboard_snapshot_options(snapshots)
+    options = dashboard_snapshot_options(snapshot_options if snapshot_options is not None else snapshots)
     changes: list[dict[str, str]] = []
     selected_from = normalized["changeDateFrom"]
     selected_to = normalized["changeDateTo"]
@@ -126,11 +133,11 @@ def analyze_dashboard_changes(
     comparison_id = normalized["comparisonSnapshotId"]
 
     if normalized["changeMode"] == "snapshots" and len(snapshots) >= 2:
-        baseline_id = baseline_id or options[0]["id"]
+        baseline_id = baseline_id or options[-2]["id"]
         comparison_id = comparison_id or options[-1]["id"]
         indexed = {_snapshot_id(snapshot, index): snapshot for index, snapshot in enumerate(snapshots) if isinstance(snapshot, dict)}
-        baseline = indexed.get(baseline_id, snapshots[0])
-        comparison = indexed.get(comparison_id, snapshots[-1])
+        baseline = indexed.get(baseline_id) or indexed.get(options[-2]["id"]) or snapshots[-2]
+        comparison = indexed.get(comparison_id) or indexed.get(options[-1]["id"]) or snapshots[-1]
         before_devices = {_mac(device): device for device in baseline.get("devices", []) if isinstance(device, dict) and _mac(device)}
         after_devices = {_mac(device): device for device in comparison.get("devices", []) if isinstance(device, dict) and _mac(device)}
         changed_at = _text(comparison.get("fileCreatedAt") or comparison.get("createdAt") or comparison.get("created_at"))
@@ -312,9 +319,36 @@ def build_dashboard_payload(
     settings: dict[str, Any] | None = None,
     movements: list[dict[str, Any]] | None = None,
     history_devices: list[dict[str, Any]] | None = None,
+    change_snapshots: list[dict[str, Any]] | None = None,
+    snapshot_options: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     normalized = normalize_dashboard_settings(settings)
-    classified = classify_dashboard_devices(devices, snapshots, movements, history_devices)
+    comparison_snapshots = change_snapshots if change_snapshots is not None else (snapshots or [])
+    change_analysis = analyze_dashboard_changes(
+        comparison_snapshots,
+        movements or [],
+        normalized,
+        snapshot_options=snapshot_options,
+    )
+    comparison_movements = [
+        {
+            "mac": item.get("mac"),
+            "type": item.get("type"),
+            "field": item.get("field"),
+            "before": item.get("before"),
+            "after": item.get("after"),
+            "changedAt": item.get("date"),
+            "source": item.get("source"),
+        }
+        for item in change_analysis.get("changes", [])
+    ]
+    use_snapshot_comparison = normalized["changeMode"] == "snapshots" and len(comparison_snapshots) >= 2
+    classified = classify_dashboard_devices(
+        devices,
+        comparison_snapshots if use_snapshot_comparison else snapshots,
+        comparison_movements if use_snapshot_comparison else movements,
+        history_devices,
+    )
     current_scope = filter_dashboard_devices(classified["all"], normalized)
     changed_scope = filter_dashboard_devices(classified["changed"], normalized)
     missing_scope = filter_dashboard_devices(classified["missing"], normalized)
@@ -329,7 +363,6 @@ def build_dashboard_payload(
     chart_payload = build_chart_payload(filtered, snapshots or [])
     vendors = sorted({_text(device.get("vendor")) for device in devices if _text(device.get("vendor"))})
     rooms = sorted({_text(device.get("room")) for device in devices if _text(device.get("room"))})
-    change_analysis = analyze_dashboard_changes(snapshots or [], classified["movements"], normalized)
     return {
         "settings": normalized,
         "filters": {"vendors": vendors, "rooms": rooms},

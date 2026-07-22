@@ -97,7 +97,7 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
 
     assert 'id="fileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
-    assert '<script src="frontend/memory-guard.js?v=20260722.7"></script>' in html
+    assert '<script src="frontend/memory-guard.js?v=20260722.9"></script>' in html
     assert '<script src="frontend/file-readers.js?v=20260722.8"></script>' in html
     assert '<meta name="application-build" content="2026.07.22.8">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
@@ -953,15 +953,15 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260722.8"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260722.9"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
     assert 'async function storeLocalSnapshot(' in app
     assert 'devices:rows.slice(0,previewLimit)' in app
-    assert 'const rowBudget=MemoryGuard.limits.browserSnapshotRows||300000,keepIds=[];' in app
+    assert 'const rowBudget=MemoryGuard.limits.browserSnapshotRows||1000000,keepIds=[];' in app
     assert 'let remainingRows=Math.max(0,rowBudget-rows.length);' in app
     assert 'await BrowserSnapshots.prune(keepIds);' in app
     assert app.index('await BrowserSnapshots.prune(keepIds);') < app.index('await BrowserSnapshots.save(record,(percent)=>')
-    assert 'browserSnapshotRows: 300_000' in memory_guard
+    assert 'browserSnapshotRows: 1_000_000' in memory_guard
     assert 'const snapshotStore = "snapshots";' in snapshot_store
     assert 'const databaseVersion = 5;' in snapshot_store
     assert 'const enrichmentRowStore = "enrichmentRows";' in snapshot_store
@@ -970,6 +970,10 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert 'updatedAt: Date.now()' in snapshot_store
     assert 'await BrowserSnapshots?.pruneEnrichmentRows?.().catch(()=>0);' in app
     assert 'async function saveEnrichmentSnapshot(jobId, snapshot, invalid = [], onProgress = () => {})' in snapshot_store
+    assert 'async function aggregate(id, options = {})' in snapshot_store
+    assert 'async function compareSnapshots(baselineId, comparisonId, options = {})' in snapshot_store
+    assert 'if (field === "switchIp" || field === "switchPort") result.critical += 1;' in snapshot_store
+    assert 'critical: result.critical,' in snapshot_store
     assert 'async function localAnalyzeFilesToSnapshot(fields,strategy,source,createdAt,onProgress=()=>{})' in app
     assert 'local=await localAnalyzeFilesToSnapshot(enrich,strategy,source,sourceCreatedAt' in app
     assert 'const snapshotChunkStore = "snapshotChunks";' in snapshot_store
@@ -1287,7 +1291,7 @@ def test_quality_reports_are_backend_first():
     assert 'reports.map((report)=>' not in app
     assert 'panel.summaryText||"0 devices' not in app
     assert 'await renderQualityReportsHistory();' in app
-    assert 'renderQualityReportsHistory();refreshAnalyticsReport();}' in app
+    assert 'renderQualityReportsHistory();refreshAnalyticsReport();' in app
     assert 'bars("#qualityInsights",insights)' not in app
     assert 'const duplicateCount=state.devices.length-new Set(state.devices.map((item)=>item.mac)).size' not in app
     assert 'Math.min(100,Math.max(5,issue.count/Math.max(1,summary.devices||1)*100))' not in app
@@ -1599,7 +1603,8 @@ def test_oui_prefix_lengths_and_dashboard_render_locally():
         'column==="oui"?formatOuiValue(item.mac||item.macFormatted||item.oui)',
         'if(key==="oui")return formatOuiValue(device.mac||device.macFormatted||device.oui);',
         "state.devices.forEach((device)=>{device.oui=formatOuiValue(device.mac||device.macFormatted||device.oui);});",
-        "async function renderAnalytics(){applyLocalDashboard(dashboardSettings());",
+        "async function renderAnalytics(){",
+        "loadBrowserDashboardCache(dashboardSettings())",
     ):
         assert marker in app
 
@@ -1941,6 +1946,8 @@ def test_dashboard_change_period_snapshot_drilldown_is_wired_backend_and_local()
     for marker in (
         "function localDashboardChangeAnalysis", "function renderDashboardChanges", "function showDashboardChangesDialog",
         "payload.changeAnalysis", "dashboardChangeSeverity", "applyDashboardChangeRangeButton",
+        "function finalDashboardSnapshots", "function selectLatestDashboardPair", "function loadBrowserDashboardCache",
+        "BrowserSnapshots.compareSnapshots", 'changeMode:"snapshots"',
     ):
         assert marker in app
     assert "function buildFallbackChangeAnalysis" in html

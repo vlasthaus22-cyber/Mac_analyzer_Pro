@@ -128,6 +128,46 @@ def test_dashboard_change_analysis_compares_selected_snapshots():
     assert [item["id"] for item in result["snapshotOptions"]] == ["old", "new"]
 
 
+def test_dashboard_uses_previous_and_current_final_snapshots_for_all_status_metrics():
+    before = {
+        "id": "final-before", "name": "Анализ: before.xlsx", "snapshotOrder": 10,
+        "createdAt": "2026-07-01T08:00:00Z", "devices": [
+            {"mac": "AABBCC000001", "vendor": "Cisco", "model": "A", "room": "101"},
+            {"mac": "AABBCC000099", "vendor": "Juniper", "model": "X", "room": "103"},
+        ],
+    }
+    current = {
+        "id": "final-current", "name": "Анализ: current.xlsx", "snapshotOrder": 11,
+        "createdAt": "2026-07-12T08:00:00Z", "devices": [
+            {"mac": "AABBCC000001", "vendor": "Cisco", "model": "B", "room": "101"},
+            {"mac": "AABBCC000002", "vendor": "Apple", "model": "C", "room": "102"},
+        ],
+    }
+    metadata = [
+        {key: value for key, value in before.items() if key != "devices"},
+        {key: value for key, value in current.items() if key != "devices"},
+    ]
+    payload = build_dashboard_payload(
+        current["devices"],
+        metadata,
+        {"changeMode": "snapshots"},
+        movements=[{"mac": "FFFFFFFFFFFF", "field": "model", "before": "old", "after": "noise"}],
+        change_snapshots=[before, current],
+        snapshot_options=metadata,
+    )
+
+    assert payload["changeAnalysis"]["baselineSnapshotId"] == "final-before"
+    assert payload["changeAnalysis"]["comparisonSnapshotId"] == "final-current"
+    assert payload["metrics"]["total"] == 2
+    assert payload["metrics"]["changed"] == 2
+    assert payload["metrics"]["missing"] == 1
+    assert payload["metrics"]["unchanged"] == 0
+    assert payload["changeAnalysis"]["summary"] == {
+        "added": 1, "removed": 1, "modified": 1, "critical": 1, "total": 3,
+    }
+    assert {item["mac"] for item in payload["devices"]} == {"AABBCC000001", "AABBCC000002"}
+
+
 if __name__ == "__main__":
     test_dashboard_filters_metrics_and_export()
     test_dashboard_metrics_payload_counts_known_and_invalid_records()
@@ -135,4 +175,5 @@ if __name__ == "__main__":
     test_dashboard_png_export_contains_real_image_and_expected_dimensions()
     test_dashboard_change_analysis_filters_period_and_marks_critical_network_move()
     test_dashboard_change_analysis_compares_selected_snapshots()
+    test_dashboard_uses_previous_and_current_final_snapshots_for_all_status_metrics()
     print("dashboard service test passed")

@@ -34,7 +34,7 @@
   const engineeringPermissionList=["delete:history","delete:snapshots","delete:mappings","delete:tasks","delete:ip-mappings","delete:api-cache","write:settings","write:migration"];
   const engineeringPermissionLabels={"delete:history":"Удаление истории","delete:snapshots":"Удаление снимков","delete:mappings":"Удаление справочников","delete:tasks":"Управление задачами","delete:ip-mappings":"Удаление IP-маппинга","delete:api-cache":"Очистка API-кэша","write:settings":"Изменение настроек","write:migration":"Миграция Python/SQLite"};
   const engineeringOnlyViews=new Set(["workspace","single","compare","data","automation","settings"]);
-  const empty = () => ({files:[],devices:[],invalid:[],snapshots:[],movementHistory:[],importErrors:[],ipMappings:[],localVendorMappings:{},localModelMappings:{},activeMappingFileId:"",mappingDisplayMode:"name",theme:"light",engineeringMode:false,engineeringToken:"",engineeringExpiresAt:"",engineeringPermissions:[],ouiLength:3,ouiStyle:"plain",vendorDetectorSettings:{enabled:true,useOui3:true,useMac5:true,useText:true,useInference:true,confidenceThreshold:0.6},historyEnrichmentSettings:{enabled:true,priorityHistory:true,useOuiMatch:true,useMac5Match:true},externalApiSettings:{enabled:false,provider:"macvendors",endpoint:"",rateLimit:25,cacheTtlDays:30,onlyUnknown:true},dashboardSettings:{vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true},autoRefresh:true,refreshInterval:60,changeMode:"period",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},customColumns:[],customColumnMappings:{},columnWidths:{...defaultColumnWidths},visibleColumns:["macFormatted","oui","vendor","model","ip","address","room","switchIp","switchPort","source"],columnOrder:["macFormatted","oui","vendor","model","ip","address","room","switchIp","switchPort","source"],resultSnapshotId:"",resultBrowserSnapshotId:"",resultBrowserSnapshotDirty:false,resultDeviceCount:0,resultInvalidCount:0,resultSummary:null,lastAnalysis:null});
+  const empty = () => ({files:[],devices:[],invalid:[],snapshots:[],movementHistory:[],importErrors:[],ipMappings:[],localVendorMappings:{},localModelMappings:{},activeMappingFileId:"",mappingDisplayMode:"name",theme:"light",engineeringMode:false,engineeringToken:"",engineeringExpiresAt:"",engineeringPermissions:[],ouiLength:3,ouiStyle:"plain",vendorDetectorSettings:{enabled:true,useOui3:true,useMac5:true,useText:true,useInference:true,confidenceThreshold:0.6},historyEnrichmentSettings:{enabled:true,priorityHistory:true,useOuiMatch:true,useMac5Match:true},externalApiSettings:{enabled:false,provider:"macvendors",endpoint:"",rateLimit:25,cacheTtlDays:30,onlyUnknown:true},dashboardSettings:{vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true},autoRefresh:true,refreshInterval:60,changeMode:"snapshots",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},customColumns:[],customColumnMappings:{},columnWidths:{...defaultColumnWidths},visibleColumns:["macFormatted","oui","vendor","model","ip","address","room","switchIp","switchPort","source"],columnOrder:["macFormatted","oui","vendor","model","ip","address","room","switchIp","switchPort","source"],resultSnapshotId:"",resultBrowserSnapshotId:"",resultBrowserSnapshotDirty:false,resultDeviceCount:0,resultInvalidCount:0,resultSummary:null,lastAnalysis:null});
   let state;
   try { const old = JSON.parse(localStorage.getItem(key)); state = {...empty(),...old}; } catch { state = empty(); }
   state.importErrors=[];
@@ -398,6 +398,7 @@
   let dashboardFilteredDevices = null;
   let dashboardRefreshTimer = null;
   let dashboardChangeAnalysis = {summary:{total:0,critical:0,added:0,removed:0,modified:0},changes:[],snapshotOptions:[]};
+  let browserDashboardCache = null;
   let historyPanelPromise = null;
   let analyticsPanelPromise = null;
   let contextTableRow = null;
@@ -412,6 +413,7 @@
   const workspacePreviewDataRows = 100;
   function releaseTransientAnalysisMemory(){
     dashboardFilteredDevices=null;
+    browserDashboardCache=null;
     dashboardChangeAnalysis={summary:{total:0,critical:0,added:0,removed:0,modified:0},changes:[],snapshotOptions:[]};
     historyPanelPromise=null;
     analyticsPanelPromise=null;
@@ -829,13 +831,13 @@
         if(!device.model&&model){device.model=model;changed=true;}
         return changed;
       });
-      const snapshotId=crypto.randomUUID(),name="Анализ: "+source,rowBudget=MemoryGuard.limits.browserSnapshotRows||300000,keepIds=[];
+      const snapshotId=crypto.randomUUID(),name="Анализ: "+source,savedAt=new Date().toISOString(),rowBudget=MemoryGuard.limits.browserSnapshotRows||1000000,keepIds=[];
       let remainingRows=Math.max(0,rowBudget-Math.max(0,storedRows));
       for(const item of state.snapshots.filter((entry)=>entry.browserStored)){const count=Math.max(0,Number(item.deviceCount||0));if(count<=remainingRows){keepIds.push(item.id);remainingRows-=count;}else item.browserStored=false;}
       await BrowserSnapshots.prune(keepIds);
-      const metadata=await BrowserSnapshots.saveEnrichmentSnapshot(jobId,{id:snapshotId,name,source,createdAt,kind:"analysis",signature:"stream:"+snapshotId},invalid,(count)=>onProgress(82+Math.min(14,Math.round(count/Math.max(1,storedRows)*14)),`Запись результата в локальную базу: ${count.toLocaleString("ru-RU")}`));
+      const metadata=await BrowserSnapshots.saveEnrichmentSnapshot(jobId,{id:snapshotId,name,source,createdAt,savedAt,kind:"analysis",signature:"stream:"+snapshotId},invalid,(count)=>onProgress(82+Math.min(14,Math.round(count/Math.max(1,storedRows)*14)),`Запись результата в локальную базу: ${count.toLocaleString("ru-RU")}`));
       const page=await BrowserSnapshots.page(snapshotId,{offset:0,limit:resultPageSize});
-      const snapshotMetadata={id:snapshotId,name,source,createdAt,deviceCount:Number(metadata.deviceCount||0),invalidCount:Number(metadata.invalidCount||invalidCount),devices:[],signature:metadata.signature,kind:"analysis",browserStored:true,devicesTruncated:true,backendStored:false};
+      const snapshotMetadata={id:snapshotId,name,source,createdAt,savedAt,deviceCount:Number(metadata.deviceCount||0),invalidCount:Number(metadata.invalidCount||invalidCount),devices:[],signature:metadata.signature,kind:"analysis",browserStored:true,devicesTruncated:true,backendStored:false};
       state.snapshots.unshift(snapshotMetadata);state.snapshots=state.snapshots.slice(0,25);
       state.resultSnapshotId="";state.resultBrowserSnapshotId=snapshotId;state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=snapshotMetadata.deviceCount;state.resultInvalidCount=invalidCount;state.resultSummary=page?.summary||null;
       return{streamed:true,devices:(page?.items||[]).filter((item)=>item?.valid!==false&&!item?.invalid),invalid:(page?.items||[]).filter((item)=>item?.valid===false||item?.invalid),invalidCount,deviceCount:snapshotMetadata.deviceCount,summary:page?.summary||null};
@@ -850,12 +852,12 @@
   function localResultsTable(){const columns=renderLocalResultsHeader(),query=$("#searchInput")?.value.trim().toLowerCase()||"",vendor=$("#vendorFilter")?.value||"",vendors=new Set();for(const item of state.devices||[]){if(item.vendor)vendors.add(item.vendor);}const pageData=MemoryGuard.collectPage(state.devices,item=>(!vendor||item.vendor===vendor)&&(!query||Object.values(item).join(" ").toLowerCase().includes(query)),resultPage,resultPageSize);resultPage=pageData.page;$("#vendorFilter").innerHTML='<option value="">Все вендоры</option>'+Array.from(vendors).sort().map(v=>`<option value="${esc(v)}" ${v===vendor?"selected":""}>${esc(v)}</option>`).join("");$("#resultCount").textContent=pageData.total+" записей";updateResultPager(pageData.total,pageData.page,pageData.pages);return pageData.items.length?pageData.items.map(item=>`<tr data-mac="${esc(item.mac||normalize(item.macFormatted)||"")}">${columns.map(column=>`<td>${esc(column==="oui"?formatOuiValue(item.mac||item.macFormatted||item.oui):item[column]||"")}</td>`).join("")}</tr>`).join(""):'<tr><td colspan="'+columns.length+'" class="empty-state">Нет записей.</td></tr>';}
   function devicesSignature(devices=[]){return MemoryGuard.datasetSignature(devices,["vendor","model","ip","address","room","switchIp","switchPort"],normalize);}
   async function storeLocalSnapshot(name,source,devices,invalid=[],createdAt=new Date().toISOString(),kind="analysis"){
-    const rows=Array.isArray(devices)?devices:[],snapshotId=crypto.randomUUID(),signature=devicesSignature(rows);
-    const record={id:snapshotId,name,source,createdAt,deviceCount:rows.length,devices:rows,invalid:Array.isArray(invalid)?invalid:[],signature,kind};
+    const rows=Array.isArray(devices)?devices:[],snapshotId=crypto.randomUUID(),signature=devicesSignature(rows),savedAt=new Date().toISOString();
+    const record={id:snapshotId,name,source,createdAt,savedAt,deviceCount:rows.length,devices:rows,invalid:Array.isArray(invalid)?invalid:[],signature,kind};
     let browserStored=false;
     try{
       if(!BrowserSnapshots)throw new Error("Хранилище локальных снимков недоступно");
-      const rowBudget=MemoryGuard.limits.browserSnapshotRows||300000,keepIds=[];
+      const rowBudget=MemoryGuard.limits.browserSnapshotRows||1000000,keepIds=[];
       let remainingRows=Math.max(0,rowBudget-rows.length);
       for(const item of state.snapshots.filter((entry)=>entry.browserStored)){
         const rowsInSnapshot=Math.max(0,Number(item.deviceCount||0));
@@ -867,7 +869,7 @@
       browserStored=true;
     }catch{}
     const previewLimit=MemoryGuard.limits.snapshotPreviewRows||500;
-    const metadata={id:snapshotId,name,source,createdAt,deviceCount:rows.length,devices:rows.slice(0,previewLimit),invalidCount:record.invalid.length,signature,kind,browserStored,devicesTruncated:rows.length>previewLimit,backendStored:false};
+    const metadata={id:snapshotId,name,source,createdAt,savedAt,deviceCount:rows.length,devices:rows.slice(0,previewLimit),invalidCount:record.invalid.length,signature,kind,browserStored,devicesTruncated:rows.length>previewLimit,backendStored:false};
     state.snapshots.unshift(metadata);
     state.snapshots=state.snapshots.slice(0,25);
     if(browserStored&&kind!=="before-analysis"){state.resultSnapshotId="";state.resultBrowserSnapshotId=snapshotId;state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=rows.length;state.resultInvalidCount=record.invalid.length;state.resultSummary=null;}
@@ -1357,7 +1359,7 @@
       progress.innerHTML=serverResult.progressHtml||'<p class="muted">Обогащение завершено.</p>';
       updateProcess(processId,90,"Сохранение снимка и истории изменений");
       const snapshotResult = serverResult.snapshot||await api("/snapshots", {method:"POST", body:JSON.stringify(currentDevicePayload({name:"Анализ: "+source,source,createdAt:sourceCreatedAt}))});
-      state.snapshots.unshift({id:snapshotResult.id,name:snapshotResult.name||"Анализ: "+source,source,createdAt:snapshotResult.createdAt||sourceCreatedAt,deviceCount:snapshotResult.deviceCount??state.devices.length,devices:[],backendStored:true});
+      state.snapshots.unshift({id:snapshotResult.id,name:snapshotResult.name||"Анализ: "+source,source,createdAt:snapshotResult.createdAt||sourceCreatedAt,savedAt:snapshotResult.savedAt||new Date().toISOString(),snapshotOrder:snapshotResult.snapshotOrder||0,deviceCount:snapshotResult.deviceCount??state.devices.length,devices:[],kind:"analysis",backendStored:true});
       $("#storageStatus").textContent = "SQLite подключена";
     } catch(error) {
       if(error.name==="AbortError"){progress.innerHTML='<p class="muted">Обогащение отменено.</p>';toast("Обогащение отменено.");cancelProcess(processId,"Обогащение отменено пользователем");cancelButton.disabled=true;return;}
@@ -1413,6 +1415,8 @@
     }
     markEnrichmentFilesConsumed();
     state.snapshots=state.snapshots.slice(0,25);
+    selectLatestDashboardPair();
+    browserDashboardCache=null;
     save({immediate:true});await flushBrowserStateSave().catch(()=>{});await flushPortableDatabaseSave().catch(()=>{});persistAutosave("enrichment-analysis").catch(()=>{});renderAll();toast("Анализ завершён: "+currentDeviceCount()+" устройств.");
     finishProcess(processId,"Обогащение завершено: "+currentDeviceCount()+" устройств");
   }
@@ -1664,8 +1668,8 @@
     }
   }
   function normalizeDashboardSettings(settings={}){
-    const defaults={vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true},autoRefresh:true,refreshInterval:60,changeMode:"period",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},source=settings&&typeof settings==="object"?settings:{};
-    const changeMode=source.changeMode==="snapshots"?"snapshots":"period";
+    const defaults={vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true},autoRefresh:true,refreshInterval:60,changeMode:"snapshots",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},source=settings&&typeof settings==="object"?settings:{};
+    const changeMode=source.changeMode==="period"?"period":"snapshots";
     return{...defaults,...source,changeMode,visibleCards:{...defaults.visibleCards,...(source.visibleCards||{})},visibleCharts:{...defaults.visibleCharts,...(source.visibleCharts||{})},autoRefresh:source.autoRefresh!==false,refreshInterval:Math.max(10,Math.min(300,Number(source.refreshInterval||60)))};
   }
   function configureDashboardAutoRefresh(settings=state.dashboardSettings){
@@ -1712,14 +1716,19 @@
     return{dynamics:Object.entries(daily).sort((a,b)=>a[0].localeCompare(b[0])).slice(-limit),vendors:tally(displayed),fields:top(fields),missing:tally(missing)};
   }
   function dashboardSnapshotId(snapshot,index){return String(snapshot?.id||snapshot?.snapshotId||snapshot?.name||`snapshot-${index+1}`);}
-  function dashboardSnapshotOptions(){return(state.snapshots||[]).map((snapshot,index)=>({id:dashboardSnapshotId(snapshot,index),name:String(snapshot.name||dashboardSnapshotId(snapshot,index)),date:String(snapshot.fileCreatedAt||snapshot.createdAt||snapshot.created_at||"")}));}
+  function finalDashboardSnapshots(){
+    const all=(state.snapshots||[]).map((snapshot,index)=>({snapshot,index})),final=all.filter(({snapshot})=>snapshot?.kind==="analysis"||String(snapshot?.name||"").toLowerCase().startsWith("анализ:")),selected=final.length>=2?final:all;
+    return selected.sort((left,right)=>{const order=(item)=>Number(item.snapshot?.snapshotOrder||0)||Date.parse(item.snapshot?.savedAt||"")||((state.snapshots||[]).length-item.index);return order(left)-order(right);}).map(({snapshot})=>snapshot);
+  }
+  function dashboardSnapshotOptions(){return finalDashboardSnapshots().map((snapshot,index)=>({id:dashboardSnapshotId(snapshot,index),name:String(snapshot.name||dashboardSnapshotId(snapshot,index)),date:String(snapshot.fileCreatedAt||snapshot.createdAt||snapshot.created_at||""),savedAt:String(snapshot.savedAt||"")}));}
+  function selectLatestDashboardPair(){const options=dashboardSnapshotOptions();if(options.length<2)return false;state.dashboardSettings=normalizeDashboardSettings({...state.dashboardSettings,changeMode:"snapshots",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:options.at(-2).id,comparisonSnapshotId:options.at(-1).id});return true;}
   function dashboardChangeSeverity(type,field){if(type==="removed"||["switchIp","switchPort","switch_ip","switch_port"].includes(field))return"critical";if(["ip","address","room"].includes(field))return"high";if(["vendor","model"].includes(field))return"medium";return"low";}
   function localDashboardChangeAnalysis(settings=dashboardSettings()){
-    const fieldLabels={vendor:"Производитель",model:"Модель",ip:"IP-адрес",address:"Адрес",room:"Помещение",switchIp:"Коммутатор",switchPort:"Порт",device:"Устройство"},typeLabels={added:"Добавлено",removed:"Удалено",modified:"Изменено"},options=dashboardSnapshotOptions(),changes=[];
+    const fieldLabels={vendor:"Производитель",model:"Модель",ip:"IP-адрес",address:"Адрес",room:"Помещение",switchIp:"Коммутатор",switchPort:"Порт",device:"Устройство"},typeLabels={added:"Добавлено",removed:"Удалено",modified:"Изменено"},snapshotRows=finalDashboardSnapshots(),options=dashboardSnapshotOptions(),changes=[];
     const row=(mac,date,type,field="device",before="",after="",source="history")=>{field=({switch_ip:"switchIp",switch_port:"switchPort"})[field]||field;changes.push({mac,macFormatted:formatMac(mac),date,type,typeLabel:typeLabels[type]||"Изменено",field,fieldLabel:fieldLabels[field]||field,before:String(before||"-"),after:String(after||"-"),source:String(source||"history"),severity:dashboardChangeSeverity(type,field)});};
-    let baselineSnapshotId=settings.baselineSnapshotId||options[0]?.id||"",comparisonSnapshotId=settings.comparisonSnapshotId||options.at(-1)?.id||"",dateFrom=settings.changeDateFrom||"",dateTo=settings.changeDateTo||"";
-    if(settings.changeMode==="snapshots"&&(state.snapshots||[]).length>=2){
-      const byId=new Map(state.snapshots.map((snapshot,index)=>[dashboardSnapshotId(snapshot,index),snapshot])),baseline=byId.get(baselineSnapshotId)||state.snapshots[0],comparison=byId.get(comparisonSnapshotId)||state.snapshots.at(-1),beforeMap=new Map((baseline.devices||[]).map((device)=>[normalize(device.mac||device.macFormatted),device]).filter(([mac])=>mac)),afterMap=new Map((comparison.devices||[]).map((device)=>[normalize(device.mac||device.macFormatted),device]).filter(([mac])=>mac)),date=comparison.fileCreatedAt||comparison.createdAt||comparison.created_at||"";
+    let baselineSnapshotId=settings.baselineSnapshotId||options.at(-2)?.id||"",comparisonSnapshotId=settings.comparisonSnapshotId||options.at(-1)?.id||"",dateFrom=settings.changeDateFrom||"",dateTo=settings.changeDateTo||"";
+    if(settings.changeMode==="snapshots"&&snapshotRows.length>=2){
+      const byId=new Map(snapshotRows.map((snapshot,index)=>[dashboardSnapshotId(snapshot,index),snapshot])),baseline=byId.get(baselineSnapshotId)||snapshotRows.at(-2),comparison=byId.get(comparisonSnapshotId)||snapshotRows.at(-1),beforeMap=new Map((baseline.devices||[]).map((device)=>[normalize(device.mac||device.macFormatted),device]).filter(([mac])=>mac)),afterMap=new Map((comparison.devices||[]).map((device)=>[normalize(device.mac||device.macFormatted),device]).filter(([mac])=>mac)),date=comparison.fileCreatedAt||comparison.createdAt||comparison.created_at||"";
       afterMap.forEach((device,mac)=>{if(!beforeMap.has(mac))row(mac,date,"added","device","",device.source||"Устройство","snapshot");});
       beforeMap.forEach((device,mac)=>{if(!afterMap.has(mac))row(mac,date,"removed","device",device.source||"Устройство","","snapshot");});
       const fields=["vendor","model","ip","address","room","switchIp","switchPort"];
@@ -1730,10 +1739,36 @@
     }
     changes.sort((a,b)=>String(b.date).localeCompare(String(a.date)));const summary={added:changes.filter((item)=>item.type==="added").length,removed:changes.filter((item)=>item.type==="removed").length,modified:changes.filter((item)=>item.type==="modified").length,critical:changes.filter((item)=>item.severity==="critical").length,total:changes.length};return{mode:settings.changeMode,dateFrom,dateTo,baselineSnapshotId,comparisonSnapshotId,snapshotOptions:options,summary,changes};
   }
+  function browserSnapshotChangeAnalysis(comparison,options=[]){
+    if(!comparison)return{mode:"snapshots",baselineSnapshotId:"",comparisonSnapshotId:"",snapshotOptions:options,summary:{added:0,removed:0,modified:0,critical:0,total:0},changes:[]};
+    const fieldLabels={vendor:"Производитель",model:"Модель",ip:"IP-адрес",address:"Адрес",room:"Помещение",switchIp:"Коммутатор",switchPort:"Порт",device:"Устройство"},typeLabels={added:"Добавлено",removed:"Удалено",modified:"Изменено"};
+    const changes=(comparison.changes||[]).map((item)=>{const field=item.field||"device",type=item.type||"modified";return{...item,date:item.changedAt||comparison.changedAt||"",macFormatted:formatMac(item.mac),typeLabel:typeLabels[type]||"Изменено",fieldLabel:fieldLabels[field]||field,before:String(item.before||"-"),after:String(item.after||"-"),severity:dashboardChangeSeverity(type,field)};});
+    const raw=comparison.summary||{},summary={added:Number(raw.added||0),removed:Number(raw.removed||0),modified:Number(raw.modified||0),critical:Number(raw.critical??changes.filter((item)=>item.severity==="critical").length),total:Number(raw.total||0),modifiedDevices:Number(raw.modifiedDevices||0),changedDevices:Number(raw.changedDevices||0),unchanged:Number(raw.unchanged||0)};
+    return{mode:"snapshots",baselineSnapshotId:comparison.baselineSnapshotId,comparisonSnapshotId:comparison.comparisonSnapshotId,snapshotOptions:options,summary,changes,fieldCounts:comparison.fieldCounts||[]};
+  }
+  async function loadBrowserDashboardCache(settings=dashboardSettings()){
+    if(!state.resultBrowserSnapshotId||!BrowserSnapshots?.aggregate)return null;
+    const options=dashboardSnapshotOptions(),currentId=state.resultBrowserSnapshotId,currentIndex=options.findIndex((item)=>item.id===currentId),comparisonId=settings.comparisonSnapshotId&&options.some((item)=>item.id===settings.comparisonSnapshotId)?settings.comparisonSnapshotId:currentId,comparisonIndex=options.findIndex((item)=>item.id===comparisonId),baselineId=settings.baselineSnapshotId&&options.some((item)=>item.id===settings.baselineSnapshotId)?settings.baselineSnapshotId:options[Math.max(0,(comparisonIndex>=0?comparisonIndex:currentIndex)-1)]?.id||"";
+    const aggregate=await BrowserSnapshots.aggregate(currentId,{limit:200});if(!aggregate)return null;
+    const comparison=baselineId&&comparisonId&&baselineId!==comparisonId&&BrowserSnapshots.compareSnapshots?await BrowserSnapshots.compareSnapshots(baselineId,comparisonId,{limit:MemoryGuard.limits.movementRows||5000}):null;
+    const changeAnalysis=browserSnapshotChangeAnalysis(comparison,options),roomRows=(aggregate.rooms||[]).map((item)=>({label:item.label,count:item.value,percentOfAssigned:Number((item.value/Math.max(1,aggregate.withRoom)*100).toFixed(1)),percentOfAll:Number((item.value/Math.max(1,aggregate.devices)*100).toFixed(1))}));
+    const report={total:aggregate.devices,vendors:(aggregate.vendors||[]).map((item)=>({label:item.label,count:item.value,percent:Number((item.value/Math.max(1,aggregate.devices)*100).toFixed(1))})),models:(aggregate.models||[]).map((item)=>({label:item.label,count:item.value,percent:Number((item.value/Math.max(1,aggregate.devices)*100).toFixed(1))})),rooms:roomRows,roomOccupancy:{assignedDevices:aggregate.withRoom,unassignedDevices:Math.max(0,aggregate.devices-aggregate.withRoom),assignedPercent:Number((aggregate.withRoom/Math.max(1,aggregate.devices)*100).toFixed(1)),uniqueRooms:aggregate.uniqueRooms,averageDevicesPerRoom:aggregate.uniqueRooms?Number((aggregate.withRoom/aggregate.uniqueRooms).toFixed(1)):0,mostOccupied:roomRows[0]||null,rooms:roomRows},coverage:{uniqueVendors:aggregate.uniqueVendors,uniqueModels:aggregate.uniqueModels,address:{count:aggregate.withAddress,percent:Number((aggregate.withAddress/Math.max(1,aggregate.devices)*100).toFixed(1))},room:{count:aggregate.withRoom,percent:Number((aggregate.withRoom/Math.max(1,aggregate.devices)*100).toFixed(1))},ip:{count:aggregate.withIp,percent:Number((aggregate.withIp/Math.max(1,aggregate.devices)*100).toFixed(1))},switch:{count:aggregate.withSwitch,percent:Number((aggregate.withSwitch/Math.max(1,aggregate.devices)*100).toFixed(1))}}};
+    report.reportText=["=== АНАЛИТИКА ПО ФИНАЛЬНОМУ ОБОГАЩЁННОМУ ФАЙЛУ ===","",`Всего устройств: ${aggregate.devices}`,`Определено производителей: ${aggregate.known} (${aggregate.knownPercent}%)`,`Не определено: ${aggregate.unknown}`,`Уникальных производителей: ${aggregate.uniqueVendors}`,`Уникальных моделей: ${aggregate.uniqueModels}`,`Помещений: ${aggregate.uniqueRooms}`,`Коммутаторов: ${aggregate.uniqueSwitches}`,"",`С адресом: ${aggregate.withAddress}`,`С помещением: ${aggregate.withRoom}`,`С IP: ${aggregate.withIp}`,`С коммутатором: ${aggregate.withSwitch}`].join("\n");
+    return{aggregate,comparison,changeAnalysis,report,settings:{...settings,changeMode:"snapshots",baselineSnapshotId:baselineId,comparisonSnapshotId:comparisonId}};
+  }
+  function renderBrowserDashboardCache(cache){
+    if(!cache)return false;browserDashboardCache=cache;const {aggregate,comparison,changeAnalysis,report}=cache,settings=cache.settings||dashboardSettings(),summary=changeAnalysis.summary||{},status=settings.status||"all",vendorRows=status==="changed"?(comparison?.changedVendors||[]):status==="missing"?(comparison?.missingVendors||[]):status==="unchanged"?(comparison?.unchangedVendors||[]):aggregate.vendors||[];
+    state.dashboardSettings=normalizeDashboardSettings({...state.dashboardSettings,...settings});dashboardFilteredDevices=state.devices;
+    const optionHtml=(emptyLabel,rows,selected)=>`<option value="">${emptyLabel}</option>`+(rows||[]).map((item)=>`<option value="${esc(item.label)}" ${item.label===selected?"selected":""}>${esc(item.label)}</option>`).join("");$("#dashboardVendorFilter").innerHTML=optionHtml("Все производители",aggregate.vendors,settings.vendor);$("#dashboardRoomFilter").innerHTML=optionHtml("Все помещения",aggregate.rooms,settings.room);
+    const metrics={devices:aggregate.devices,total:aggregate.devices,changed:Number(summary.changedDevices||0),missing:Number(summary.removed||0),unchanged:comparison?Number(summary.unchanged||0):aggregate.devices,vendors:aggregate.uniqueVendors,rooms:aggregate.uniqueRooms,uniqueMacs:aggregate.uniqueMacs,switches:aggregate.uniqueSwitches},date=String(comparison?.changedAt||new Date().toISOString()).slice(0,10),statusCharts={dynamics:comparison?[{label:date,value:Number(summary.total||0)}]:[],vendors:vendorRows,fields:comparison?.fieldCounts||[],missing:comparison?.missingVendors||[]};
+    renderDashboardStatus({metrics,settings:state.dashboardSettings,changeAnalysis,statusCharts});$("#snapshotMetric").textContent=finalDashboardSnapshots().length;$("#uniqueMacMetric").textContent=aggregate.uniqueMacs;$("#switchMetric").textContent=aggregate.uniqueSwitches;$("#roomMetric").textContent=aggregate.uniqueRooms;
+    $("#vendorChart").innerHTML=localChartHtml((aggregate.vendors||[]).slice(0,20).map((item)=>[item.label,item.value]));$("#modelChart").innerHTML=localChartHtml((aggregate.models||[]).slice(0,20).map((item)=>[item.label,item.value]),"Нет данных моделей.");$("#qualityChart").innerHTML=localChartHtml([["Опознано",aggregate.known],["Unknown",aggregate.unknown],["Ошибки",aggregate.invalid]].filter((item)=>item[1]>0));$("#timelineChart").innerHTML=localChartHtml(dashboardSnapshotOptions().slice(-12).map((option)=>{const snapshot=finalDashboardSnapshots().find((item,index)=>dashboardSnapshotId(item,index)===option.id);return[String(option.name||option.date).slice(0,24),Number(snapshot?.deviceCount||0)];}));renderAnalyticsReport(report,"local");
+    const overview=[["Устройств",aggregate.devices],["Производителей",aggregate.uniqueVendors],["Моделей",aggregate.uniqueModels],["Помещений",aggregate.uniqueRooms],["Коммутаторов",aggregate.uniqueSwitches]];$("#backendChartsPanel").innerHTML=localChartHtml(overview);$("#backendStatisticsChart").innerHTML=localChartHtml([["Финальных снимков",finalDashboardSnapshots().length],["Текущих устройств",aggregate.devices],["Изменений",Number(summary.total||0)]]);$("#temporalStatisticsChart").innerHTML=localChartHtml(dashboardSnapshotOptions().slice(-12).map((item)=>[item.date?.slice(0,10)||item.name,Number(finalDashboardSnapshots().find((snapshot,index)=>dashboardSnapshotId(snapshot,index)===item.id)?.deviceCount||0)]),"Снимков пока нет.");$("#clusterChart").innerHTML=localChartHtml((aggregate.rooms||[]).slice(0,12).map((item)=>[item.label,item.value]),"Нет данных для кластеров помещений.");$("#topologyGraph").innerHTML=localChartHtml([["Коммутаторов",aggregate.uniqueSwitches],["Устройств с коммутатором",aggregate.withSwitch],["Без коммутатора",Math.max(0,aggregate.devices-aggregate.withSwitch)]]);$("#qualityInsights").innerHTML=localChartHtml([["Не определён производитель",aggregate.unknown],["Нет IP",Math.max(0,aggregate.devices-aggregate.withIp)],["Нет помещения",Math.max(0,aggregate.devices-aggregate.withRoom)],["Ошибки MAC",aggregate.invalid]].filter((item)=>item[1]>0),"Проблем качества не найдено.");$("#qualityReportsList").innerHTML='<p class="muted">Показан потоковый анализ текущего финального снимка.</p>';return true;
+  }
   function syncDashboardChangeControls(settings=state.dashboardSettings,options=dashboardSnapshotOptions()){
     const mode=$("#dashboardChangeMode");if(mode)mode.value=settings.changeMode||"period";if($("#dashboardChangeDateFrom"))$("#dashboardChangeDateFrom").value=settings.changeDateFrom||"";if($("#dashboardChangeDateTo"))$("#dashboardChangeDateTo").value=settings.changeDateTo||"";
     if($("#dashboardPeriodControls"))$("#dashboardPeriodControls").hidden=(settings.changeMode==="snapshots");if($("#dashboardSnapshotControls"))$("#dashboardSnapshotControls").hidden=(settings.changeMode!=="snapshots");
-    const fill=(selector,selected)=>{const node=$(selector);if(!node)return;node.innerHTML=options.length?options.map((item)=>`<option value="${esc(item.id)}" ${item.id===selected?"selected":""}>${esc(item.name)}${item.date?` · ${esc(item.date.slice(0,10))}`:""}</option>`).join(""):'<option value="">Нет сохранённых выгрузок</option>';};fill("#dashboardBaselineSnapshot",settings.baselineSnapshotId||options[0]?.id||"");fill("#dashboardComparisonSnapshot",settings.comparisonSnapshotId||options.at(-1)?.id||"");
+    const fill=(selector,selected)=>{const node=$(selector);if(!node)return;node.innerHTML=options.length?options.map((item)=>`<option value="${esc(item.id)}" ${item.id===selected?"selected":""}>${esc(item.name)}${item.date?` · ${esc(item.date.slice(0,10))}`:""}</option>`).join(""):'<option value="">Нет сохранённых выгрузок</option>';};fill("#dashboardBaselineSnapshot",settings.baselineSnapshotId||options.at(-2)?.id||"");fill("#dashboardComparisonSnapshot",settings.comparisonSnapshotId||options.at(-1)?.id||"");
   }
   function renderDashboardChanges(analysis={}){dashboardChangeAnalysis=analysis?.changes?analysis:localDashboardChangeAnalysis();const summary=dashboardChangeAnalysis.summary||{},set=(selector,value)=>{if($(selector))$(selector).textContent=String(value||0);};set("#dashboardChangeTotal",summary.total);set("#dashboardCriticalCount",summary.critical);set("#dashboardAddedCount",summary.added);set("#dashboardRemovedCount",summary.removed);set("#dashboardModifiedCount",summary.modified);const label=dashboardChangeAnalysis.mode==="snapshots"?`Выгрузки: ${dashboardChangeAnalysis.baselineSnapshotId||"-"} → ${dashboardChangeAnalysis.comparisonSnapshotId||"-"}`:`Период: ${dashboardChangeAnalysis.dateFrom||"-"} → ${dashboardChangeAnalysis.dateTo||"-"}`;if($("#dashboardChangesPeriodLabel"))$("#dashboardChangesPeriodLabel").textContent=label;syncDashboardChangeControls({...state.dashboardSettings,...dashboardChangeAnalysis},dashboardChangeAnalysis.snapshotOptions||dashboardSnapshotOptions());renderDashboardChangesTable();}
   function renderDashboardChangesTable(){const severity=$("#dashboardChangeSeverityFilter")?.value||"all",query=($("#dashboardChangeSearch")?.value||"").trim().toLowerCase(),labels={critical:"Критическое",high:"Высокое",medium:"Среднее",low:"Низкое"},rows=(dashboardChangeAnalysis.changes||[]).filter((item)=>(severity==="all"||item.severity===severity)&&(!query||[item.macFormatted,item.fieldLabel,item.before,item.after,item.source].some((value)=>String(value||"").toLowerCase().includes(query))));$("#dashboardChangesBody").innerHTML=rows.length?rows.map((item)=>`<tr class="change-row change-${esc(item.severity)}"><td><span class="severity-badge severity-${esc(item.severity)}">${labels[item.severity]||item.severity}</span></td><td>${esc(String(item.date||"-").replace("T"," ").slice(0,19))}</td><td>${esc(item.macFormatted||item.mac)}</td><td>${esc(item.typeLabel)}</td><td>${esc(item.fieldLabel)}</td><td>${esc(item.before)}</td><td>${esc(item.after)}</td><td>${esc(item.source)}</td></tr>`).join(""):'<tr><td colspan="8" class="empty-state">Изменений по выбранным условиям не найдено.</td></tr>';}
@@ -1938,7 +1973,12 @@
       toast("Backend анализ качества данных завершён.");
     }catch(error){analyzeLocalQuality();}
   }
-  async function renderAnalytics(){applyLocalDashboard(dashboardSettings());try{await loadDashboardPayload();}catch(error){applyLocalDashboard(dashboardSettings());}const devices=dashboardDevices();analyticsPanelPromise=loadAnalyticsPanel(devices);renderPrimaryCharts();renderBackendStatistics();renderTemporalStatistics();renderBackendCharts();renderBackendDashboard();renderBackendClusters(devices);renderBackendTopology(devices);renderQualityReportsHistory();refreshAnalyticsReport();}
+  async function renderAnalytics(){
+    if(browserOnlyMode&&state.resultBrowserSnapshotId&&BrowserSnapshots?.aggregate){
+      try{const cache=await loadBrowserDashboardCache(dashboardSettings());if(renderBrowserDashboardCache(cache)){applyDashboardVisibility(state.dashboardSettings);return;}}catch(error){toast("Не удалось построить полный локальный dashboard: "+error.message);}
+    }
+    applyLocalDashboard(dashboardSettings());try{await loadDashboardPayload();}catch(error){applyLocalDashboard(dashboardSettings());}const devices=dashboardDevices();analyticsPanelPromise=loadAnalyticsPanel(devices);renderPrimaryCharts();renderBackendStatistics();renderTemporalStatistics();renderBackendCharts();renderBackendDashboard();renderBackendClusters(devices);renderBackendTopology(devices);renderQualityReportsHistory();refreshAnalyticsReport();
+  }
   function historyQueryParams(query="", from="", to="", limit="500"){
     const params=new URLSearchParams({limit});
     if(query)params.set("query",query);

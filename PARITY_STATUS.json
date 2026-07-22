@@ -158,97 +158,97 @@
         "text": "DashboardWidget и DashboardSettingsDialog: сохранение настроек, фильтры производителя/помещения и статусов"
       },
       {
-        "line": 99,
+        "line": 101,
         "checked": true,
         "text": "Сетевая топология."
       },
       {
-        "line": 100,
+        "line": 102,
         "checked": true,
         "text": "Кластеризация."
       },
       {
-        "line": 101,
+        "line": 103,
         "checked": true,
         "text": "Аналитика одного устройства и модели/префиксы: точный текстовый отчёт"
       },
       {
-        "line": 108,
+        "line": 110,
         "checked": true,
         "text": "Внешнее API-обогащение с выбором устройств и настройкой сервисов:"
       },
       {
-        "line": 111,
+        "line": 113,
         "checked": true,
         "text": "Уведомления: Email, Telegram, Slack, тесты и события анализа."
       },
       {
-        "line": 112,
+        "line": 114,
         "checked": true,
         "text": "Планировщик реальных задач и очереди файлов."
       },
       {
-        "line": 113,
+        "line": 115,
         "checked": true,
         "text": "AI-анализ качества данных."
       },
       {
-        "line": 114,
+        "line": 116,
         "checked": true,
         "text": "Быстрое обогащение больших XLSX: серверный кэш импортов с токенами,"
       },
       {
-        "line": 117,
+        "line": 119,
         "checked": true,
         "text": "Защита больших анализов от Out of Memory: результаты выводятся страницами по 25-1000 строк,"
       },
       {
-        "line": 148,
+        "line": 151,
         "checked": true,
         "text": "Светлая/тёмная тема: отдельный ThemeSelectionDialog, немедленное применение,"
       },
       {
-        "line": 150,
+        "line": 153,
         "checked": true,
         "text": "Инженерный/пользовательский режим как в PyQt: пользователь видит только безопасные"
       },
       {
-        "line": 155,
+        "line": 158,
         "checked": true,
         "text": "Контекстные действия таблиц: выбор строки, копирование MAC/строки/таблицы,"
       },
       {
-        "line": 157,
+        "line": 160,
         "checked": true,
         "text": "Полная справка и горячие клавиши PyQt: Ctrl+O/S/E/A/H/F,"
       },
       {
-        "line": 162,
+        "line": 165,
         "checked": true,
         "text": "Самодиагностика web-системы: read-only проверка файлов frontend/backend,"
       },
       {
-        "line": 166,
+        "line": 169,
         "checked": true,
         "text": "Переносимый Windows-backend: автономная PyInstaller-сборка с frontend,"
       },
       {
-        "line": 175,
+        "line": 178,
         "checked": true,
         "text": "Все пункты выше реализованы."
       },
       {
-        "line": 176,
+        "line": 179,
         "checked": true,
         "text": "Импортированы текущие SQLite-данные Python-версии."
       },
       {
-        "line": 177,
+        "line": 180,
         "checked": true,
         "text": "Все операции проверены через UI и REST API."
       },
       {
-        "line": 178,
+        "line": 181,
         "checked": true,
         "text": "Не осталось функций PyQt, для которых нет web-эквивалента."
       }

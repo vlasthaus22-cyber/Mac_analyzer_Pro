@@ -1356,7 +1356,10 @@ def list_column_preferences() -> dict[str, Any]:
 def snapshot_state_items(limit: int = 100) -> list[dict[str, Any]]:
     safe_limit = max(1, min(int(limit or 100), 500))
     with db_connection() as conn:
-        rows = conn.execute("SELECT * FROM snapshots ORDER BY created_at DESC LIMIT ?", (safe_limit,)).fetchall()
+        rows = conn.execute(
+            "SELECT rowid AS snapshot_order, * FROM snapshots ORDER BY rowid DESC LIMIT ?",
+            (safe_limit,),
+        ).fetchall()
     return [
         {
             "id": row["id"],
@@ -1367,6 +1370,8 @@ def snapshot_state_items(limit: int = 100) -> list[dict[str, Any]]:
             "deviceCount": int(row["device_count"] or 0),
             "devices": [],
             "backendStored": True,
+            "snapshotOrder": int(row["snapshot_order"] or 0),
+            "kind": "analysis" if as_text(row["name"]).casefold().startswith("анализ:") else "snapshot",
         }
         for row in rows
     ]
@@ -1399,6 +1404,76 @@ def hydrate_snapshot_devices(snapshots: Any) -> list[dict[str, Any]]:
             item["devices"] = []
         item["deviceCount"] = int(row["device_count"] or len(item["devices"]))
     return items
+
+
+def dashboard_snapshot_context(
+    snapshots: Any,
+    current_snapshot_id: str = "",
+    settings: dict[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    """Resolve only the two final enrichment snapshots needed by Dashboard.
+
+    Snapshot bodies remain in SQLite. The browser receives metadata, while this
+    helper hydrates the immediately previous and current final results for an
+    exact comparison without depending on the movement log.
+    """
+    client_items = [dict(item) for item in snapshots if isinstance(item, dict)] if isinstance(snapshots, list) else []
+    current_id = as_text(current_snapshot_id)
+    use_stored_items = bool(current_id) or any(bool(item.get("backendStored")) for item in client_items)
+    stored_items = snapshot_state_items(200) if use_stored_items else []
+    merged: dict[str, dict[str, Any]] = {}
+    anonymous: list[dict[str, Any]] = []
+    for item in client_items:
+        snapshot_id = as_text(item.get("id") or item.get("snapshotId"))
+        if snapshot_id:
+            merged[snapshot_id] = item
+        else:
+            anonymous.append(item)
+    for stored in stored_items:
+        snapshot_id = as_text(stored.get("id"))
+        if not snapshot_id:
+            continue
+        current = merged.get(snapshot_id, {})
+        merged[snapshot_id] = {**stored, **current}
+
+    items = [*merged.values(), *anonymous]
+    final_items = [
+        item for item in items
+        if as_text(item.get("kind")).casefold() == "analysis"
+        or as_text(item.get("name")).casefold().startswith("анализ:")
+    ]
+    options = final_items if len(final_items) >= 2 else items
+    options.sort(key=lambda item: (
+        int(item.get("snapshotOrder") or item.get("snapshot_order") or 0),
+        as_text(item.get("createdAt") or item.get("created_at")),
+        as_text(item.get("id")),
+    ))
+
+    normalized_settings = dict(settings or {})
+    option_ids = [as_text(item.get("id") or item.get("snapshotId")) for item in options]
+    option_ids = [snapshot_id for snapshot_id in option_ids if snapshot_id]
+    comparison_id = as_text(normalized_settings.get("comparisonSnapshotId"))
+    if comparison_id not in option_ids:
+        comparison_id = current_id if current_id in option_ids else (option_ids[-1] if option_ids else "")
+    baseline_id = as_text(normalized_settings.get("baselineSnapshotId"))
+    if baseline_id not in option_ids or baseline_id == comparison_id:
+        try:
+            comparison_index = option_ids.index(comparison_id)
+        except ValueError:
+            comparison_index = len(option_ids)
+        baseline_id = option_ids[comparison_index - 1] if comparison_index > 0 else ""
+
+    explicit_period = bool(normalized_settings.get("changeDateFrom") or normalized_settings.get("changeDateTo"))
+    if baseline_id and comparison_id and (current_id or not explicit_period):
+        normalized_settings["changeMode"] = "snapshots"
+        normalized_settings["baselineSnapshotId"] = baseline_id
+        normalized_settings["comparisonSnapshotId"] = comparison_id
+
+    selected_ids = {baseline_id, comparison_id} - {""}
+    selected = [item for item in options if as_text(item.get("id") or item.get("snapshotId")) in selected_ids]
+    hydrated = hydrate_snapshot_devices(selected)
+    hydrated.sort(key=lambda item: option_ids.index(as_text(item.get("id") or item.get("snapshotId"))))
+    return options, hydrated, normalized_settings
 
 
 def open_snapshot_payload(snapshot_id: str, snapshots: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -3437,6 +3512,7 @@ def save_statistics_snapshot(
     normalized_name = as_text(name) or "Snapshot"
     normalized_source = as_text(source)
     timestamp = as_text(created_at) or utc_now()
+    saved_at = utc_now()
     payload = json.dumps(devices, ensure_ascii=False)
     with db_connection() as conn:
         conn.execute(
@@ -3445,6 +3521,9 @@ def save_statistics_snapshot(
             "devices_json=excluded.devices_json, created_at=excluded.created_at",
             (normalized_id, normalized_name, normalized_source, len(devices), payload, timestamp),
         )
+        snapshot_order = int(conn.execute(
+            "SELECT rowid FROM snapshots WHERE id = ?", (normalized_id,)
+        ).fetchone()[0])
     log_action("Save statistics snapshot", f"id={normalized_id}, source={normalized_source or '*'}, devices={len(devices)}")
     return {
         "id": normalized_id,
@@ -3452,6 +3531,9 @@ def save_statistics_snapshot(
         "source": normalized_source,
         "deviceCount": len(devices),
         "createdAt": timestamp,
+        "savedAt": saved_at,
+        "snapshotOrder": snapshot_order,
+        "kind": "analysis" if normalized_name.casefold().startswith("анализ:") else "snapshot",
     }
 
 
@@ -6206,13 +6288,20 @@ class AppHandler(BaseHTTPRequestHandler):
                 if not isinstance(client_movements, list):
                     self.error_response("movements must be an array")
                     return
+                snapshot_options, change_snapshots, settings = dashboard_snapshot_context(
+                    snapshots,
+                    as_text(payload.get("snapshotId") or payload.get("resultSnapshotId")),
+                    settings,
+                )
                 database_movements, history_devices = dashboard_history_context()
                 result = build_dashboard_payload(
                     devices,
-                    snapshots,
+                    snapshot_options,
                     settings,
                     client_movements or database_movements,
-                    [] if snapshots else history_devices,
+                    [] if snapshot_options else history_devices,
+                    change_snapshots=change_snapshots,
+                    snapshot_options=snapshot_options,
                 )
                 if payload.get("compactResult") is True:
                     try:

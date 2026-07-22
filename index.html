@@ -738,15 +738,15 @@
     <div class="shortcut-grid"><kbd>Ctrl+O</kbd><span>выбрать файлы</span><kbd>Ctrl+S</kbd><span>экспорт XLSX</span><kbd>Ctrl+E</kbd><span>экспорт CSV</span><kbd>Ctrl+A</kbd><span>аналитика</span><kbd>Ctrl+H</kbd><span>история</span><kbd>Ctrl+F</kbd><span>поиск в результатах</span><kbd>F5</kbd><span>запустить анализ</span><kbd>F6</kbd><span>сравнение двух снимков</span><kbd>F7</kbd><span>графики</span><kbd>F8</kbd><span>топология</span><kbd>F9</kbd><span>массовое сравнение</span><kbd>F1</kbd><span>справка</span><kbd>Esc</kbd><span>отмена или закрытие окна</span></div>
     <div class="dialog-actions"><span></span><button class="button primary" id="openGuideFromHelpButton" type="button">Открыть полное руководство</button></div>
   </dialog>
-  <script src="frontend/memory-guard.js?v=20260722.7"></script>
+  <script src="frontend/memory-guard.js?v=20260722.9"></script>
   <script src="frontend/file-readers.js?v=20260722.8"></script>
   <script src="frontend/state-persistence.js?v=20260722.7"></script>
-  <script src="frontend/browser-snapshot-store.js?v=20260722.8"></script>
+  <script src="frontend/browser-snapshot-store.js?v=20260722.9"></script>
   <script src="frontend/portable-database.js?v=20260722.7"></script>
   <script src="frontend/local-folder-store.js?v=20260722.7"></script>
   <script src="frontend/workspace-file-lifecycle.js?v=20260722.7"></script>
   <script src="frontend/guide.js?v=20260722.7"></script>
-  <script src="app.js?v=20260722.8"></script>
+  <script src="app.js?v=20260722.9"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;
@@ -777,7 +777,7 @@
       const fallbackBrowserRecordId = "fallback-v2";
       const fallbackEngineeringOnlyViews = new Set(["workspace", "single", "compare", "data", "automation", "settings"]);
       const fallbackEngineeringPermissions = ["delete:history", "delete:snapshots", "delete:mappings", "delete:tasks", "delete:ip-mappings", "delete:api-cache", "write:settings", "write:migration"];
-      const fallbackState = { files: [], devices: [], invalid: [], snapshots: [], movementHistory: [], ipMappings: [], localVendorMappings: {}, localModelMappings: {}, activeMappingFileId: "", mappingDisplayMode: "name", theme: localStorage.getItem("mac-analyzer-theme") || "light", engineeringMode: false, engineeringExpiresAt: "", engineeringPermissions: [], ouiLength: 3, ouiStyle: "plain", vendorDetectorSettings: { enabled: true, useOui3: true, useMac5: true, useText: true, useInference: true, confidenceThreshold: 0.6 }, historyEnrichmentSettings: { enabled: true, priorityHistory: true, useOuiMatch: true, useMac5Match: true }, externalApiSettings: { enabled: false, provider: "macvendors", endpoint: "", rateLimit: 25, cacheTtlDays: 30, onlyUnknown: true }, dashboardSettings: { vendor: "", room: "", status: "all", chartLimit: 8, showUnknown: true, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60 } };
+      const fallbackState = { files: [], devices: [], invalid: [], snapshots: [], movementHistory: [], ipMappings: [], localVendorMappings: {}, localModelMappings: {}, activeMappingFileId: "", mappingDisplayMode: "name", theme: localStorage.getItem("mac-analyzer-theme") || "light", engineeringMode: false, engineeringExpiresAt: "", engineeringPermissions: [], ouiLength: 3, ouiStyle: "plain", vendorDetectorSettings: { enabled: true, useOui3: true, useMac5: true, useText: true, useInference: true, confidenceThreshold: 0.6 }, historyEnrichmentSettings: { enabled: true, priorityHistory: true, useOuiMatch: true, useMac5Match: true }, externalApiSettings: { enabled: false, provider: "macvendors", endpoint: "", rateLimit: 25, cacheTtlDays: 30, onlyUnknown: true }, dashboardSettings: { vendor: "", room: "", status: "all", chartLimit: 8, showUnknown: true, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60, changeMode: "snapshots", changeDateFrom: "", changeDateTo: "", baselineSnapshotId: "", comparisonSnapshotId: "" } };
       let fallbackDashboardRefreshTimer = null;
       let fallbackActiveProcessId = "";
       let fallbackProcessHideTimer = null;
@@ -1803,12 +1803,17 @@
       }
 
       function normalizeFallbackDashboardSettings(settings = {}) {
-        const defaults = { vendor: "", room: "", status: "all", chartLimit: 8, showUnknown: true, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60, changeMode: "period", changeDateFrom: "", changeDateTo: "", baselineSnapshotId: "", comparisonSnapshotId: "" };
+        const defaults = { vendor: "", room: "", status: "all", chartLimit: 8, showUnknown: true, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60, changeMode: "snapshots", changeDateFrom: "", changeDateTo: "", baselineSnapshotId: "", comparisonSnapshotId: "" };
         return { ...defaults, ...settings, visibleCards: { ...defaults.visibleCards, ...(settings.visibleCards || {}) }, visibleCharts: { ...defaults.visibleCharts, ...(settings.visibleCharts || {}) }, autoRefresh: settings.autoRefresh !== false, refreshInterval: Math.max(10, Math.min(300, Number(settings.refreshInterval || 60))) };
       }
 
       function fallbackSnapshotOptions() {
-        return (fallbackState.snapshots || []).map((snapshot, index) => ({ id: String(snapshot.id || snapshot.snapshotId || snapshot.name || `snapshot-${index + 1}`), name: String(snapshot.name || snapshot.id || `Выгрузка ${index + 1}`), date: String(snapshot.fileCreatedAt || snapshot.createdAt || snapshot.created_at || "") }));
+        const rows = (fallbackState.snapshots || []).map((snapshot, index) => ({ snapshot, index }));
+        const finalRows = rows.filter(({ snapshot }) => snapshot.kind === "analysis" || String(snapshot.name || "").toLowerCase().startsWith("анализ:"));
+        const selected = finalRows.length >= 2 ? finalRows : rows;
+        return selected
+          .sort((left, right) => (Date.parse(left.snapshot.savedAt || "") || fallbackState.snapshots.length - left.index) - (Date.parse(right.snapshot.savedAt || "") || fallbackState.snapshots.length - right.index))
+          .map(({ snapshot }, index) => ({ id: String(snapshot.id || snapshot.snapshotId || snapshot.name || `snapshot-${index + 1}`), name: String(snapshot.name || snapshot.id || `Выгрузка ${index + 1}`), date: String(snapshot.fileCreatedAt || snapshot.createdAt || snapshot.created_at || "") }));
       }
 
       function fallbackChangeSeverity(type, field) {
@@ -1821,7 +1826,7 @@
       function buildFallbackChangeAnalysis(settings = fallbackState.dashboardSettings) {
         const options = fallbackSnapshotOptions(), changes = [], labels = { vendor: "Производитель", model: "Модель", ip: "IP-адрес", address: "Адрес", room: "Помещение", switchIp: "Коммутатор", switchPort: "Порт", device: "Устройство" };
         const add = (mac, date, type, field = "device", before = "", after = "", source = "history") => { field = ({ switch_ip: "switchIp", switch_port: "switchPort" })[field] || field; changes.push({ macFormatted: normalizeMac(mac), date, type, typeLabel: ({ added: "Добавлено", removed: "Удалено", modified: "Изменено" })[type] || "Изменено", fieldLabel: labels[field] || field, before: String(before || "-"), after: String(after || "-"), source: String(source || "history"), severity: fallbackChangeSeverity(type, field) }); };
-        let baselineSnapshotId = settings.baselineSnapshotId || options[0]?.id || "", comparisonSnapshotId = settings.comparisonSnapshotId || options.at(-1)?.id || "", dateFrom = settings.changeDateFrom || "", dateTo = settings.changeDateTo || "";
+        let baselineSnapshotId = settings.baselineSnapshotId || options.at(-2)?.id || "", comparisonSnapshotId = settings.comparisonSnapshotId || options.at(-1)?.id || "", dateFrom = settings.changeDateFrom || "", dateTo = settings.changeDateTo || "";
         if (settings.changeMode === "snapshots" && fallbackState.snapshots.length >= 2) {
           const id = (snapshot, index) => String(snapshot.id || snapshot.snapshotId || snapshot.name || `snapshot-${index + 1}`), byId = new Map(fallbackState.snapshots.map((snapshot, index) => [id(snapshot, index), snapshot])), baseline = byId.get(baselineSnapshotId) || fallbackState.snapshots[0], comparison = byId.get(comparisonSnapshotId) || fallbackState.snapshots.at(-1), beforeMap = new Map((baseline.devices || []).map((device) => [fallbackMacHex(device.mac || device.macFormatted), device]).filter(([mac]) => mac)), afterMap = new Map((comparison.devices || []).map((device) => [fallbackMacHex(device.mac || device.macFormatted), device]).filter(([mac]) => mac)), date = comparison.fileCreatedAt || comparison.createdAt || "";
           afterMap.forEach((device, mac) => { if (!beforeMap.has(mac)) add(mac, date, "added", "device", "", device.source || "Устройство", "snapshot"); });
@@ -1838,8 +1843,8 @@
       let fallbackChangeAnalysis = { summary: {}, changes: [] };
       function renderFallbackChanges() {
         fallbackChangeAnalysis = buildFallbackChangeAnalysis(); const summary = fallbackChangeAnalysis.summary, put = (id, value) => { if ($(id)) $(id).textContent = value || 0; };
-        const settings = fallbackState.dashboardSettings, options = fallbackChangeAnalysis.snapshotOptions || []; if ($("#dashboardChangeMode")) $("#dashboardChangeMode").value = settings.changeMode || "period"; if ($("#dashboardChangeDateFrom")) $("#dashboardChangeDateFrom").value = settings.changeDateFrom || ""; if ($("#dashboardChangeDateTo")) $("#dashboardChangeDateTo").value = settings.changeDateTo || ""; if ($("#dashboardPeriodControls")) $("#dashboardPeriodControls").hidden = settings.changeMode === "snapshots"; if ($("#dashboardSnapshotControls")) $("#dashboardSnapshotControls").hidden = settings.changeMode !== "snapshots";
-        const fill = (selector, selected) => { if (!$(selector)) return; $(selector).innerHTML = options.length ? options.map((item) => `<option value="${esc(item.id)}"${item.id === selected ? " selected" : ""}>${esc(item.name)}${item.date ? ` · ${esc(item.date.slice(0, 10))}` : ""}</option>`).join("") : '<option value="">Нет сохранённых выгрузок</option>'; }; fill("#dashboardBaselineSnapshot", settings.baselineSnapshotId || options[0]?.id || ""); fill("#dashboardComparisonSnapshot", settings.comparisonSnapshotId || options.at(-1)?.id || "");
+        const settings = fallbackState.dashboardSettings, options = fallbackChangeAnalysis.snapshotOptions || []; if ($("#dashboardChangeMode")) $("#dashboardChangeMode").value = settings.changeMode || "snapshots"; if ($("#dashboardChangeDateFrom")) $("#dashboardChangeDateFrom").value = settings.changeDateFrom || ""; if ($("#dashboardChangeDateTo")) $("#dashboardChangeDateTo").value = settings.changeDateTo || ""; if ($("#dashboardPeriodControls")) $("#dashboardPeriodControls").hidden = settings.changeMode === "snapshots"; if ($("#dashboardSnapshotControls")) $("#dashboardSnapshotControls").hidden = settings.changeMode !== "snapshots";
+        const fill = (selector, selected) => { if (!$(selector)) return; $(selector).innerHTML = options.length ? options.map((item) => `<option value="${esc(item.id)}"${item.id === selected ? " selected" : ""}>${esc(item.name)}${item.date ? ` · ${esc(item.date.slice(0, 10))}` : ""}</option>`).join("") : '<option value="">Нет сохранённых выгрузок</option>'; }; fill("#dashboardBaselineSnapshot", settings.baselineSnapshotId || options.at(-2)?.id || ""); fill("#dashboardComparisonSnapshot", settings.comparisonSnapshotId || options.at(-1)?.id || "");
         put("#dashboardChangeTotal", summary.total); put("#dashboardCriticalCount", summary.critical); put("#dashboardAddedCount", summary.added); put("#dashboardRemovedCount", summary.removed); put("#dashboardModifiedCount", summary.modified);
         const severity = $("#dashboardChangeSeverityFilter")?.value || "all", query = ($("#dashboardChangeSearch")?.value || "").toLowerCase(), rows = fallbackChangeAnalysis.changes.filter((item) => (severity === "all" || item.severity === severity) && (!query || Object.values(item).some((value) => String(value).toLowerCase().includes(query))));
         $("#dashboardChangesBody").innerHTML = rows.length ? rows.map((item) => `<tr><td><span class="severity-badge severity-${esc(item.severity)}">${esc(item.severity)}</span></td><td>${esc(item.date)}</td><td>${esc(item.macFormatted)}</td><td>${esc(item.typeLabel)}</td><td>${esc(item.fieldLabel)}</td><td>${esc(item.before)}</td><td>${esc(item.after)}</td><td>${esc(item.source)}</td></tr>`).join("") : '<tr><td colspan="8" class="empty-state">Изменений не найдено.</td></tr>';

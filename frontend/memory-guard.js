@@ -16,7 +16,7 @@
     movementRows: 5_000,
     inlineComparisonRows: 20_000,
     snapshotPreviewRows: 500,
-    browserSnapshotRows: 300_000,
+    browserSnapshotRows: 1_000_000,
     localExportRows: 20_000,
     localExportCells: 250_000,
     worksheetBytes: 128 * 1024 * 1024,

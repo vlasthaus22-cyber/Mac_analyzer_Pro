@@ -1,6 +1,6 @@
 import json
 
-from server import database_maintenance, database_summary, db_connection, delete_snapshots, init_database, open_compact_snapshot_payload, open_snapshot_payload, resolve_payload_devices, snapshot_select_payload
+from server import dashboard_snapshot_context, database_maintenance, database_summary, db_connection, delete_snapshots, init_database, open_compact_snapshot_payload, open_snapshot_payload, resolve_payload_devices, snapshot_select_payload
 
 
 SNAPSHOTS = ("snapshot-mgmt-1", "snapshot-mgmt-2")
@@ -116,6 +116,34 @@ def test_snapshot_select_payload_prepares_ready_options():
 def test_large_snapshot_open_is_compact_for_browser():
     init_database()
     cleanup()
+
+
+def test_dashboard_context_hydrates_only_previous_and_current_final_results():
+    init_database()
+    cleanup()
+    with db_connection() as conn:
+        conn.execute(
+            "INSERT INTO snapshots (id, name, source, device_count, devices_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (SNAPSHOTS[0], "Анализ: before.xlsx", "before.xlsx", 1, json.dumps([{"mac": "AABBCC000001", "model": "A"}]), "2026-01-01T00:00:00Z"),
+        )
+        conn.execute(
+            "INSERT INTO snapshots (id, name, source, device_count, devices_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (SNAPSHOTS[1], "Анализ: current.xlsx", "current.xlsx", 2, json.dumps([{"mac": "AABBCC000001", "model": "B"}, {"mac": "AABBCC000002"}]), "2025-01-01T00:00:00Z"),
+        )
+
+    options, hydrated, settings = dashboard_snapshot_context(
+        [{"id": SNAPSHOTS[1], "backendStored": True}, {"id": SNAPSHOTS[0], "backendStored": True}],
+        SNAPSHOTS[1],
+        {"changeMode": "period"},
+    )
+
+    assert [item["id"] for item in options][-2:] == list(SNAPSHOTS)
+    assert [item["id"] for item in hydrated] == list(SNAPSHOTS)
+    assert [len(item["devices"]) for item in hydrated] == [1, 2]
+    assert settings["changeMode"] == "snapshots"
+    assert settings["baselineSnapshotId"] == SNAPSHOTS[0]
+    assert settings["comparisonSnapshotId"] == SNAPSHOTS[1]
+    cleanup()
     devices = [
         {"mac": f"020000{index:06X}", "vendor": "Load Test", "ip": f"10.20.{index // 254}.{index % 254 + 1}"}
         for index in range(5000)
@@ -142,4 +170,5 @@ if __name__ == "__main__":
     test_open_snapshot_payload_resolves_local_state_and_sqlite()
     test_snapshot_select_payload_prepares_ready_options()
     test_large_snapshot_open_is_compact_for_browser()
+    test_dashboard_context_hydrates_only_previous_and_current_final_results()
     print("database snapshot management test passed")

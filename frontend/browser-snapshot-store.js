@@ -466,6 +466,209 @@
     return metadata ? { ...collector.result(), metadata } : null;
   }
 
+  function tallyRows(map, value) {
+    const key = String(value || "").trim() || "Unknown";
+    map.set(key, (map.get(key) || 0) + 1);
+  }
+
+  function rankedRows(map, limit = 50) {
+    return Array.from(map.entries())
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .slice(0, Math.max(1, Number(limit) || 50))
+      .map(([label, value]) => ({ label, value }));
+  }
+
+  async function aggregate(id, options = {}) {
+    const vendors = new Map();
+    const models = new Map();
+    const rooms = new Map();
+    const switches = new Set();
+    let devices = 0;
+    let known = 0;
+    let withAddress = 0;
+    let withRoom = 0;
+    let withIp = 0;
+    let withSwitch = 0;
+    const unknown = new Set(["", "unknown", "не определено", "неизвестный вендор", "unknown vendor"]);
+    const metadata = await streamSnapshot(id, async (kind, rows) => {
+      if (kind !== "device") return;
+      for (const device of rows) {
+        devices += 1;
+        const vendor = String(device?.vendor || "").trim();
+        const model = String(device?.model || "").trim();
+        const room = String(device?.room || "").trim();
+        const switchIp = String(device?.switchIp || device?.switch_ip || "").trim();
+        tallyRows(vendors, vendor);
+        if (model) tallyRows(models, model);
+        if (room) tallyRows(rooms, room);
+        if (!unknown.has(vendor.toLowerCase())) known += 1;
+        if (String(device?.address || "").trim()) withAddress += 1;
+        if (room) withRoom += 1;
+        if (String(device?.ip || "").trim()) withIp += 1;
+        if (switchIp) { withSwitch += 1; switches.add(switchIp); }
+      }
+    });
+    if (!metadata) return null;
+    const limit = Math.max(8, Math.min(200, Number(options.limit || 50)));
+    return {
+      snapshotId: String(id || ""),
+      devices,
+      invalid: Number(metadata.invalidCount || 0),
+      uniqueMacs: devices,
+      known,
+      unknown: Math.max(0, devices - known),
+      knownPercent: devices ? Math.round(known / devices * 100) : 0,
+      uniqueVendors: Array.from(vendors.keys()).filter((value) => !unknown.has(value.toLowerCase())).length,
+      uniqueModels: models.size,
+      uniqueRooms: rooms.size,
+      uniqueSwitches: switches.size,
+      withAddress,
+      withRoom,
+      withIp,
+      withSwitch,
+      vendors: rankedRows(vendors, limit),
+      models: rankedRows(models, limit),
+      rooms: rankedRows(rooms, limit),
+      metadata: { ...metadata, devices: [], invalid: [] },
+    };
+  }
+
+  function compactComparisonDevice(device) {
+    return {
+      mac: String(device?.mac || device?.macFormatted || "").toUpperCase().replace(/[^0-9A-F]/g, ""),
+      vendor: String(device?.vendor || ""),
+      model: String(device?.model || ""),
+      ip: String(device?.ip || ""),
+      address: String(device?.address || ""),
+      room: String(device?.room || ""),
+      switchIp: String(device?.switchIp || device?.switch_ip || ""),
+      switchPort: String(device?.switchPort || device?.switch_port || ""),
+    };
+  }
+
+  async function compareCurrentChunk(jobId, rows, result, limit) {
+    const database = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const current = database.transaction(enrichmentRowStore, "readwrite");
+      const store = current.objectStore(enrichmentRowStore);
+      for (const source of rows) {
+        const device = compactComparisonDevice(source);
+        if (!device.mac) continue;
+        const key = `${jobId}:${device.mac}`;
+        const request = store.get(key);
+        request.onsuccess = () => {
+          const previous = request.result?.device;
+          if (!previous) {
+            result.added += 1;
+            result.changedDevices += 1;
+            tallyRows(result.changedVendors, device.vendor);
+            if (result.changes.length < limit) result.changes.push({ mac: device.mac, type: "added", field: "device", before: "", after: device.vendor || "Устройство" });
+            return;
+          }
+          let modified = false;
+          for (const field of result.fields) {
+            const before = String(previous[field] || "");
+            const after = String(device[field] || "");
+            if (before === after) continue;
+            modified = true;
+            result.modifiedFields += 1;
+            if (field === "switchIp" || field === "switchPort") result.critical += 1;
+            result.fieldCounts.set(field, (result.fieldCounts.get(field) || 0) + 1);
+            if (result.changes.length < limit) result.changes.push({ mac: device.mac, type: "modified", field, before, after });
+          }
+          if (modified) {
+            result.modifiedDevices += 1;
+            result.changedDevices += 1;
+            tallyRows(result.changedVendors, device.vendor);
+          } else {
+            result.unchanged += 1;
+            tallyRows(result.unchangedVendors, device.vendor);
+          }
+          store.delete(key);
+        };
+        request.onerror = () => current.abort();
+      }
+      current.oncomplete = () => { database.close(); resolve(true); };
+      current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Snapshot comparison failed")); };
+      current.onabort = current.onerror;
+    });
+  }
+
+  async function collectRemovedComparisonRows(jobId, result, limit) {
+    const database = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const current = database.transaction(enrichmentRowStore, "readonly");
+      const request = current.objectStore(enrichmentRowStore).index("jobId").openCursor(IDBKeyRange.only(jobId));
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        const previous = cursor.value?.device || {};
+        result.removed += 1;
+        result.critical += 1;
+        tallyRows(result.missingVendors, previous.vendor);
+        if (result.changes.length < limit) result.changes.push({ mac: previous.mac || cursor.value?.mac || "", type: "removed", field: "device", before: previous.vendor || "Устройство", after: "" });
+        cursor.continue();
+      };
+      request.onerror = () => reject(request.error || new Error("Snapshot comparison scan failed"));
+      current.oncomplete = () => { database.close(); resolve(true); };
+      current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Snapshot comparison scan failed")); };
+    });
+  }
+
+  async function compareSnapshots(baselineId, comparisonId, options = {}) {
+    const jobId = `snapshot-compare-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const limit = Math.max(100, Math.min(20000, Number(options.limit || 5000)));
+    const result = {
+      fields: ["vendor", "model", "ip", "address", "room", "switchIp", "switchPort"],
+      added: 0, removed: 0, modifiedDevices: 0, modifiedFields: 0, changedDevices: 0, unchanged: 0, critical: 0,
+      changes: [], fieldCounts: new Map(), changedVendors: new Map(), unchangedVendors: new Map(), missingVendors: new Map(),
+    };
+    await clearEnrichment(jobId).catch(() => false);
+    try {
+      const baseline = await streamSnapshot(baselineId, async (kind, rows) => {
+        if (kind !== "device") return;
+        const compact = rows.map(compactComparisonDevice).filter((device) => device.mac);
+        await mergeEnrichmentRows(jobId, compact, { allowNew: true });
+        compact.length = 0;
+      });
+      if (!baseline) return null;
+      const comparison = await streamSnapshot(comparisonId, async (kind, rows) => {
+        if (kind === "device") await compareCurrentChunk(jobId, rows, result, limit);
+      });
+      if (!comparison) return null;
+      await collectRemovedComparisonRows(jobId, result, limit);
+      const changedAt = String(comparison.createdAt || comparison.savedAt || new Date().toISOString());
+      result.changes.forEach((item) => { item.changedAt = changedAt; item.source = "snapshot"; });
+      return {
+        baselineSnapshotId: String(baselineId || ""),
+        comparisonSnapshotId: String(comparisonId || ""),
+        changedAt,
+        summary: {
+          added: result.added,
+          removed: result.removed,
+          modified: result.modifiedFields,
+          modifiedDevices: result.modifiedDevices,
+          changedDevices: result.changedDevices,
+          unchanged: result.unchanged,
+          critical: result.critical,
+          total: result.added + result.removed + result.modifiedFields,
+        },
+        changes: result.changes.map((item) => ({ ...item })),
+        fieldCounts: rankedRows(result.fieldCounts, 20),
+        changedVendors: rankedRows(result.changedVendors, 20),
+        unchangedVendors: rankedRows(result.unchangedVendors, 20),
+        missingVendors: rankedRows(result.missingVendors, 20),
+      };
+    } finally {
+      await clearEnrichment(jobId).catch(() => false);
+      result.changes.length = 0;
+      result.fieldCounts.clear();
+      result.changedVendors.clear();
+      result.unchangedVendors.clear();
+      result.missingVendors.clear();
+    }
+  }
+
   async function prune(keepIds = []) {
     const keep = new Set(keepIds.map(String));
     const database = await openDatabase();
@@ -576,6 +779,8 @@
     chunkRows,
     streamSnapshot,
     page,
+    aggregate,
+    compareSnapshots,
     createPageCollector,
     clearEnrichment,
     pruneEnrichmentRows,
