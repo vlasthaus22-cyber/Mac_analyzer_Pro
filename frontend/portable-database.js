@@ -93,6 +93,7 @@
       movements: Array.isArray(payload.movements) ? payload.movements : [],
       snapshotMetadata: (Array.isArray(payload.snapshotMetadata) ? payload.snapshotMetadata : []).filter((item) => item?.id),
       snapshotLoader: typeof payload.snapshotLoader === "function" ? payload.snapshotLoader : null,
+      snapshotStreamer: typeof payload.snapshotStreamer === "function" ? payload.snapshotStreamer : null,
       skipSnapshotId: String(payload.skipSnapshotId || ""),
     };
   }
@@ -140,7 +141,14 @@
         await write(JSON.stringify({ type: "snapshot-current", value: { ...metadata, devices: [], invalid: [] } }) + "\n");
         continue;
       }
-      if (data.snapshotLoader) {
+      if (data.snapshotStreamer) {
+        await write(JSON.stringify({ type: "snapshot-start", value: { ...metadata, devices: [], invalid: [] } }) + "\n");
+        await data.snapshotStreamer(metadata, async (kind, rows) => {
+          await writeRows(write, kind === "invalid" ? "snapshot-invalid" : "snapshot-device", Array.isArray(rows) ? rows : [], () => {}, { value: 0 }, 0);
+        });
+        await write(JSON.stringify({ type: "snapshot-end", value: { id: metadata.id } }) + "\n");
+        onProgress(2, `Сохранён снимок: ${metadata.name || metadata.id}`);
+      } else if (data.snapshotLoader) {
         const snapshot = await data.snapshotLoader(metadata);
         if (!snapshot) {
           await write(JSON.stringify({ type: "snapshot-start", value: { ...metadata, devices: [], invalid: [] } }) + "\n");
@@ -228,7 +236,7 @@
       }
       if (record.type === "state") state = record.value;
       else if (record.type === "snapshot-current") {
-        const metadata = { ...(record.value || {}), devices: [], invalid: [], browserStored: true, backendStored: false };
+        const metadata = { ...(record.value || {}), devices: [], invalid: [], browserStored: true, backendStored: false, currentReference: true };
         currentSnapshots.push(metadata);
         snapshots.push(metadata);
       }
@@ -264,6 +272,18 @@
     return readFile(await handle.getFile(), onProgress, options);
   }
 
+  async function readHeader(handle) {
+    if (!handle?.getFile) return null;
+    const file = await handle.getFile();
+    if (!file?.size) return null;
+    const prefix = await file.slice(0, Math.min(file.size, 64 * 1024)).text();
+    const firstLine = prefix.split("\n", 1)[0].trim();
+    if (!firstLine) return null;
+    const header = JSON.parse(firstLine);
+    if (header.format !== format || Number(header.version) !== version) throw new Error("Это не файл базы MAC Analyzer или версия не поддерживается");
+    return header;
+  }
+
   window.MacAnalyzerPortableDatabase = Object.freeze({
     format,
     version,
@@ -278,6 +298,7 @@
     createBlob,
     read,
     readFile,
+    readHeader,
   });
   document.documentElement.dataset.portableDatabase = "ready";
 })();

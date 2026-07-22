@@ -3,6 +3,7 @@
 
   const list = (value) => (Array.isArray(value) ? value : []);
   const workspacePreviewRows = 101;
+  const maxInlineResultRows = 20_000;
 
   function compactFiles(files, preserveBrowserRows) {
     return list(files).map((file) => ({
@@ -34,12 +35,17 @@
       source.resultSnapshotId
       || (source.resultBrowserSnapshotId && source.resultBrowserSnapshotDirty !== true),
     );
+    const resultRows = list(source.devices);
+    const invalidRows = list(source.invalid);
+    const inlineResult = !snapshotBackedResult
+      && resultRows.length + invalidRows.length <= maxInlineResultRows;
     return {
       ...source,
       browserStateInIndexedDb: true,
       files: compactFiles(source.files, true),
-      devices: snapshotBackedResult ? [] : list(source.devices),
-      invalid: snapshotBackedResult ? [] : list(source.invalid),
+      devices: inlineResult ? resultRows : [],
+      invalid: inlineResult ? invalidRows : [],
+      resultPersistenceTruncated: !snapshotBackedResult && !inlineResult,
       snapshots: compactSnapshots(source.snapshots),
       movementHistory: list(source.movementHistory).slice(0, 100),
     };
@@ -48,6 +54,7 @@
   window.MacAnalyzerStatePersistence = Object.freeze({
     compactIndexedState,
     compactLocalState,
+    maxInlineResultRows,
   });
   document.documentElement.dataset.statePersistence = "ready";
 })();

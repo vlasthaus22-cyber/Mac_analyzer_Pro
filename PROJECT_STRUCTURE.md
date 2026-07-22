@@ -8,14 +8,17 @@ Mac_analyzer_Pro/
   tests/                   регрессионные, API и parity-проверки
     test_repeated_enrichment_memory.py обязательный четырёхкратный стресс-тест двухфайлового обогащения
     frontend_repeated_persistence_memory.test.js четыре сохранения 100 000 локальных устройств без второй копии результата
+    frontend_snapshot_chunking_memory.test.js четыре порционных снимка по 120 000 устройств
+    local_folder_store.test.js создание локальной структуры, базы, манифеста, архива импорта и журнала
     standalone_inline_syntax.test.js компиляция всего встроенного JavaScript переносимого HTML
   tools/                   parity, benchmark и legacy-утилиты
   frontend/                браузерные модули импорта, контроля памяти и безопасного хранения состояния
     memory-guard.js        ранние лимиты файла/ZIP/heap, суммы файлов обогащения, локального экспорта, paging и cooperative yield
     file-readers.js        потоковый XLSX/CSV/JSON-импорт с проверкой ZIP-каталога до распаковки XML
-    browser-snapshot-store.js отдельное IndexedDB-хранилище полных локальных снимков
+    browser-snapshot-store.js порционное IndexedDB-хранилище локальных снимков без полной копии при записи
     portable-database.js  потоковая файловая база MADB для переноса данных между браузерами и ПК
-    state-persistence.js   компактное сохранение workspace; полный локальный результат хранится один раз в snapshot-store
+    local-folder-store.js локальная структура database/imports/exports/settings/logs/backups, сохранённая ссылка браузера и дедупликация повторных импортов
+    state-persistence.js   компактное сохранение workspace; полный локальный результат хранится один раз в snapshot-store, аварийная inline-копия ограничена 20 000 строк
     guide.js               руководство, переключение разделов и отображение текущего режима
   backend/
     services/

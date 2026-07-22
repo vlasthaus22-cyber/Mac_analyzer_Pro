@@ -53,9 +53,12 @@ class MemoryFileHandle {
       { id: "snapshot-before", name: "Before enrichment", browserStored: true, deviceCount: 1_000 },
     ],
     skipSnapshotId: "snapshot-current",
-    snapshotLoader: async (metadata) => metadata.id === "snapshot-before"
-      ? { id: "snapshot-before", name: "Before enrichment", devices: devices.slice(0, 1_000), invalid: [] }
-      : null,
+    snapshotStreamer: async (metadata, onChunk) => {
+      if (metadata.id !== "snapshot-before") return;
+      for (let offset = 0; offset < 1_000; offset += 250) {
+        await onChunk("device", devices.slice(offset, offset + 250));
+      }
+    },
   };
 
   for (let round = 0; round < 3; round += 1) {
@@ -75,7 +78,11 @@ class MemoryFileHandle {
   assert.equal(restoredSnapshots.length, 2);
   assert.equal(restoredSnapshots.find((item) => item.id === "snapshot-before").devices.length, 1_000);
   assert.equal(restoredSnapshots.find((item) => item.id === "snapshot-current").devices.length, 60_000);
+  assert.equal(restored.snapshots.find((item) => item.id === "snapshot-current").currentReference, true);
   assert.equal(restored.snapshots.length, 2);
+  const headerOnly = await database.readHeader(handle);
+  assert.equal(headerOnly.format, database.format);
+  assert.equal(headerOnly.counts.devices, 60_000);
   assert.ok(handle.maximumChunkBytes < 512 * 1024, "database writer must use bounded chunks");
 
   console.log("portable database streaming stress test passed");

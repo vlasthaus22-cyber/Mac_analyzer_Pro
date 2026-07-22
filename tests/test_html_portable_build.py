@@ -47,12 +47,13 @@ def test_html_portable_builder_outputs_one_self_contained_html_file():
         assert '<script src=' not in html
         assert '<link rel="stylesheet"' not in html
         assert "window.MacAnalyzerPortableDatabase" in html
+        assert "window.MacAnalyzerLocalFolderStore" in html
         assert "window.MacAnalyzerAppBootstrapped = true;" in html
         assert "window.MacAnalyzerFallbackReady = true;" not in html
         assert "xlsxWorksheetRows" in html
         assert "assertEnrichmentCapacity" in html
-        assert 'const autonomousHtmlMode = location.protocol === "file:";' in html
-        assert "const backendCandidates = autonomousHtmlMode ? []" in html
+        assert 'const autonomousHtmlMode = browserOnlyMode || location.protocol === "file:";' in html
+        assert "const backendCandidates = [];" in html
 
 
 if __name__ == "__main__":

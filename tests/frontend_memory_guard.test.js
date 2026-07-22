@@ -40,6 +40,19 @@ const aggregate = guard.assertEnrichmentCapacity([
   { rowCount: 100_000, headers: ["mac", "ip", "switch"] },
 ]);
 assert.deepEqual(aggregate, { rows: 200_000, cells: 600_000, textBytes: 0 });
+assert.deepEqual(guard.effectiveEnrichmentLimits({ deviceMemory: 4 }), {
+  rows: 110_000,
+  cells: 1_100_000,
+  textBytes: 32 * 1024 * 1024,
+  deviceMemory: 4,
+});
+assert.throws(
+  () => guard.assertEnrichmentCapacity([
+    { rowCount: 60_000, headers: ["mac", "vendor"] },
+    { rowCount: 60_000, headers: ["mac", "room"] },
+  ], null, { deviceMemory: 4 }),
+  (error) => error.code === "BROWSER_MEMORY_LIMIT" && /операция остановлена/.test(error.message),
+);
 assert.deepEqual(
   guard.enrichmentSize([{ rows: [["MAC", "Vendor"], ["001122334455", "Cisco"]], headers: ["MAC", "Vendor"] }]),
   { rows: 2, cells: 4, textBytes: 52 },

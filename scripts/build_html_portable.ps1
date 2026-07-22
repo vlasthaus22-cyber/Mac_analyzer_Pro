@@ -28,6 +28,7 @@ $scripts = @(
     "frontend/state-persistence.js",
     "frontend/browser-snapshot-store.js",
     "frontend/portable-database.js",
+    "frontend/local-folder-store.js",
     "frontend/guide.js",
     "app.js"
 )
@@ -48,7 +49,7 @@ foreach ($relativePath in $scripts) {
 $fallbackPattern = '(?s)\s*<script>\s*window\.addEventListener\("DOMContentLoaded", \(\) => \{\s*if \(window\.MacAnalyzerAppBootstrapped.*?</script>\s*(?=</body>)'
 $html = [regex]::Replace($html, $fallbackPattern, "`n", 1)
 
-$html = $html.Replace('<meta name="application-build" content="2026.07.21.3">', '<meta name="application-build" content="2026.07.21.3-html">')
+$html = $html.Replace('<meta name="application-build" content="2026.07.22.1">', '<meta name="application-build" content="2026.07.22.1-html">')
 Set-Content -LiteralPath $outputFile -Value $html -Encoding UTF8
 
 $built = Get-Content -LiteralPath $outputFile -Raw -Encoding UTF8
@@ -58,6 +59,7 @@ if ($built -match '<script\s+src=' -or $built -match '<link\s+rel="stylesheet"')
 foreach ($marker in @(
     "window.MacAnalyzerAppBootstrapped = true;",
     "window.MacAnalyzerPortableDatabase",
+    "window.MacAnalyzerLocalFolderStore",
     "xlsxWorksheetRows",
     "assertEnrichmentCapacity",
     "id=`"portableDatabaseButton`""

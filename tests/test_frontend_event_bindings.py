@@ -97,9 +97,9 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
 
     assert 'id="fileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
-    assert '<script src="frontend/memory-guard.js?v=20260721.3"></script>' in html
-    assert '<script src="frontend/file-readers.js?v=20260721.3"></script>' in html
-    assert '<meta name="application-build" content="2026.07.21.3">' in html
+    assert '<script src="frontend/memory-guard.js?v=20260722.1"></script>' in html
+    assert '<script src="frontend/file-readers.js?v=20260722.1"></script>' in html
+    assert '<meta name="application-build" content="2026.07.22.1">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -158,9 +158,11 @@ def test_cross_browser_restore_prefers_compact_sqlite_workspace():
     assert 'function shouldRestoreBootstrapAutosave(autosave)' in app
     assert 'if(!merged.resultSnapshotId&&merged.activeSnapshotId)' in app
     assert 'async function restoreInitialState()' in app
-    assert 'const backendSynced=await syncFromBackend();' in app
-    assert 'if(!backendSynced){' in app
+    assert 'const backendSynced=browserOnlyMode?false:await syncFromBackend();' in app
     assert 'const restored=await restoreBrowserStateFromIndexedDb();' in app
+    assert 'const folderRestored=await restoreLocalFolderHandle({preferBrowserState:restored});' in app
+    assert 'if(!backendSynced){' in app
+    assert 'if(!folderRestored&&!restored)await restorePortableDatabaseHandle();' in app
     assert '"autosave": load_autosave_state("main", hydrate=False)' in server
     assert 'state = load_autosave_state(query.get("slot", ["main"])[0], hydrate=not compact)' in server
     assert 'state["devices"] = []' in server
@@ -732,7 +734,9 @@ def test_dashboard_settings_are_loaded_from_backend():
 
     assert 'dashboardSettings:{vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:' in app
     assert 'async function loadDashboardSettings(){try{const result=await api("/dashboard/settings")' in app
-    assert 'loadDashboardSettings();loadEngineeringSession();' in app
+    assert 'if(!browserOnlyMode){loadThemePreference();' in app
+    assert 'loadDashboardSettings();' in app
+    assert 'loadEngineeringSession();' in app
     assert 'let dashboardFilteredDevices = null;' in app
     assert 'function dashboardDevices(){return dashboardFilteredDevices||state.devices;}' in app
     assert 'async function loadDashboardPayload(settings=dashboardSettings())' in app
@@ -933,17 +937,22 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260721.3"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260722.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
     assert 'async function storeLocalSnapshot(' in app
     assert 'devices:rows.slice(0,previewLimit)' in app
     assert 'const rowBudget=MemoryGuard.limits.browserSnapshotRows||300000,keepIds=[];' in app
     assert 'let remainingRows=Math.max(0,rowBudget-rows.length);' in app
     assert 'await BrowserSnapshots.prune(keepIds);' in app
-    assert app.index('await BrowserSnapshots.prune(keepIds);') < app.index('await BrowserSnapshots.save(record);')
+    assert app.index('await BrowserSnapshots.prune(keepIds);') < app.index('await BrowserSnapshots.save(record,(percent)=>')
     assert 'browserSnapshotRows: 300_000' in memory_guard
     assert 'const snapshotStore = "snapshots";' in snapshot_store
-    assert 'const databaseVersion = 3;' in snapshot_store
+    assert 'const databaseVersion = 4;' in snapshot_store
+    assert 'const snapshotChunkStore = "snapshotChunks";' in snapshot_store
+    assert 'const snapshotChunkRows = 1_000;' in snapshot_store
+    assert 'function* chunkRows(rows, size = snapshotChunkRows)' in snapshot_store
+    assert 'await transaction(snapshotChunkStore, "readwrite"' in snapshot_store
+    assert 'await new Promise((resolve) => setTimeout(resolve, 0));' in snapshot_store
     assert 'const sourceFileStore = "sourceFiles";' in snapshot_store
     assert 'function saveSourceFile(id, file)' in snapshot_store
     assert 'async function loadSourceFile(id)' in snapshot_store
@@ -1910,7 +1919,7 @@ def test_pyqt_single_device_analytics_text_report_is_rendered_locally_and_from_a
     assert ".device-detailed-report" in styles
 
 
-def test_primary_and_enrichment_files_are_grouped_and_local_html_can_reconnect_backend():
+def test_primary_and_enrichment_files_are_grouped_in_browser_only_html():
     html = read_index_html()
     app = read_app_js()
     styles = Path("styles.css").read_text(encoding="utf-8")
@@ -1923,8 +1932,9 @@ def test_primary_and_enrichment_files_are_grouped_and_local_html_can_reconnect_b
     ):
         assert marker in html
     for marker in (
-        'const autonomousHtmlMode = location.protocol === "file:";',
-        'const backendCandidates = autonomousHtmlMode ? []',
+        'const browserOnlyMode = true;',
+        'const autonomousHtmlMode = browserOnlyMode || location.protocol === "file:";',
+        'const backendCandidates = [];',
         'function normalizeFileRoles(files=[])',
         'function insertImportedFile(fileRecord,requestedRole="auto",batchIndex=0)',
         'loadFiles(e.target.files,e.target,"primary")',
@@ -1995,7 +2005,7 @@ def test_role_aware_guide_is_a_separate_working_view():
         'data-guide-tab="large-files"',
         'data-guide-requires-engineering',
         'id="openGuideFromHelpButton"',
-        '<script src="frontend/guide.js?v=20260721.3"></script>',
+        '<script src="frontend/guide.js?v=20260722.1"></script>',
     ):
         assert marker in html
     for text in (
@@ -2114,7 +2124,7 @@ def test_autonomous_file_database_is_streamed_and_connected_to_workspace_saves()
         'id="openPortableDatabaseButton"',
         'id="createPortableDatabaseButton"',
         'id="portableDatabaseInput"',
-        '<script src="frontend/portable-database.js?v=20260721.3"></script>',
+        '<script src="frontend/portable-database.js?v=20260722.1"></script>',
     ):
         assert marker in html
     for marker in (
@@ -2133,6 +2143,39 @@ def test_autonomous_file_database_is_streamed_and_connected_to_workspace_saves()
     ):
         assert marker in database
     assert "JSON.stringify(payload)" not in database
+
+
+def test_browser_only_mode_uses_a_structured_local_folder():
+    html = Path("index.html").read_text(encoding="utf-8")
+    app = Path("app.js").read_text(encoding="utf-8")
+    folder_store = Path("frontend/local-folder-store.js").read_text(encoding="utf-8")
+    for marker in (
+        'id="chooseLocalFolderButton"',
+        'id="localFolderStatus"',
+        '<script src="frontend/local-folder-store.js?v=20260722.1"></script>',
+        "Выбрать локальную папку",
+    ):
+        assert marker in html
+    for marker in (
+        "const browserOnlyMode = true;",
+        "const backendCandidates = [];",
+        "async function attachLocalFolder(",
+        "async function restoreLocalFolderHandle({preferBrowserState=false}={})",
+        "LocalFolderStore?.copyImport?.(",
+        'setBackendStatus(false,"Локальная файловая база подключена · backend не используется")',
+        'const localFolderSavedAtKey = key+"-folder-saved-at";',
+        'const header=await PortableDatabase.readHeader(structure.databaseHandle);',
+        'if(preferBrowserState&&knownSavedAt>=fileSavedAt)',
+    ):
+        assert marker in app
+    assert 'setInterval(()=>{if(browserOnlyMode){if(portableDatabaseHandle)schedulePortableDatabaseSave(0);}' not in app
+    for marker in (
+        'const folderNames = Object.freeze(["database", "imports", "exports", "settings", "logs", "backups"]);',
+        'const databaseFileName = "mac-analyzer-data.madb";',
+        "showDirectoryPicker",
+        "async function copyImport(",
+    ):
+        assert marker in folder_store
 
 
 if __name__ == "__main__":
@@ -2207,7 +2250,7 @@ if __name__ == "__main__":
     test_pyqt_mac_history_dialog_keeps_separate_history_and_movement_tables()
     test_dashboard_change_period_snapshot_drilldown_is_wired_backend_and_local()
     test_pyqt_single_device_analytics_text_report_is_rendered_locally_and_from_api()
-    test_primary_and_enrichment_files_are_grouped_and_local_html_can_reconnect_backend()
+    test_primary_and_enrichment_files_are_grouped_in_browser_only_html()
     test_user_and_engineering_modes_match_pyqt_access_split()
     test_role_aware_guide_is_a_separate_working_view()
     test_full_system_diagnostics_is_visible_and_has_offline_fallback()

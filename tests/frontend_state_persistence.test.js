@@ -40,6 +40,21 @@ assert.equal(source.files[0].rows.length, 3, "compaction must not mutate live wo
 const standalone = persistence.compactIndexedState({ ...source, resultSnapshotId: "", files: [source.files[1]] });
 assert.deepEqual(standalone.files[0].rows, browserRows);
 assert.deepEqual(standalone.devices, source.devices, "browser-only results must remain available");
+assert.equal(standalone.resultPersistenceTruncated, false);
+
+const oversizedFallbackDevices = Array.from(
+  { length: persistence.maxInlineResultRows + 1 },
+  (_, index) => ({ mac: `AABBCC${index.toString(16).padStart(6, "0")}` }),
+);
+const oversizedFallback = persistence.compactIndexedState({
+  resultSnapshotId: "",
+  resultBrowserSnapshotId: "",
+  devices: oversizedFallbackDevices,
+  invalid: [],
+});
+assert.deepEqual(oversizedFallback.devices, [], "failed snapshot fallback must not clone a huge result");
+assert.equal(oversizedFallback.resultPersistenceTruncated, true);
+assert.equal(oversizedFallbackDevices.length, persistence.maxInlineResultRows + 1, "live result must stay intact");
 
 const browserSnapshot = persistence.compactIndexedState({
   ...source,

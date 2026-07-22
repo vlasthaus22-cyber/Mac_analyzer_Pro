@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
-  <meta name="application-build" content="2026.07.21.3">
-  <link rel="stylesheet" href="styles.css?v=20260721.3">
+  <meta name="application-build" content="2026.07.22.1">
+  <link rel="stylesheet" href="styles.css?v=20260722.1">
 </head>
 <body>
   <div class="app-shell">
@@ -27,7 +27,7 @@
         <button class="nav-item" data-view="guide" role="tab" aria-controls="guideView" aria-selected="false">Руководство</button>
       </nav>
       <div class="sidebar-footer">
-        <span class="status-dot" id="backendStatusDot"></span><span id="storageStatus">Проверка backend...</span><button class="backend-reconnect" id="reconnectBackendButton" type="button" title="Повторно подключить backend" hidden>↻</button>
+        <span class="status-dot standalone" id="backendStatusDot"></span><span id="storageStatus">Автономный режим · выберите локальную папку данных</span><button class="backend-reconnect" id="reconnectBackendButton" type="button" title="Открыть локальную базу" hidden>↻</button>
       </div>
     </aside>
 
@@ -38,7 +38,7 @@
           <p id="viewSubtitle">Импортируйте данные, обогатите их и сохраните результат.</p>
         </div>
         <div class="topbar-actions">
-          <button class="button secondary" id="portableDatabaseButton" type="button" title="Общая файловая база для автономного HTML">Файловая база</button>
+          <button class="button secondary" id="portableDatabaseButton" type="button" title="Папка с локальной базой автономного HTML">Локальная база</button>
           <button class="mode-badge user-mode" id="appModeButton" type="button" title="Переключить режим"><span id="appModeIcon">USER</span><strong id="appModeLabel">Пользовательский режим</strong><small id="appModeHint">Просмотр и поиск</small></button>
           <button class="icon-button" id="helpButton" title="Справка" aria-label="Справка">?</button>
           <button class="icon-button" id="themeButton" title="Сменить тему" aria-label="Сменить тему">◐</button>
@@ -172,7 +172,7 @@
         <section class="two-column">
           <div class="tool-panel">
             <div class="panel-head"><h2>Анализ одного файла</h2></div>
-            <label class="drop-zone" for="singleFileInput" role="button" tabindex="0"><input id="singleFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls" hidden><strong>Выберите файл для анализа</strong><span>CSV, TSV, TXT, JSON и Excel обрабатываются через backend.</span></label>
+            <label class="drop-zone" for="singleFileInput" role="button" tabindex="0"><input id="singleFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls" hidden><strong>Выберите файл для анализа</strong><span>CSV, TSV, TXT, JSON и Excel обрабатываются локально в браузере.</span></label>
             <button class="button secondary full" id="singleBrowseFileButton" type="button">Выбрать файл</button>
             <p class="muted" id="singleFileStatus">Файл не выбран.</p>
             <label>XLSX лист<input id="singleSheetInput" placeholder="Пусто = первый лист"></label>
@@ -284,9 +284,9 @@
           <div class="tool-panel"><div class="panel-head"><h2>Модели</h2></div><div class="bar-list" id="modelChart"></div></div>
           <div class="tool-panel room-occupancy-panel"><div class="panel-head"><div><h2>Заполненность помещений</h2><span class="muted" id="roomOccupancyStatus">Нет данных о распределении устройств</span></div></div><div class="bar-list" id="roomOccupancyChart"></div></div>
           <div class="tool-panel"><div class="panel-head"><h2>Состояние данных</h2></div><div class="bar-list" id="qualityChart"></div></div>
-          <div class="tool-panel"><div class="panel-head"><h2>Backend диаграммы</h2><button class="button secondary" id="exportChartsSvgButton">SVG</button></div><div class="bar-list" id="backendChartsPanel"></div></div>
+          <div class="tool-panel"><div class="panel-head"><h2>Диаграммы данных</h2><button class="button secondary" id="exportChartsSvgButton">SVG</button></div><div class="bar-list" id="backendChartsPanel"></div></div>
           <div class="tool-panel"><div class="panel-head"><h2>Динамика загрузок</h2><span class="muted">Снимки по времени</span></div><div class="bar-list" id="timelineChart"></div></div>
-          <div class="tool-panel"><div class="panel-head"><h2>SQLite statistics</h2><span class="muted">Snapshots, trends, performance</span></div><div class="bar-list" id="backendStatisticsChart"></div></div>
+          <div class="tool-panel"><div class="panel-head"><h2>Статистика локальной базы</h2><span class="muted">Снимки, динамика, производительность</span></div><div class="bar-list" id="backendStatisticsChart"></div></div>
           <div class="tool-panel"><div class="panel-head"><h2>Временная статистика</h2><span class="muted">Дни, недели, месяцы</span></div><div class="bar-list" id="temporalStatisticsChart"></div></div>
           <div class="tool-panel"><div class="panel-head"><h2>Кластеры устройств</h2><button class="button secondary" id="exportClustersButton">CSV</button></div><div class="bar-list" id="clusterChart"></div></div>
           <div class="tool-panel topology-panel"><div class="panel-head"><h2>Топология сети</h2><button class="button secondary" id="exportTopologyButton">HTML</button></div><div class="topology-list" id="topologyGraph"></div></div>
@@ -599,7 +599,7 @@
         <section class="guide-panel" id="guideLargeFilesPanel" data-guide-panel="large-files" role="tabpanel" hidden>
           <header class="guide-section-head"><div><p class="guide-eyebrow">Защита памяти</p><h2>Как обрабатывать большие XLSX без Out of Memory</h2></div><span class="guide-access-badge memory">Контроль ресурсов</span></header>
           <div class="guide-safety-grid">
-            <section><h3>Через backend и SQLite</h3><p>Рекомендуемый вариант для больших файлов. В браузер передаётся только компактное превью и страницы результата, а полные строки остаются в файловом кэше и SQLite.</p><ul><li>Откройте программу по адресу <code>http://127.0.0.1:8080/</code>.</li><li>Убедитесь, что слева отображается «Backend и SQLite подключены».</li><li>Дождитесь завершения шкалы импорта перед запуском анализа.</li></ul></section>
+            <section><h3>Через локальную папку</h3><p>Выбранная папка хранит базу, исходные файлы, настройки, журналы и резервные копии без запуска дополнительных программ.</p><ul><li>Нажмите «Локальная база».</li><li>Выберите или создайте папку данных.</li><li>Дождитесь завершения шкалы импорта перед запуском анализа.</li></ul></section>
             <section><h3>Автономный HTML</h3><p>XLSX читается потоково, строки обогащаются порциями, а интерфейс показывает только текущую страницу. Перед опасным расходом памяти операция останавливается понятным сообщением.</p><ul><li>Не открывайте один файл одновременно в нескольких вкладках.</li><li>Не закрывайте страницу во время записи в IndexedDB или MADB.</li><li>При сообщении о безопасном лимите разделите исходные данные на меньшие файлы.</li></ul></section>
           </div>
           <aside class="guide-callout warning"><strong>Что защищает вкладку от аварийного завершения</strong><p>Нет полных копий массивов при сортировке и фильтрации; XML листа разбирается потоково; shared strings, число строк, ячеек и размер листа ограничены; постраничный вывод результата показывает по 25–1000 строк.</p></aside>
@@ -719,15 +719,17 @@
     <div class="dialog-actions dashboard-settings-actions"><button class="button secondary" id="resetDashboardSettingsButton">Сбросить</button><span></span><button class="button secondary" id="cancelDashboardSettingsButton">Закрыть</button><button class="button primary" id="applyDashboardSettingsButton">Применить</button></div>
   </dialog>
   <dialog class="device-dialog" id="portableDatabaseDialog">
-    <div class="dialog-head"><div><h2>Автономная файловая база</h2><p class="muted">Один файл MADB хранит результаты, историю и настройки без EXE, CMD и backend.</p></div><button class="icon-button" id="closePortableDatabaseDialog" aria-label="Закрыть">×</button></div>
+    <div class="dialog-head"><div><h2>Локальная папка программы</h2><p class="muted">Данные, история, настройки и исходные файлы сохраняются локально без EXE, CMD и backend.</p></div><button class="icon-button" id="closePortableDatabaseDialog" aria-label="Закрыть">×</button></div>
     <div class="portable-database-actions">
-      <button class="button primary" id="openPortableDatabaseButton" type="button">Подключить существующую</button>
-      <button class="button secondary" id="createPortableDatabaseButton" type="button">Создать новую</button>
+      <button class="button primary" id="chooseLocalFolderButton" type="button">Выбрать локальную папку</button>
+      <button class="button secondary" id="openPortableDatabaseButton" type="button">Открыть файл MADB</button>
+      <button class="button secondary" id="createPortableDatabaseButton" type="button">Сохранить MADB отдельно</button>
       <button class="button secondary" id="savePortableDatabaseButton" type="button">Сохранить сейчас</button>
       <input id="portableDatabaseInput" type="file" accept=".madb,application/x-mac-analyzer-db" hidden>
     </div>
-    <div class="portable-database-status" id="portableDatabaseStatus" role="status" aria-live="polite">Файловая база пока не подключена. Данные сохраняются в IndexedDB текущего браузера.</div>
-    <p class="muted">В новом браузере нажмите «Подключить существующую» и выберите тот же файл. Браузеры не имеют права открывать локальный файл без первого ручного выбора.</p>
+    <div class="portable-database-status" id="localFolderStatus" role="status" aria-live="polite">Выберите папку. Программа создаст database, imports, exports, settings, logs и backups.</div>
+    <div class="portable-database-status" id="portableDatabaseStatus" role="status" aria-live="polite">До выбора папки используется IndexedDB текущего браузера.</div>
+    <p class="muted">Браузер требует один раз выбрать папку вручную. После разрешения программа автоматически читает database/mac-analyzer-data.madb и сохраняет туда изменения.</p>
   </dialog>
   <dialog class="device-dialog" id="helpDialog">
     <div class="dialog-head"><div><h2>Справка</h2><p class="muted">MAC Analyzer Pro Web: режимы, сценарии и горячие клавиши.</p></div><button class="icon-button" id="closeHelpDialog" aria-label="Закрыть">×</button></div>
@@ -736,13 +738,14 @@
     <div class="shortcut-grid"><kbd>Ctrl+O</kbd><span>выбрать файлы</span><kbd>Ctrl+S</kbd><span>экспорт XLSX</span><kbd>Ctrl+E</kbd><span>экспорт CSV</span><kbd>Ctrl+A</kbd><span>аналитика</span><kbd>Ctrl+H</kbd><span>история</span><kbd>Ctrl+F</kbd><span>поиск в результатах</span><kbd>F5</kbd><span>запустить анализ</span><kbd>F6</kbd><span>сравнение двух снимков</span><kbd>F7</kbd><span>графики</span><kbd>F8</kbd><span>топология</span><kbd>F9</kbd><span>массовое сравнение</span><kbd>F1</kbd><span>справка</span><kbd>Esc</kbd><span>отмена или закрытие окна</span></div>
     <div class="dialog-actions"><span></span><button class="button primary" id="openGuideFromHelpButton" type="button">Открыть полное руководство</button></div>
   </dialog>
-  <script src="frontend/memory-guard.js?v=20260721.3"></script>
-  <script src="frontend/file-readers.js?v=20260721.3"></script>
-  <script src="frontend/state-persistence.js?v=20260721.3"></script>
-  <script src="frontend/browser-snapshot-store.js?v=20260721.3"></script>
-  <script src="frontend/portable-database.js?v=20260721.3"></script>
-  <script src="frontend/guide.js?v=20260721.3"></script>
-  <script src="app.js?v=20260721.3"></script>
+  <script src="frontend/memory-guard.js?v=20260722.1"></script>
+  <script src="frontend/file-readers.js?v=20260722.1"></script>
+  <script src="frontend/state-persistence.js?v=20260722.1"></script>
+  <script src="frontend/browser-snapshot-store.js?v=20260722.1"></script>
+  <script src="frontend/portable-database.js?v=20260722.1"></script>
+  <script src="frontend/local-folder-store.js?v=20260722.1"></script>
+  <script src="frontend/guide.js?v=20260722.1"></script>
+  <script src="app.js?v=20260722.1"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;
@@ -1442,10 +1445,13 @@
       function fallbackOpenBrowserDb() {
         return new Promise((resolve, reject) => {
           if (!("indexedDB" in window)) return reject(new Error("IndexedDB unavailable"));
-          const request = indexedDB.open(fallbackBrowserDbName, 2);
+          const request = indexedDB.open(fallbackBrowserDbName, 4);
           request.onupgradeneeded = () => {
             const db = request.result;
             if (!db.objectStoreNames.contains(fallbackBrowserStoreName)) db.createObjectStore(fallbackBrowserStoreName, { keyPath: "id" });
+            if (!db.objectStoreNames.contains("snapshots")) db.createObjectStore("snapshots", { keyPath: "id" });
+            if (!db.objectStoreNames.contains("snapshotChunks")) { const chunks = db.createObjectStore("snapshotChunks", { keyPath: "key" }); chunks.createIndex("snapshotId", "snapshotId", { unique: false }); }
+            if (!db.objectStoreNames.contains("sourceFiles")) db.createObjectStore("sourceFiles", { keyPath: "id" });
             if (!db.objectStoreNames.contains("snapshots")) db.createObjectStore("snapshots", { keyPath: "id" });
           };
           request.onsuccess = () => resolve(request.result);

@@ -71,6 +71,8 @@ def test_project_structure_and_maintenance_commands_exist():
         "tests/browser_xlsx_memory_harness.html",
         "tests/frontend_state_persistence.test.js",
         "tests/frontend_repeated_persistence_memory.test.js",
+        "tests/frontend_snapshot_chunking_memory.test.js",
+        "tests/local_folder_store.test.js",
         "tests/portable_database.test.js",
         "tests/test_html_portable_build.py",
         "tests/test_complete_release_build.py",

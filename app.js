@@ -11,22 +11,21 @@
   const browserStateStoreName = "workspaces";
   const browserStateRecordId = "main-v2";
   const browserStateSavedAtKey = key+"-saved-at";
+  const localFolderSavedAtKey = key+"-folder-saved-at";
   const StatePersistence = window.MacAnalyzerStatePersistence;
   const BrowserSnapshots = window.MacAnalyzerBrowserSnapshots;
   const MemoryGuard = window.MacAnalyzerMemoryGuard;
   const Guide = window.MacAnalyzerGuide;
   const PortableDatabase = window.MacAnalyzerPortableDatabase;
+  const LocalFolderStore = window.MacAnalyzerLocalFolderStore;
   if(!MemoryGuard)throw new Error("Модуль frontend/memory-guard.js не загружен");
   if(!Guide)throw new Error("Модуль frontend/guide.js не загружен");
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
   const networkUnavailable = (error) => error instanceof TypeError || [404,405,501].includes(Number(error?.status||0)) || /Failed to fetch|NetworkError|Load failed|fetch failed/i.test(error?.message||"");
-  const autonomousHtmlMode = location.protocol === "file:";
-  const backendCandidates = autonomousHtmlMode ? [] : [...new Set([
-    "/api",
-    "http://127.0.0.1:8080/api",
-    "http://localhost:8080/api"
-  ])];
+  const browserOnlyMode = true;
+  const autonomousHtmlMode = browserOnlyMode || location.protocol === "file:";
+  const backendCandidates = [];
   let backendBase = backendCandidates[0];
   let backendAvailable = false;
   let resultPage=1,resultPageSize=250,resultRenderRevision=0;
@@ -56,11 +55,12 @@
   BrowserSnapshots?.removeLegacyWorkspace?.().catch(()=>{});
   let browserStateSaveTimer=null,browserStateSaveRevision=0,browserStateQueuedRevision=0,browserStatePersistedRevision=0,browserStateSavePromise=Promise.resolve(),browserStatePendingSavedAt="";
   let portableDatabaseHandle=null,portableDatabaseSaveTimer=null,portableDatabaseSaveRevision=0,portableDatabaseQueuedRevision=0,portableDatabasePersistedRevision=0,portableDatabaseSavePromise=Promise.resolve();
+  let localFolderHandle=null,localFolderStructure=null;
   function openBrowserStateDb(){
     return new Promise((resolve,reject)=>{
       if(!("indexedDB" in window))return reject(new Error("IndexedDB недоступна"));
-      const request=indexedDB.open(browserStateDbName,3);
-      request.onupgradeneeded=()=>{const db=request.result;if(!db.objectStoreNames.contains(browserStateStoreName))db.createObjectStore(browserStateStoreName,{keyPath:"id"});if(!db.objectStoreNames.contains("snapshots"))db.createObjectStore("snapshots",{keyPath:"id"});if(!db.objectStoreNames.contains("sourceFiles"))db.createObjectStore("sourceFiles",{keyPath:"id"});};
+      const request=indexedDB.open(browserStateDbName,4);
+      request.onupgradeneeded=()=>{const db=request.result;if(!db.objectStoreNames.contains(browserStateStoreName))db.createObjectStore(browserStateStoreName,{keyPath:"id"});if(!db.objectStoreNames.contains("snapshots"))db.createObjectStore("snapshots",{keyPath:"id"});if(!db.objectStoreNames.contains("snapshotChunks")){const chunks=db.createObjectStore("snapshotChunks",{keyPath:"key"});chunks.createIndex("snapshotId","snapshotId",{unique:false});}if(!db.objectStoreNames.contains("sourceFiles"))db.createObjectStore("sourceFiles",{keyPath:"id"});};
       request.onsuccess=()=>resolve(request.result);
       request.onerror=()=>reject(request.error||new Error("Не удалось открыть IndexedDB"));
     });
@@ -108,6 +108,12 @@
     target.textContent=message;
     target.dataset.status=status;
   }
+  function localFolderStatus(message,status="ready"){
+    const target=$("#localFolderStatus");
+    if(!target)return;
+    target.textContent=message;
+    target.dataset.status=status;
+  }
   function portableDatabasePayload(){
     const compact=StatePersistence.compactLocalState(state);
     compact.files=[];
@@ -117,7 +123,7 @@
     compact.resultDeviceCount=(state.devices||[]).length;
     compact.resultInvalidCount=(state.invalid||[]).length;
     compact.resultSummary=state.resultSummary||null;
-    return{state:compact,devices:state.devices||[],invalid:state.invalid||[],movements:state.movementHistory||[],snapshotMetadata:(state.snapshots||[]).filter((item)=>item.browserStored),skipSnapshotId:state.resultBrowserSnapshotId||"",snapshotLoader:(metadata)=>loadLocalSnapshotRecord(metadata)};
+    return{state:compact,devices:state.devices||[],invalid:state.invalid||[],movements:state.movementHistory||[],snapshotMetadata:(state.snapshots||[]).filter((item)=>item.browserStored),skipSnapshotId:state.resultBrowserSnapshotId||"",snapshotStreamer:BrowserSnapshots?.streamSnapshot?(metadata,onChunk)=>BrowserSnapshots.streamSnapshot(metadata.id,onChunk):null,snapshotLoader:(metadata)=>loadLocalSnapshotRecord(metadata)};
   }
   function portableDatabaseProgress(processId,value,detail){
     portableDatabaseStatus(detail||"Обработка файловой базы...");
@@ -133,7 +139,12 @@
       if(access!=="granted"&&access!=="unsupported")throw new Error("Откройте файловую базу кнопкой, чтобы снова разрешить запись");
       const result=await PortableDatabase.write(portableDatabaseHandle,payload,(value,detail)=>portableDatabaseProgress("",value,detail));
       portableDatabasePersistedRevision=Math.max(portableDatabasePersistedRevision,revision);
+      try{localStorage.setItem(localFolderSavedAtKey,result.savedAt||"");}catch{}
       portableDatabaseStatus(`Файловая база сохранена: ${new Date(result.savedAt).toLocaleString("ru-RU")} · устройств ${result.counts.devices.toLocaleString("ru-RU")}`);
+      if(localFolderStructure?.databaseHandle===portableDatabaseHandle){
+        await LocalFolderStore?.writeManifest?.(localFolderStructure,{savedAt:result.savedAt,counts:result.counts}).catch(()=>false);
+        localFolderStatus(`Папка подключена: ${localFolderHandle?.name||"MAC Analyzer Data"} · база обновлена ${new Date(result.savedAt).toLocaleString("ru-RU")}`);
+      }
       if(portableDatabaseSaveRevision>portableDatabaseQueuedRevision)schedulePortableDatabaseSave(500);
       return result;
     }).catch((error)=>{portableDatabaseStatus(error.message,"error");throw error;});
@@ -157,12 +168,14 @@
     state.invalid=Array.isArray(data.invalid)?data.invalid:[];
     state.movementHistory=Array.isArray(data.movements)?data.movements:[];
     if(Array.isArray(data.snapshots)&&data.snapshots.length){const imported=new Map(data.snapshots.map((item)=>[item.id,item]));state.snapshots=(state.snapshots||[]).map((item)=>imported.get(item.id)||item);}
+    const currentReference=(data.snapshots||[]).find((item)=>item.currentReference);
     state.resultSnapshotId="";
-    state.resultBrowserSnapshotId="";
+    state.resultBrowserSnapshotId=currentReference?.id||"";
     state.resultBrowserSnapshotDirty=false;
     state.resultDeviceCount=state.devices.length;
     state.resultInvalidCount=state.invalid.length;
     state.lastAnalysis=data.header?.savedAt||state.lastAnalysis||new Date().toISOString();
+    try{localStorage.setItem(localFolderSavedAtKey,data.header?.savedAt||"");}catch{}
     save({immediate:true,portable:false});
     await flushBrowserStateSave().catch(()=>{});
     applyTheme(state.theme);
@@ -210,7 +223,7 @@
         portableDatabaseStatus(`Файловая база создана: ${handle.name} · устройств ${result.counts.devices.toLocaleString("ru-RU")}`);
       }else{
         const blob=await PortableDatabase.createBlob(portableDatabasePayload(),(value,detail)=>portableDatabaseProgress(processId,value,detail));
-        const link=document.createElement("a");link.href=URL.createObjectURL(blob);link.download="mac-analyzer-data.madb";link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);
+        deliverDownload("mac-analyzer-data.madb",blob);
         portableDatabaseStatus("Файл MADB скачан. В этом браузере автоматическая запись в выбранный файл не поддерживается.","warning");
       }
       finishProcess(processId,"Файловая база сохранена");
@@ -234,6 +247,59 @@
       return false;
     }
     return readPortableDatabaseHandle(handle).catch(()=>false);
+  }
+  async function attachLocalFolder(handle,{request=true,preferBrowserState=false}={}){
+    if(!LocalFolderStore||!PortableDatabase)throw new Error("Модуль локальной папки не загружен");
+    if(request&&!(await LocalFolderStore.requestPermission(handle,"readwrite")))throw new Error("Браузер не разрешил доступ к выбранной папке");
+    localFolderStatus("Создание структуры локального хранилища...");
+    const structure=await LocalFolderStore.ensureStructure(handle);
+    localFolderHandle=handle;
+    localFolderStructure=structure;
+    portableDatabaseHandle=structure.databaseHandle;
+    await LocalFolderStore.saveHandle(handle).catch(()=>false);
+    await PortableDatabase.saveHandle(structure.databaseHandle).catch(()=>false);
+    const databaseFile=await structure.databaseHandle.getFile();
+    if(databaseFile.size>0){
+      const header=await PortableDatabase.readHeader(structure.databaseHandle);
+      const fileSavedAt=Date.parse(header?.savedAt||"")||0,knownSavedAt=Date.parse(localStorage.getItem(localFolderSavedAtKey)||"")||0;
+      if(preferBrowserState&&knownSavedAt>=fileSavedAt){
+        portableDatabaseSaveRevision=portableDatabaseQueuedRevision=portableDatabasePersistedRevision=0;
+        portableDatabaseStatus(`Файловая база уже синхронизирована · устройств ${Number(header?.counts?.devices||currentDeviceCount()).toLocaleString("ru-RU")}`);
+      }else{
+        if(preferBrowserState){if(Array.isArray(state.devices))state.devices.length=0;if(Array.isArray(state.invalid))state.invalid.length=0;await MemoryGuard.yieldToMainThread();}
+        await readPortableDatabaseHandle(structure.databaseHandle);
+      }
+    }else{
+      portableDatabaseSaveRevision++;
+      await persistPortableDatabase();
+    }
+    await LocalFolderStore.writeManifest(structure,{connectedAt:new Date().toISOString()}).catch(()=>false);
+    await LocalFolderStore.writeLog(structure,"folder-connected",{database:`database/${LocalFolderStore.databaseFileName}`}).catch(()=>false);
+    localFolderStatus(`Папка подключена: ${handle.name||"MAC Analyzer Data"} · database, imports, exports, settings, logs, backups`);
+    setBackendStatus(false,"Локальная файловая база подключена · backend не используется");
+    return true;
+  }
+  async function connectLocalFolder(){
+    if(!LocalFolderStore?.supportsDirectoryPicker?.()){
+      localFolderStatus("Этот браузер не разрешает прямую запись в папку. Используйте Chrome или Edge и файловую базу MADB.","warning");
+      return createPortableDatabase();
+    }
+    try{
+      const handle=await LocalFolderStore.chooseDirectoryHandle();
+      if(handle)await attachLocalFolder(handle,{request:true});
+    }catch(error){if(error?.name!=="AbortError"){localFolderStatus(error.message,"error");toast(error.message);}}
+  }
+  async function restoreLocalFolderHandle({preferBrowserState=false}={}){
+    if(!LocalFolderStore)return false;
+    const handle=await LocalFolderStore.loadHandle();
+    if(!handle)return false;
+    const access=await LocalFolderStore.permission(handle,"readwrite");
+    if(access!=="granted"&&access!=="unsupported"){
+      localFolderHandle=handle;
+      localFolderStatus(`Найдена папка ${handle.name||"MAC Analyzer Data"}. Нажмите «Выбрать локальную папку», чтобы разрешить доступ.`,"warning");
+      return false;
+    }
+    return attachLocalFolder(handle,{request:false,preferBrowserState}).catch((error)=>{localFolderStatus(error.message,"error");return false;});
   }
   const save = (options={}) => {
     const savedAt=new Date().toISOString();
@@ -344,7 +410,10 @@
     sourceFilesById.set(fileRecord.id,file);
     if(fileRecord.fileToken&&!fileRecord.clientImported)return true;
     fileRecord.sourceStorageId=sourceFileStorageId(file);
-    try{await BrowserSnapshots?.saveSourceFile?.(fileRecord.sourceStorageId,file);return true;}catch{return false;}
+    let stored=false;
+    try{await BrowserSnapshots?.saveSourceFile?.(fileRecord.sourceStorageId,file);stored=true;}catch{}
+    if(localFolderStructure)try{await LocalFolderStore?.copyImport?.(localFolderStructure,file,fileRecord.sourceStorageId);stored=true;}catch(error){localFolderStatus("Не удалось скопировать исходный файл: "+error.message,"error");}
+    return stored;
   }
   async function restoreSourceFile(fileRecord){
     if(!fileRecord)return null;
@@ -407,6 +476,7 @@
   function failProcess(id,error){const message=error instanceof Error?error.message:String(error||"Неизвестная ошибка");if(updateProcess(id,100,"Ошибка: "+message))$("#processProgressPanel")?.classList.add("error");clearTimeout(processHideTimer);processHideTimer=setTimeout(()=>{const panel=$("#processProgressPanel");if(activeProcessId===id&&panel){panel.hidden=true;activeProcessId="";}},6000);}
   function cancelProcess(id,detail="Операция отменена"){finishProcess(id,detail,"warning");}
   const api = async (path, options = {}) => {
+    if(browserOnlyMode)throw new TypeError("Приложение работает без backend; используется локальная файловая база");
     const authHeaders=state.engineeringToken?{"Authorization":"Bearer "+state.engineeringToken}:{};
     const {headers:optionHeaders={},...fetchOptions}=options;
     const candidates=[backendBase,...backendCandidates.filter((item)=>item!==backendBase)].filter(Boolean);
@@ -518,14 +588,14 @@
   function setBackendStatus(available,message=""){
     backendAvailable=Boolean(available);
     const status=$("#storageStatus"),dot=$("#backendStatusDot"),button=$("#reconnectBackendButton");
-    if(status)status.textContent=message||(backendAvailable?"SQLite подключена":"Автономный HTML-режим готов · данные сохраняются в браузере");
+    if(status)status.textContent=message||(backendAvailable?"SQLite подключена":"Автономный режим · локальная MADB и IndexedDB");
     if(dot){dot.classList.remove("offline");dot.classList.toggle("standalone",!backendAvailable);dot.classList.toggle("online",backendAvailable);}
     if(button){button.hidden=autonomousHtmlMode||backendAvailable;button.disabled=false;}
   }
   async function checkBackendConnection(){
     const button=$("#reconnectBackendButton");
     if(button)button.disabled=true;
-    if(autonomousHtmlMode){setBackendStatus(false,"Автономный HTML · локальная файловая база и IndexedDB");return null;}
+    if(autonomousHtmlMode){setBackendStatus(false,localFolderStructure?"Локальная файловая база подключена · backend не используется":"Автономный HTML · выберите локальную папку данных");return null;}
     try{const health=await api("/health");setBackendStatus(true,"Backend и SQLite подключены");return health;}
     catch(error){setBackendStatus(false,"Автономный HTML-режим готов · XLSX и история сохраняются в браузере");throw error;}
     finally{if(button)button.disabled=false;}
@@ -691,7 +761,7 @@
         else item.browserStored=false;
       }
       await BrowserSnapshots.prune(keepIds);
-      await BrowserSnapshots.save(record);
+      await BrowserSnapshots.save(record,(percent)=>{if(activeProcessId)updateProcess(activeProcessId,90+Math.round(Math.min(100,percent)*0.06),`Сохранение снимка порциями: ${percent}%`);});
       browserStored=true;
     }catch{}
     const previewLimit=MemoryGuard.limits.snapshotPreviewRows||500;
@@ -713,6 +783,7 @@
     for(const device of afterDevices||[]){const mac=normalize(device.mac||device.macFormatted);if(!mac)continue;const encoded=previous.index.get(mac);if(encoded===undefined){if(entries.length<limit)entries.push({mac,type:"Добавлено",field:"-",before:"",after:device.macFormatted||formatMac(mac)});continue;}previous.index.delete(mac);const before=JSON.parse(encoded);for(let fieldIndex=0;fieldIndex<previous.fields.length&&entries.length<limit;fieldIndex++){const field=previous.fields[fieldIndex],next=String(device[field]??"");if(before[fieldIndex]!==next)entries.push({mac,type:"Изменено",field:labels[field]||field,before:before[fieldIndex],after:next});}}
     if(entries.length<limit)for(const mac of previous.index.keys()){entries.push({mac,type:"Удалено",field:"-",before:formatMac(mac),after:""});if(entries.length>=limit)break;}
     for(const item of entries){item.changedAt=changedAt;item.source=source;}
+    previous.index.clear();
     state.movementHistory=entries.concat((state.movementHistory||[]).slice(0,Math.max(0,limit-entries.length)));
     return entries.length;
   }
@@ -868,6 +939,13 @@
     const root=$("#singleMappingGrid");
     if(!root)return;
     const headers=pendingSingleFilePreview?.headers||[];
+    if(browserOnlyMode){
+      if(!headers.length){root.innerHTML='<p class="muted">Колонки появятся после выбора файла.</p>';return;}
+      const names=headers.map((header)=>typeof header==="object"?String(header.name||""):String(header||""));
+      const auto=localAutoMapping(names);
+      root.innerHTML=fieldList.map(([field,title])=>`<label>${esc(title)}<select data-single-map="${field}"><option value="">Не выбрано</option>${names.map((name,index)=>`<option value="${index}" ${Number(auto[field])===index?"selected":""}>${esc(name||headerName(index))}</option>`).join("")}</select></label>`).join("");
+      return;
+    }
     try{
       const data=await api("/workspace/single-mapping-grid",{method:"POST",body:JSON.stringify({headers})});
       root.innerHTML=data.singleMappingGridHtml||'<p class="muted">Колонки появятся после выбора файла.</p>';
@@ -884,6 +962,14 @@
   async function renderSinglePreview(headers=[],rows=[],invalid=[]){
     const head=$("#singlePreviewHead"),body=$("#singlePreviewBody"),count=$("#singlePreviewCount");
     if(!head||!body)return;
+    if(browserOnlyMode){
+      const names=(headers||[]).map((header)=>typeof header==="object"?String(header.name||""):String(header||""));
+      head.innerHTML="<tr>"+names.map((name,index)=>`<th>${esc(name||headerName(index))}</th>`).join("")+"</tr>";
+      const preview=(rows||[]).slice(0,100);
+      body.innerHTML=preview.length?preview.map((row)=>"<tr>"+names.map((_name,index)=>`<td>${esc(row?.[index]??"")}</td>`).join("")+"</tr>").join(""):'<tr><td class="empty-state" colspan="'+Math.max(1,names.length)+'">Нет строк для предпросмотра.</td></tr>';
+      if(count)count.textContent=`Показано ${preview.length} строк · ошибок ${invalid.length}`;
+      return;
+    }
     try{
       const data=await api("/single-file/preview",{method:"POST",body:JSON.stringify({headers,rows,invalid})});
       head.innerHTML=data.previewHeadHtml||"";
@@ -922,6 +1008,18 @@
       status.textContent="Чтение файла...";
       updateProcess(processId,15,"Подготовка "+pendingSingleFile.name);
       MemoryGuard.assertImportCapacity(pendingSingleFile);
+      if(browserOnlyMode){
+        updateProcess(processId,35,"Чтение файла локальным XLSX/CSV-модулем");
+        const data=await clientReadTable(pendingSingleFile,(value,detail)=>updateProcess(processId,35+processPercent(value)*0.45,detail));
+        const previewRows=(data.rows||[]).slice(0,100);
+        pendingSingleFilePreview={headers:data.headers||[],rows:previewRows,rowCount:(data.rows||[]).length,sourceName:pendingSingleFile.name,sourceBytes:pendingSingleFile.size||0};
+        renderSingleMappingGrid();
+        renderSinglePreview(data.headers||[],previewRows,[]);
+        status.textContent="Файл выбран: "+pendingSingleFile.name+" · строк: "+(data.rows||[]).length;
+        data.rows.length=0;
+        finishProcess(processId,"Файл прочитан локально");
+        return;
+      }
       updateProcess(processId,35,"Бинарная передача файла без Base64-копии");
       const data=await api("/files/import-binary",{method:"POST",headers:{"Content-Type":"application/octet-stream","X-File-Name":encodeURIComponent(pendingSingleFile.name),"X-Sheet-Name":encodeURIComponent($("#singleSheetInput")?.value||""),"X-Preview-Rows":"100"},body:pendingSingleFile});
       updateProcess(processId,82,"Построение предпросмотра");
@@ -948,6 +1046,40 @@
       status.textContent="Анализ выполняется...";
       updateProcess(processId,15,"Подготовка файла");
       MemoryGuard.assertImportCapacity(pendingSingleFile);
+      if(browserOnlyMode){
+        const fileRecord=await clientFileRecord(pendingSingleFile,fileCreatedAt,(value,detail)=>updateProcess(processId,15+processPercent(value)*0.2,detail));
+        const manual=singleManualMapping();
+        if(manual)fileRecord.mapping={...fileRecord.mapping,...manual};
+        state.files=[{...fileRecord,role:"primary"}];
+        await rememberSourceFile(state.files[0],pendingSingleFile);
+        await MemoryGuard.yieldToMainThread();
+        const previousIndex=createLocalComparisonIndex(previousDevices);
+        previousDevices=[];
+        const fields={vendor:true,model:true,ip:true,address:true,room:true,switchIp:true,switchPort:true,history:true};
+        const local=await localAnalyzeFiles(fields,"primary",(value,detail)=>updateProcess(processId,35+processPercent(value)*0.5,detail));
+        clearResultReference();
+        state.devices=local.devices;
+        state.invalid=local.invalid;
+        state.lastAnalysis=fileCreatedAt;
+        recordLocalMovementsFromIndex(previousIndex,state.devices,pendingSingleFile.name,state.lastAnalysis);
+        await storeLocalSnapshot("Single file: "+pendingSingleFile.name,pendingSingleFile.name,state.devices,state.invalid,state.lastAnalysis,"single-file");
+        const result={
+          mappingMode:manual?"manual":"auto",
+          summaryHtml:`<div class="bar-label"><span>Устройств</span><strong>${state.devices.length}</strong></div><div class="bar-label"><span>Ошибок MAC</span><strong>${state.invalid.length}</strong></div>`,
+          detectedColumnsHtml:fileRecord.mappingSummary?.summaryHtml||'<p class="muted">Колонки определены локально.</p>',
+          headers:fileRecord.headers.map((item)=>item.name),
+          rows:fileRecord.rows.slice(1,101),
+          invalid:state.invalid,
+        };
+        save({immediate:true});
+        await flushBrowserStateSave().catch(()=>{});
+        await flushPortableDatabaseSave().catch(()=>{});
+        renderAll();renderSingleReport(result);view("single");
+        status.textContent="Готово: "+state.devices.length+" устройств, ошибок: "+state.invalid.length;
+        finishProcess(processId,"Локально проанализировано устройств: "+state.devices.length);
+        toast("Один файл проанализирован без backend.");
+        return;
+      }
       let fileToken=pendingSingleFilePreview?.sourceName===pendingSingleFile.name?pendingSingleFilePreview.fileToken||"":"";
       if(!fileToken){
         const imported=await api("/files/import-binary",{method:"POST",headers:{"Content-Type":"application/octet-stream","X-File-Name":encodeURIComponent(pendingSingleFile.name),"X-Sheet-Name":encodeURIComponent($("#singleSheetInput")?.value||""),"X-Preview-Rows":"100"},body:pendingSingleFile});
@@ -1866,8 +1998,9 @@
     save();renderMappings();renderResults();renderAnalytics();
     return learned;
   }
-  function download(name,text,type){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:type+";charset=utf-8"}));a.download=name;a.click();URL.revokeObjectURL(a.href);}
-  function downloadBase64(name,content,type){const bytes=Uint8Array.from(atob(content),(char)=>char.charCodeAt(0));const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([bytes],{type}));a.download=name;a.click();URL.revokeObjectURL(a.href);}
+  function deliverDownload(name,blob){if(localFolderStructure)LocalFolderStore?.writeExport?.(localFolderStructure,name,blob).catch((error)=>localFolderStatus("Не удалось сохранить экспорт: "+error.message,"error"));const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);}
+  function download(name,text,type){deliverDownload(name,new Blob([text],{type:type+";charset=utf-8"}));}
+  function downloadBase64(name,content,type){const bytes=Uint8Array.from(atob(content),(char)=>char.charCodeAt(0));deliverDownload(name,new Blob([bytes],{type}));}
   function clipboardSafeCell(value){return String(value??"").replace(/\t|\r?\n/g," ").trim();}
   function tableRowsToTsv(rows){return rows.map((row)=>row.map(clipboardSafeCell).join("\t")).join("\n");}
   async function copyTextToClipboard(value,label="данные"){
@@ -2366,6 +2499,7 @@
   $("#closeHelpDialog").addEventListener("click",()=>$("#helpDialog").close());
   $("#portableDatabaseButton")?.addEventListener("click",()=>$("#portableDatabaseDialog")?.showModal());
   $("#closePortableDatabaseDialog")?.addEventListener("click",()=>$("#portableDatabaseDialog")?.close());
+  $("#chooseLocalFolderButton")?.addEventListener("click",connectLocalFolder);
   $("#openPortableDatabaseButton")?.addEventListener("click",connectPortableDatabase);
   $("#createPortableDatabaseButton")?.addEventListener("click",createPortableDatabase);
   $("#savePortableDatabaseButton")?.addEventListener("click",savePortableDatabaseNow);
@@ -2547,16 +2681,18 @@
   window.addEventListener("pointermove",resizeResultColumn);window.addEventListener("pointerup",finishResultColumnResize);window.addEventListener("pointercancel",finishResultColumnResize);
   window.addEventListener("pointermove",resizeMovementColumn);window.addEventListener("pointerup",finishMovementColumnResize);window.addEventListener("pointercancel",finishMovementColumnResize);
   document.addEventListener("keydown",handleAppShortcut);
-  setInterval(()=>{persistAutosave("interval").catch(()=>{});},60000);
+  setInterval(()=>{if(!browserOnlyMode)persistAutosave("interval").catch(()=>{});},60000);
   setInterval(()=>{if(state.engineeringMode&&!engineeringSessionActive()){clearEngineeringSession();renderEngineeringState();toast("Инженерная сессия завершена.");}},30000);
   window.addEventListener("beforeunload",()=>{save();if(!autonomousHtmlMode&&backendAvailable){const autosaveState=compactAnalysisAutosaveState();fetch("/api/autosave",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slot:"main",reason:"beforeunload",state:autosaveState}),keepalive:true}).catch(()=>{});}});
   async function restoreInitialState(){
-    const backendSynced=await syncFromBackend();
+    const backendSynced=browserOnlyMode?false:await syncFromBackend();
     if(!backendSynced){
-      const portableRestored=await restorePortableDatabaseHandle();
-      if(!portableRestored){const restored=await restoreBrowserStateFromIndexedDb();if(restored){applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});renderEngineeringState();renderAll();renderColumnPreferences();const status=$("#autosaveStatus");if(status)status.textContent="Полный workspace восстановлен из хранилища браузера.";}}
+      const restored=await restoreBrowserStateFromIndexedDb();
+      if(restored){applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});renderEngineeringState();renderAll();renderColumnPreferences();const status=$("#autosaveStatus");if(status)status.textContent="Последние данные отображены из локального кэша; проверяется файловая база.";}
+      const folderRestored=await restoreLocalFolderHandle({preferBrowserState:restored});
+      if(!folderRestored&&!restored)await restorePortableDatabaseHandle();
     }
     await restoreWorkspaceSourceFiles();
   }
-  applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});view(viewFromHash(),{updateHash:true,render:false});renderEngineeringState();renderAll();renderColumnPreferences();renderParityStatus();loadThemePreference();loadOuiPreference().then(()=>{renderResults();});loadVendorDetectorSettings();loadHistoryEnrichmentSettings();loadDashboardSettings();loadEngineeringSession();loadExternalApiSettings();refreshApiCacheStatus().catch(()=>{});restoreInitialState().finally(()=>{window.MacAnalyzerAppReady=true;document.documentElement.dataset.macAnalyzerApp="ready";});
+  applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});view(viewFromHash(),{updateHash:true,render:false});renderEngineeringState();renderAll();renderColumnPreferences();renderParityStatus();if(!browserOnlyMode){loadThemePreference();loadOuiPreference().then(()=>{renderResults();});loadVendorDetectorSettings();loadHistoryEnrichmentSettings();loadDashboardSettings();loadExternalApiSettings();refreshApiCacheStatus().catch(()=>{});}loadEngineeringSession();setBackendStatus(false,"Автономный режим · выберите локальную папку данных");restoreInitialState().finally(()=>{window.MacAnalyzerAppReady=true;document.documentElement.dataset.macAnalyzerApp="ready";});
 })();

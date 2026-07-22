@@ -26,7 +26,7 @@
 
   function capacityError(kind, current, maximum) {
     const error = new Error(
-      `${kind}: безопасный предел автономного HTML-режима ${maximum.toLocaleString("ru-RU")}, получено ${current.toLocaleString("ru-RU")}. Подключите backend для обработки полного файла без переполнения памяти браузера.`,
+      `${kind}: безопасный предел автономного HTML-режима ${maximum.toLocaleString("ru-RU")}, получено ${current.toLocaleString("ru-RU")}. Разделите данные на меньшие файлы или используйте backend; операция остановлена без переполнения памяти браузера.`,
     );
     error.code = "BROWSER_MEMORY_LIMIT";
     return error;
@@ -73,11 +73,26 @@
     }
   }
 
-  function assertEnrichmentCapacity(files, memoryInfo = globalThis.performance?.memory) {
+  function effectiveEnrichmentLimits(navigatorInfo = globalThis.navigator) {
+    const deviceMemory = Number(navigatorInfo?.deviceMemory || 0);
+    const ratio = deviceMemory > 0 && deviceMemory <= 2 ? 0.3
+      : deviceMemory > 0 && deviceMemory <= 4 ? 0.5
+        : deviceMemory > 0 && deviceMemory <= 8 ? 0.75
+          : 1;
+    return {
+      rows: Math.floor(limits.browserEnrichmentRows * ratio),
+      cells: Math.floor(limits.browserEnrichmentCells * ratio),
+      textBytes: Math.floor(limits.browserEnrichmentTextBytes * ratio),
+      deviceMemory,
+    };
+  }
+
+  function assertEnrichmentCapacity(files, memoryInfo = globalThis.performance?.memory, navigatorInfo = globalThis.navigator) {
     const size = enrichmentSize(files);
-    if (size.rows > limits.browserEnrichmentRows) throw capacityError("Слишком много строк во всех файлах обогащения", size.rows, limits.browserEnrichmentRows);
-    if (size.cells > limits.browserEnrichmentCells) throw capacityError("Слишком много ячеек во всех файлах обогащения", size.cells, limits.browserEnrichmentCells);
-    if (size.textBytes > limits.browserEnrichmentTextBytes) throw capacityError("Слишком большой объём текста во всех файлах обогащения", size.textBytes, limits.browserEnrichmentTextBytes);
+    const effective = effectiveEnrichmentLimits(navigatorInfo);
+    if (size.rows > effective.rows) throw capacityError("Слишком много строк во всех файлах обогащения", size.rows, effective.rows);
+    if (size.cells > effective.cells) throw capacityError("Слишком много ячеек во всех файлах обогащения", size.cells, effective.cells);
+    if (size.textBytes > effective.textBytes) throw capacityError("Слишком большой объём текста во всех файлах обогащения", size.textBytes, effective.textBytes);
     assertHeapHeadroom(size, memoryInfo);
     return size;
   }
@@ -203,6 +218,7 @@
     assertTableCapacity,
     enrichmentSize,
     estimatedEnrichmentWorkingSet,
+    effectiveEnrichmentLimits,
     assertHeapHeadroom,
     assertEnrichmentCapacity,
     sourceFileBytes,
