@@ -16,19 +16,34 @@
         const response = await fetch(filename);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const blob = await response.blob();
+        const sourceFile = new File([blob], filename.split("/").pop() || "test.xlsx");
         const started = performance.now();
+        const heapBefore = performance.memory?.usedJSHeapSize || 0;
         let progressUpdates = 0;
-        const table = await window.MacAnalyzerFileReaders.clientXlsxTable(
-          new File([blob], filename.split("/").pop() || "test.xlsx"),
+        const preview = await window.MacAnalyzerFileReaders.clientXlsxTable(
+          sourceFile,
           () => { progressUpdates += 1; },
+          { maxRows: 100 },
         );
+        const rounds = [];
+        for (let round = 0; round < 3; round += 1) {
+          let rows = 0;
+          const table = await window.MacAnalyzerFileReaders.clientXlsxTable(
+            sourceFile,
+            () => { progressUpdates += 1; },
+            { collectRows: false, onRow: () => { rows += 1; } },
+          );
+          rounds.push({ rows, reportedRows: table.rowCount, retainedRows: table.rows.length });
+        }
+        const heapAfter = performance.memory?.usedJSHeapSize || 0;
         output.dataset.status = "complete";
         output.textContent = JSON.stringify({
-          rows: table.rows.length,
-          headers: table.headers,
-          firstMac: table.rows[0]?.[0] || "",
-          lastMac: table.rows.at(-1)?.[0] || "",
-          sheet: table.sheet,
+          previewRows: preview.rows.length,
+          reportedRows: preview.rowCount,
+          headers: preview.headers,
+          sheet: preview.sheet,
+          rounds,
+          heapDelta: heapBefore && heapAfter ? heapAfter - heapBefore : null,
           progressUpdates,
           elapsedMs: Math.round(performance.now() - started),
         });

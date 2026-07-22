@@ -19,13 +19,11 @@ const workbookBuffer = workbookBytes.buffer.slice(
 
 (async () => {
   const directory = readers.clientZipDirectory(workbookBuffer);
-  const sharedStringBytes = await readers.clientZipEntryBytes(directory, "xl/sharedStrings.xml");
-  const sharedStrings = sharedStringBytes
-    ? readers.xlsxSharedStringsFromXml(new TextDecoder("utf-8").decode(sharedStringBytes))
-    : [];
+  const sharedStrings = await readers.xlsxSharedStringsFromDirectory(directory);
   const sheetPath = [...directory.entries.keys()]
     .find((name) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(name));
   assert.ok(sheetPath, "real XLSX must contain a worksheet");
+  assert.equal(await readers.xlsxWorksheetRowCount(directory, sheetPath), 100_001);
   if (global.gc) global.gc();
   const baselineHeap = process.memoryUsage().heapUsed;
   let retainedBytes = 0;

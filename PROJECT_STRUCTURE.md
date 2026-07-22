@@ -9,6 +9,9 @@ Mac_analyzer_Pro/
     test_repeated_enrichment_memory.py обязательный четырёхкратный стресс-тест двухфайлового обогащения
     frontend_repeated_persistence_memory.test.js четыре сохранения 100 000 локальных устройств без второй копии результата
     frontend_snapshot_chunking_memory.test.js четыре порционных снимка по 120 000 устройств
+    frontend_real_xlsx_repeated_enrichment.test.js три полных чтения реального XLSX на 100 000 строк с контролем удержанной heap-памяти
+    frontend_xlsx_shared_strings_streaming.test.js три потоковых чтения 120 000 shared strings без удержания XML
+    workspace_file_lifecycle.test.js замена использованных файлов обогащения без удаления снимков и истории
     local_folder_store.test.js создание локальной структуры, базы, манифеста, архива импорта и журнала
     standalone_inline_syntax.test.js компиляция всего встроенного JavaScript переносимого HTML
   tools/                   parity, benchmark и legacy-утилиты
@@ -18,6 +21,7 @@ Mac_analyzer_Pro/
     browser-snapshot-store.js порционное IndexedDB-хранилище локальных снимков без полной копии при записи
     portable-database.js  потоковая файловая база MADB для переноса данных между браузерами и ПК
     local-folder-store.js локальная структура database/imports/exports/settings/logs/backups, сохранённая ссылка браузера и дедупликация повторных импортов
+    workspace-file-lifecycle.js жизненный цикл файлов: использованные входы заменяются в следующем запуске, история остаётся в снимках
     state-persistence.js   компактное сохранение workspace; полный локальный результат хранится один раз в snapshot-store, аварийная inline-копия ограничена 20 000 строк
     guide.js               руководство, переключение разделов и отображение текущего режима
   backend/

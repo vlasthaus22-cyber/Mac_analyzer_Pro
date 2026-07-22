@@ -195,6 +195,53 @@
     return strings;
   }
 
+  async function xlsxSharedStringsFromDirectory(directory, onProgress = () => {}) {
+    const entry = directory.entries.get("xl/sharedStrings.xml");
+    if (!entry) return [];
+    MemoryGuard.assertEntryCapacity("Слишком большой раздел общих строк XLSX", entry.uncompressedSize, MemoryGuard.limits.sharedStringBytes);
+    const reader = zipEntryStream(directory, entry).getReader();
+    const decoder = new TextDecoder("utf-8");
+    const strings = [];
+    let pending = "";
+    let processedBytes = 0;
+    let lastYieldCount = 0;
+    const drain = (final = false) => {
+      while (true) {
+        const start = pending.search(/<si\b/i);
+        if (start < 0) {
+          if (!final && pending.length > 8) pending = pending.slice(-8);
+          return;
+        }
+        if (start > 0) pending = pending.slice(start);
+        const end = pending.search(/<\/si\s*>/i);
+        if (end < 0) return;
+        const closing = pending.slice(end).match(/^<\/si\s*>/i)?.[0] || "</si>";
+        const itemXml = pending.slice(0, end + closing.length);
+        pending = pending.slice(end + closing.length);
+        strings.push(xlsxSharedStringsFromXml(itemXml)[0] || "");
+        if (strings.length > MemoryGuard.limits.sharedStrings) {
+          throw MemoryGuard.capacityError("Слишком много общих строк XLSX", strings.length, MemoryGuard.limits.sharedStrings);
+        }
+      }
+    };
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      processedBytes += chunk.value.byteLength;
+      pending += decoder.decode(chunk.value, { stream: true });
+      drain();
+      if (strings.length - lastYieldCount >= 5_000) {
+        lastYieldCount = strings.length;
+        const ratio = entry.uncompressedSize ? Math.min(1, processedBytes / entry.uncompressedSize) : 0;
+        onProgress(20 + ratio * 25, `Общие строки XLSX: ${strings.length.toLocaleString("ru-RU")}`);
+        await MemoryGuard.yieldToMainThread();
+      }
+    }
+    pending += decoder.decode();
+    drain(true);
+    return strings;
+  }
+
   function xlsxColumnIndex(reference) {
     const letters = (String(reference || "").match(/[A-Z]+/i) || [""])[0].toUpperCase();
     let index = 0;
@@ -260,6 +307,41 @@
     return stream;
   }
 
+  async function xlsxWorksheetRowCount(directory, sheetPath, onProgress = () => {}) {
+    const entry = directory.entries.get(sheetPath);
+    if (!entry) throw new Error("XLSX лист не найден");
+    MemoryGuard.assertEntryCapacity("Слишком большой XML-лист XLSX", entry.uncompressedSize, MemoryGuard.limits.worksheetBytes);
+    const reader = zipEntryStream(directory, entry).getReader();
+    const decoder = new TextDecoder("utf-8");
+    let pending = "";
+    let processedBytes = 0;
+    let lastYieldBytes = 0;
+    let rowCount = 0;
+    const countCompletePrefix = (final = false) => {
+      const safeLength = final ? pending.length : pending.lastIndexOf("<");
+      if (safeLength <= 0) return;
+      const complete = pending.slice(0, safeLength);
+      rowCount += (complete.match(/<row\b/gi) || []).length;
+      pending = pending.slice(safeLength);
+    };
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      processedBytes += chunk.value.byteLength;
+      pending += decoder.decode(chunk.value, { stream: true });
+      countCompletePrefix();
+      if (processedBytes - lastYieldBytes >= 2 * 1024 * 1024) {
+        lastYieldBytes = processedBytes;
+        const ratio = entry.uncompressedSize ? Math.min(1, processedBytes / entry.uncompressedSize) : 0;
+        onProgress(45 + ratio * 30, `Подсчёт строк XLSX: ${rowCount.toLocaleString("ru-RU")}`);
+        await MemoryGuard.yieldToMainThread();
+      }
+    }
+    pending += decoder.decode();
+    countCompletePrefix(true);
+    return rowCount;
+  }
+
   async function xlsxWorksheetRows(directory, sheetPath, sharedStrings, onProgress = () => {}, options = {}) {
     const entry = directory.entries.get(sheetPath);
     if (!entry) throw new Error("XLSX лист не найден");
@@ -268,6 +350,7 @@
     const decoder = new TextDecoder("utf-8");
     const rows = [];
     const collectRows = options.collectRows !== false;
+    const retainsRows = collectRows || options.retainedRows === true;
     const onRow = typeof options.onRow === "function" ? options.onRow : null;
     const maximumRows = Math.max(0, Number(options.maxRows || 0) || 0);
     let pending = "";
@@ -305,7 +388,10 @@
           if (onRow) onRow(parsed.values, rowIndex);
           if (maximumRows && rowCount >= maximumRows) stopped = true;
         }
-        MemoryGuard.assertTableCapacity(rowCount, cellCount);
+        if (retainsRows) MemoryGuard.assertTableCapacity(rowCount, cellCount);
+        else if (rowCount > MemoryGuard.limits.browserEnrichmentRows) {
+          throw MemoryGuard.capacityError("Слишком много строк в потоковом XLSX", rowCount, MemoryGuard.limits.browserEnrichmentRows);
+        }
       }
     };
     while (true) {
@@ -350,8 +436,7 @@
     const relationshipBytes = await clientZipEntryBytes(directory, "xl/_rels/workbook.xml.rels", 16 * 1024 * 1024);
     const workbook = workbookBytes ? new DOMParser().parseFromString(new TextDecoder("utf-8").decode(workbookBytes), "application/xml") : null;
     const relationships = relationshipBytes ? new DOMParser().parseFromString(new TextDecoder("utf-8").decode(relationshipBytes), "application/xml") : null;
-    const sharedStringBytes = await clientZipEntryBytes(directory, "xl/sharedStrings.xml", MemoryGuard.limits.sharedStringBytes);
-    const sharedStrings = sharedStringBytes ? xlsxSharedStringsFromXml(new TextDecoder("utf-8").decode(sharedStringBytes)) : [];
+    const sharedStrings = await xlsxSharedStringsFromDirectory(directory, onProgress);
     if (!workbook) throw new Error("XLSX workbook.xml не найден");
     const firstSheet = workbook.getElementsByTagName("sheet")[0];
     if (!firstSheet) throw new Error("XLSX не содержит листов");
@@ -375,6 +460,7 @@
     const maximumDataRows = Math.max(0, Number(options.maxRows || 0) || 0);
     const rawRows = await xlsxWorksheetRows(directory, sheetPath, sharedStrings, onProgress, {
       collectRows: false,
+      retainedRows: collectRows,
       maxRows: maximumDataRows ? maximumDataRows + 1 : 0,
       onRow: (row, rawIndex) => {
         if (rawIndex === 0) {
@@ -390,7 +476,10 @@
     if (!headers) throw new Error("XLSX не содержит строк");
     if (!headers.some(Boolean)) throw new Error("Первая строка XLSX не содержит заголовков");
     const declaredDataRows = Math.max(0, Number(rawRows.declaredRowCount || 0) - 1);
-    const rowCount = Math.max(dataRowCount, declaredDataRows);
+    const countedDataRows = maximumDataRows && rawRows.truncated && !declaredDataRows
+      ? Math.max(0, (await xlsxWorksheetRowCount(directory, sheetPath, onProgress)) - 1)
+      : 0;
+    const rowCount = Math.max(dataRowCount, declaredDataRows, countedDataRows);
     onProgress(100, `XLSX прочитан: ${rowCount} строк`);
     return {
       headers,
@@ -438,8 +527,10 @@
     clientZipEntryBytes,
     clientZipEntries,
     xlsxSharedStringsFromXml,
+    xlsxSharedStringsFromDirectory,
     xlsxRowFromXml,
     xlsxWorksheetRows,
+    xlsxWorksheetRowCount,
     clientXlsxTable,
     clientReadTable,
   });

@@ -97,9 +97,9 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
 
     assert 'id="fileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
-    assert '<script src="frontend/memory-guard.js?v=20260722.2"></script>' in html
-    assert '<script src="frontend/file-readers.js?v=20260722.2"></script>' in html
-    assert '<meta name="application-build" content="2026.07.22.2">' in html
+    assert '<script src="frontend/memory-guard.js?v=20260722.3"></script>' in html
+    assert '<script src="frontend/file-readers.js?v=20260722.3"></script>' in html
+    assert '<meta name="application-build" content="2026.07.22.3">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -920,6 +920,14 @@ def test_browser_mode_enrichment_keeps_basic_workflow_alive():
     assert "file.rows.slice(1).forEach" not in app
     assert "Обогащение в браузере" in app
     assert 'await storeLocalSnapshot("Анализ: "+source,source,state.devices,state.invalid,sourceCreatedAt,"analysis")' in app
+    assert "async function replaceConsumedEnrichmentFiles(requestedRole)" in app
+    assert "WorkspaceFileLifecycle.selectForNextImport(state.files,requestedRole)" in app
+    assert "sourceFilesById.delete(file.id)" in app
+    assert "const replacedEnrichmentFiles=await replaceConsumedEnrichmentFiles(requestedRole);" in app
+    assert "function markEnrichmentFilesConsumed(consumedAt=new Date().toISOString())" in app
+    assert "WorkspaceFileLifecycle.markConsumed(state.files,consumedAt)" in app
+    assert "markEnrichmentFilesConsumed();" in app
+    assert '<script src="frontend/workspace-file-lifecycle.js?v=20260722.3"></script>' in read_index_html()
     assert 'previousComparisonIndex=createLocalComparisonIndex(previousDevices)' in app
     assert 'previousDevices=[];' in app
     assert 'state.devices=[];' in app
@@ -938,7 +946,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260722.2"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260722.3"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
     assert 'async function storeLocalSnapshot(' in app
     assert 'devices:rows.slice(0,previewLimit)' in app
@@ -2006,7 +2014,7 @@ def test_role_aware_guide_is_a_separate_working_view():
         'data-guide-tab="large-files"',
         'data-guide-requires-engineering',
         'id="openGuideFromHelpButton"',
-        '<script src="frontend/guide.js?v=20260722.2"></script>',
+        '<script src="frontend/guide.js?v=20260722.3"></script>',
     ):
         assert marker in html
     for text in (
@@ -2125,7 +2133,7 @@ def test_autonomous_file_database_is_streamed_and_connected_to_workspace_saves()
         'id="openPortableDatabaseButton"',
         'id="createPortableDatabaseButton"',
         'id="portableDatabaseInput"',
-        '<script src="frontend/portable-database.js?v=20260722.2"></script>',
+        '<script src="frontend/portable-database.js?v=20260722.3"></script>',
     ):
         assert marker in html
     for marker in (
@@ -2153,7 +2161,7 @@ def test_browser_only_mode_uses_a_structured_local_folder():
     for marker in (
         'id="chooseLocalFolderButton"',
         'id="localFolderStatus"',
-        '<script src="frontend/local-folder-store.js?v=20260722.2"></script>',
+        '<script src="frontend/local-folder-store.js?v=20260722.3"></script>',
         "Выбрать локальную папку",
     ):
         assert marker in html

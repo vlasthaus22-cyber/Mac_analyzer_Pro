@@ -18,7 +18,9 @@
   const Guide = window.MacAnalyzerGuide;
   const PortableDatabase = window.MacAnalyzerPortableDatabase;
   const LocalFolderStore = window.MacAnalyzerLocalFolderStore;
+  const WorkspaceFileLifecycle = window.MacAnalyzerWorkspaceFileLifecycle;
   if(!MemoryGuard)throw new Error("Модуль frontend/memory-guard.js не загружен");
+  if(!WorkspaceFileLifecycle)throw new Error("Модуль frontend/workspace-file-lifecycle.js не загружен");
   if(!Guide)throw new Error("Модуль frontend/guide.js не загружен");
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -454,6 +456,19 @@
     return released;
   }
   function pruneStoredSourceFiles(){return BrowserSnapshots?.pruneSourceFiles?.((state.files||[]).map((file)=>file.sourceStorageId).filter(Boolean)).catch(()=>false);}
+  async function replaceConsumedEnrichmentFiles(requestedRole){
+    const selection=WorkspaceFileLifecycle.selectForNextImport(state.files,requestedRole),removed=selection.removed;
+    if(!removed.length)return 0;
+    state.files=selection.files;
+    for(const file of removed)sourceFilesById.delete(file.id);
+    ensureMappingSelection();
+    await pruneStoredSourceFiles();
+    await MemoryGuard.yieldToMainThread();
+    return removed.length;
+  }
+  function markEnrichmentFilesConsumed(consumedAt=new Date().toISOString()){
+    return WorkspaceFileLifecycle.markConsumed(state.files,consumedAt);
+  }
   let activeProcessId = "";
   let processHideTimer = null;
   function processPercent(value){return Math.max(0,Math.min(100,Math.round(Number(value)||0)));}
@@ -906,6 +921,7 @@
       toast(message);
       return;
     }
+    const replacedEnrichmentFiles=await replaceConsumedEnrichmentFiles(requestedRole);
     state.importErrors=[];
     await releaseRetainedWorkspaceRows();
     await releaseTransientAnalysisMemory();
@@ -913,7 +929,7 @@
     const status=$("#analysisStatus");
     const importStatus=$("#fileImportStatus");
     if(status)status.textContent="Загрузка файлов...";
-    if(importStatus)importStatus.textContent="Чтение файлов: "+files.map((file)=>file.name).join(", ");
+    if(importStatus)importStatus.textContent=(replacedEnrichmentFiles?`Предыдущих файлов перенесено в историю: ${replacedEnrichmentFiles}. `:"")+"Чтение файлов: "+files.map((file)=>file.name).join(", ");
     const primaryAlreadySelected=state.files.some((file)=>file.role==="primary");
     const pendingBatch=files.map((file,fileIndex)=>({id:"pending-"+crypto.randomUUID(),name:file.name,role:requestedRole==="enrichment"||requestedRole==="primary"&&fileIndex>0||requestedRole==="auto"&&(primaryAlreadySelected||fileIndex>0)?"enrichment":"primary"}));
     pendingFileImports=[...pendingFileImports,...pendingBatch];
@@ -1314,6 +1330,7 @@
       enrichmentController=null;
       currentEnrichmentJobId=null;
     }
+    markEnrichmentFilesConsumed();
     state.snapshots=state.snapshots.slice(0,25);
     save({immediate:true});await flushBrowserStateSave().catch(()=>{});await flushPortableDatabaseSave().catch(()=>{});persistAutosave("enrichment-analysis").catch(()=>{});renderAll();toast("Анализ завершён: "+currentDeviceCount()+" устройств.");
     finishProcess(processId,"Обогащение завершено: "+currentDeviceCount()+" устройств");

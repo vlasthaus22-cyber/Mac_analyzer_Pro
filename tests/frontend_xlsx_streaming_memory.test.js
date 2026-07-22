@@ -65,6 +65,7 @@ function directory() {
   assert.equal(preview.length, 0);
   assert.equal(previewVisited, 101);
   assert.equal(preview.truncated, true);
+  assert.equal(await readers.xlsxWorksheetRowCount(directory(), "xl/worksheets/sheet1.xml"), dataRows + 1);
 
   console.log("frontend XLSX streaming memory test passed");
 })().catch((error) => {
