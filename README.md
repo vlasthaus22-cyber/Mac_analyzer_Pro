@@ -6,15 +6,17 @@ dashboards, topology, and export.
 
 ## Primary autonomous mode
 
-The supported user entry point is `index.html`. It works in a Chromium-based
-browser without Python, EXE, CMD, administrator rights, or a backend process.
-For distribution to another computer, build the single-file edition:
+In a downloaded GitHub Release, launch the root `MAC-Analyzer-Pro.html`. It
+works in a Chromium-based browser without Python, EXE, CMD, administrator
+rights, or a backend process. `index.html` is the development source page and
+should only be opened from the project tree while developing the application.
+To rebuild the user-facing single-file edition:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/build_html_portable.ps1
 ```
 
-Open `portable/html/MAC-Analyzer-Pro.html`. This generated file contains the
+Open `portable/html/MAC-Analyzer-Pro.html` after a local build. This generated file contains the
 frontend, styles, XLSX reader, enrichment logic, history, and local database
 modules. Do not edit it directly; rebuild it from the source files.
 

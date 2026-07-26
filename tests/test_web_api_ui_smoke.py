@@ -723,7 +723,7 @@ def test_rest_api_and_ui_controls_smoke():
         )
         assert status == 200
         assert snapshot_changes["changeAnalysis"]["summary"]["total"] == 2
-        assert snapshot_changes["changeAnalysis"]["summary"]["critical"] == 2
+        assert snapshot_changes["changeAnalysis"]["summary"]["critical"] == 0
         assert snapshot_changes["changeAnalysis"]["baselineSnapshotId"] == "before"
         assert snapshot_changes["changeAnalysis"]["comparisonSnapshotId"] == "after"
 

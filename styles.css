@@ -62,10 +62,11 @@ fieldset { border:1px solid var(--line); border-radius:5px; margin:14px 0; } leg
 .dashboard-snapshot-controls[hidden],.dashboard-period-controls[hidden] { display:none; }
 .dashboard-changes-dialog { width:min(1280px,calc(100vw - 28px)); }
 .dashboard-change-metrics { grid-template-columns:repeat(5,minmax(0,1fr)); margin-top:14px; }
-.dashboard-change-metrics .metric { box-shadow:none; padding:11px; }
+.dashboard-change-metrics .metric { appearance:none; color:inherit; cursor:pointer; font:inherit; text-align:left; box-shadow:none; padding:11px; }
+.dashboard-change-metrics .metric:hover,.dashboard-change-metrics .metric.active-filter { border-color:var(--accent); }
 .dashboard-change-metrics .change-critical { border-color:var(--danger); }
 .dashboard-change-metrics .change-critical strong { color:var(--danger); }
-.dashboard-change-filters { display:grid; grid-template-columns:220px minmax(260px,1fr); gap:10px; margin:12px 0; }
+.dashboard-change-filters { display:grid; grid-template-columns:200px 200px minmax(260px,1fr); gap:10px; margin:12px 0; }
 .dashboard-changes-table { max-height:520px; border:1px solid var(--line); }
 .dashboard-changes-table table { min-width:1150px; }
 .severity-badge { display:inline-block; min-width:94px; padding:3px 7px; border-radius:4px; font-size:11px; font-weight:700; text-align:center; }
@@ -74,6 +75,13 @@ fieldset { border:1px solid var(--line); border-radius:5px; margin:14px 0; } leg
 .severity-medium { color:#713f12; background:#fef3c7; }
 .severity-low { color:#14532d; background:#dcfce7; }
 .change-critical td { background:color-mix(in srgb,var(--danger) 6%,var(--surface)); }
+.dashboard-change-parent td { font-weight:600; border-top:2px solid var(--line); }
+.dashboard-change-child td { background:var(--surface-soft); color:var(--muted); }
+.change-before { color:var(--danger); }
+.change-after { color:#15803d; }
+.link-button { padding:0; border:0; color:var(--accent); background:transparent; font:inherit; font-weight:700; cursor:pointer; }
+.positive-delta { color:#15803d; font-weight:700; }
+.negative-delta { color:var(--danger); font-weight:700; }
 #columnPreferenceList .check { display:grid; grid-template-columns:auto minmax(120px,1fr) 82px 34px 34px auto; gap:6px; align-items:center; padding:6px 0; margin:0; border-bottom:1px solid var(--line); }
 #columnPreferenceList input[type="number"] { width:82px; padding:6px; }
 #columnPreferenceList button { min-width:32px; padding:5px 7px; border:1px solid var(--line); border-radius:4px; color:var(--text); background:var(--surface); }

@@ -94,16 +94,16 @@ def test_dashboard_png_export_contains_real_image_and_expected_dimensions():
         assert image.size == (2000, 1200)
 
 
-def test_dashboard_change_analysis_filters_period_and_marks_critical_network_move():
+def test_dashboard_change_analysis_filters_period_without_marking_port_change_critical():
     movements = [
         {"mac": "AABBCC000001", "field_name": "switch_port", "from_value": "Gi1", "to_value": "Gi9", "changed_at": "2026-07-10T09:00:00Z"},
         {"mac": "AABBCC000002", "field_name": "model", "from_value": "A", "to_value": "B", "changed_at": "2026-06-01T09:00:00Z"},
     ]
     result = analyze_dashboard_changes([], movements, {"changeMode": "period", "changeDateFrom": "2026-07-01", "changeDateTo": "2026-07-31"})
 
-    assert result["summary"] == {"added": 0, "removed": 0, "modified": 1, "critical": 1, "total": 1}
+    assert result["summary"] == {"added": 0, "removed": 0, "modified": 1, "critical": 0, "total": 1}
     assert result["changes"][0]["field"] == "switchPort"
-    assert result["changes"][0]["severity"] == "critical"
+    assert result["changes"][0]["severity"] == "medium"
     assert result["changes"][0]["before"] == "Gi1"
     assert result["changes"][0]["after"] == "Gi9"
 
@@ -111,21 +111,26 @@ def test_dashboard_change_analysis_filters_period_and_marks_critical_network_mov
 def test_dashboard_change_analysis_compares_selected_snapshots():
     snapshots = [
         {"id": "old", "name": "Old", "createdAt": "2026-07-01T08:00:00Z", "devices": [
-            {"mac": "AABBCC000001", "vendor": "Cisco", "switchPort": "Gi1"},
+            {"mac": "AABBCC000001", "vendor": "Cisco", "ip": "192.0.2.10", "room": "101", "switchIp": "10.0.0.1", "switchPort": "Gi1"},
             {"mac": "AABBCC000099", "vendor": "Juniper"},
         ]},
         {"id": "new", "name": "New", "createdAt": "2026-07-12T08:00:00Z", "devices": [
-            {"mac": "AABBCC000001", "vendor": "Cisco", "switchPort": "Gi2"},
+            {"mac": "AABBCC000001", "vendor": "Cisco", "ip": "192.0.2.10", "room": "101", "switchIp": "10.0.0.2", "switchPort": "Gi2"},
             {"mac": "AABBCC000002", "vendor": "Apple"},
         ]},
     ]
     result = analyze_dashboard_changes(snapshots, [], {"changeMode": "snapshots", "baselineSnapshotId": "old", "comparisonSnapshotId": "new"})
 
-    assert result["summary"] == {"added": 1, "removed": 1, "modified": 1, "critical": 2, "total": 3}
+    assert result["summary"] == {"added": 1, "removed": 1, "modified": 1, "critical": 1, "total": 3}
     assert result["baselineSnapshotId"] == "old"
     assert result["comparisonSnapshotId"] == "new"
     assert {item["type"] for item in result["changes"]} == {"added", "removed", "modified"}
     assert [item["id"] for item in result["snapshotOptions"]] == ["old", "new"]
+    switch_change = next(item for item in result["changes"] if item["field"] == "switchIp")
+    assert switch_change["severity"] == "critical"
+    assert switch_change["beforeDevice"]["room"] == "101"
+    assert switch_change["afterDevice"]["ip"] == "192.0.2.10"
+    assert next(item for item in result["changes"] if item["type"] == "removed")["severity"] == "high"
 
 
 def test_dashboard_uses_previous_and_current_final_snapshots_for_all_status_metrics():
@@ -159,13 +164,31 @@ def test_dashboard_uses_previous_and_current_final_snapshots_for_all_status_metr
     assert payload["changeAnalysis"]["baselineSnapshotId"] == "final-before"
     assert payload["changeAnalysis"]["comparisonSnapshotId"] == "final-current"
     assert payload["metrics"]["total"] == 2
-    assert payload["metrics"]["changed"] == 2
+    assert payload["metrics"]["changed"] == 1
     assert payload["metrics"]["missing"] == 1
     assert payload["metrics"]["unchanged"] == 0
     assert payload["changeAnalysis"]["summary"] == {
-        "added": 1, "removed": 1, "modified": 1, "critical": 1, "total": 3,
+        "added": 1, "removed": 1, "modified": 1, "critical": 0, "total": 3,
     }
     assert {item["mac"] for item in payload["devices"]} == {"AABBCC000001", "AABBCC000002"}
+
+
+def test_dashboard_reports_unique_macs_across_uploads_and_latest_count():
+    snapshots = [
+        {"id": "one", "name": "Анализ: one.xlsx", "createdAt": "2026-07-01T08:00:00Z", "devices": [
+            {"mac": "AABBCC000001"}, {"mac": "AABBCC000002"},
+        ]},
+        {"id": "two", "name": "Анализ: two.xlsx", "createdAt": "2026-07-02T08:00:00Z", "devices": [
+            {"mac": "AABBCC000002"}, {"mac": "AABBCC000003"},
+        ]},
+    ]
+    payload = build_dashboard_payload(snapshots[-1]["devices"], snapshots, {"changeMode": "snapshots"})
+
+    assert payload["metrics"]["total"] == 2
+    assert payload["metrics"]["totalAcross"] == 3
+    assert payload["uploadFleet"]["latestCount"] == 2
+    assert [item["count"] for item in payload["uploadFleet"]["series"]] == [2, 2]
+    assert [item["delta"] for item in payload["uploadFleet"]["series"]] == [0, 0]
 
 
 if __name__ == "__main__":
@@ -173,7 +196,8 @@ if __name__ == "__main__":
     test_dashboard_metrics_payload_counts_known_and_invalid_records()
     test_dashboard_reproduces_python_status_filters_and_history_charts()
     test_dashboard_png_export_contains_real_image_and_expected_dimensions()
-    test_dashboard_change_analysis_filters_period_and_marks_critical_network_move()
+    test_dashboard_change_analysis_filters_period_without_marking_port_change_critical()
     test_dashboard_change_analysis_compares_selected_snapshots()
     test_dashboard_uses_previous_and_current_final_snapshots_for_all_status_metrics()
+    test_dashboard_reports_unique_macs_across_uploads_and_latest_count()
     print("dashboard service test passed")

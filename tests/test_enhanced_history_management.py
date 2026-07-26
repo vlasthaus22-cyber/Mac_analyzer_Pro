@@ -30,6 +30,7 @@ def seed_movements():
         "vendor": "Enhanced Vendor A",
         "model": "",
         "ip": "192.0.2.50",
+        "address": "Building A",
         "room": "Lab 10",
     })], SOURCES[0], "2026-05-01T10:00:00Z")
     updated = enrich_device({
@@ -37,6 +38,7 @@ def seed_movements():
         "vendor": "Enhanced Vendor B",
         "model": "Model Added",
         "ip": "",
+        "address": "Building B",
         "room": "Lab 10",
     })
     updated["ip"] = ""
@@ -49,15 +51,19 @@ def test_enhanced_history_grouping_filters_and_xlsx_export():
     seed_movements()
 
     result = enhanced_movement_history({"query": "Enhanced Vendor B", "dateFrom": "2026-05-02", "dateTo": "2026-05-02"})
-    assert result["count"] == 3
+    assert result["count"] == 4
     assert result["groups"] == 1
-    assert result["statistics"] == {"added": 1, "removed": 1, "modified": 1, "uniqueMacs": 1}
+    assert result["statistics"] == {"added": 1, "removed": 1, "modified": 2, "uniqueMacs": 1}
     assert 'data-toggle-movement-group=' in result["rowsHtml"]
     assert 'data-movement-child=' in result["rowsHtml"]
     assert 'movement-added' in result["rowsHtml"]
     assert 'movement-removed' in result["rowsHtml"]
     assert 'movement-modified' in result["rowsHtml"]
     assert "Enhanced Vendor B" in result["rowsHtml"]
+    assert "Model Added" in result["rowsHtml"]
+    assert "Building B" in result["rowsHtml"]
+    assert "Lab 10" in result["rowsHtml"]
+    assert 'data-movement-column="address"' in result["rowsHtml"]
 
     added = enhanced_movement_history({"changeType": "added", "field": "model"})
     assert added["count"] == 1
@@ -81,7 +87,7 @@ def test_enhanced_history_scoped_delete_and_column_settings():
     records = enhanced_movement_history({"query": MAC})["records"]
 
     assert delete_enhanced_movement_history([records[0]["id"]]) == 1
-    assert enhanced_movement_history({"query": MAC})["count"] == 2
+    assert enhanced_movement_history({"query": MAC})["count"] == 3
     try:
         delete_enhanced_movement_history([])
     except ValueError as error:
@@ -92,10 +98,10 @@ def test_enhanced_history_scoped_delete_and_column_settings():
     with db_connection() as conn:
         original = conn.execute("SELECT value, updated_at FROM app_settings WHERE key = ?", ("enhanced_history_columns",)).fetchone()
     settings = save_enhanced_history_column_settings({
-        "visible": ["mac", "dates", "field", "after"],
+        "visible": ["mac", "dates", "address", "field", "after"],
         "widths": {"mac": 212, "after": 333},
     })
-    assert settings["visible"] == ["mac", "dates", "field", "after"]
+    assert settings["visible"] == ["mac", "dates", "address", "field", "after"]
     assert settings["widths"]["mac"] == 212
     assert settings["widths"]["after"] == 333
     assert 'data-movement-column-toggle="mac" checked' in settings["controlsHtml"]

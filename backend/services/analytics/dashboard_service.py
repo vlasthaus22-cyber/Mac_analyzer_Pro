@@ -95,28 +95,92 @@ def dashboard_snapshot_options(snapshots: list[dict[str, Any]]) -> list[dict[str
     return options
 
 
-def _change_severity(change_type: str, field: str) -> str:
-    if change_type == "removed" or field in {"switchIp", "switchPort"}:
-        return "critical"
+def dashboard_upload_fleet(snapshots: list[dict[str, Any]]) -> dict[str, Any]:
+    unique_macs: set[str] = set()
+    series: list[dict[str, Any]] = []
+    usable = [
+        snapshot for snapshot in snapshots
+        if isinstance(snapshot, dict)
+        and (
+            _text(snapshot.get("kind")).lower() == "analysis"
+            or _text(snapshot.get("name")).lower().startswith("анализ:")
+        )
+    ]
+    selected = usable if usable else [snapshot for snapshot in snapshots if isinstance(snapshot, dict)]
+    for index, snapshot in enumerate(selected):
+        current = {
+            _mac(device) for device in snapshot.get("devices", [])
+            if isinstance(device, dict) and _mac(device)
+        }
+        unique_macs.update(current)
+        count = int(snapshot.get("deviceCount") or len(current))
+        series.append({
+            "id": _snapshot_id(snapshot, index),
+            "name": _text(snapshot.get("name") or f"Выгрузка {index + 1}"),
+            "date": _text(snapshot.get("fileCreatedAt") or snapshot.get("createdAt") or snapshot.get("created_at")),
+            "count": count,
+            "delta": count - int(series[-1]["count"]) if series else 0,
+        })
+    latest_count = int(series[-1]["count"]) if series else 0
+    return {
+        "uniqueAcrossUploads": max(len(unique_macs), latest_count),
+        "latestCount": latest_count,
+        "series": series,
+    }
+
+
+def _change_severity(
+    change_type: str,
+    field: str,
+    before_device: dict[str, Any] | None = None,
+    after_device: dict[str, Any] | None = None,
+) -> str:
+    if field == "switchIp" and before_device and after_device:
+        if (
+            _text(before_device.get("ip")) == _text(after_device.get("ip"))
+            and _text(before_device.get("room")) == _text(after_device.get("room"))
+        ):
+            return "critical"
     if field in {"ip", "address", "room"}:
         return "high"
-    if field in {"vendor", "model"}:
+    if field in {"vendor", "model", "switchIp", "switchPort"}:
         return "medium"
+    if change_type == "removed":
+        return "high"
     return "low"
+
+
+def _device_context(device: dict[str, Any] | None) -> dict[str, str] | None:
+    if not isinstance(device, dict):
+        return None
+    return {
+        "mac": _mac(device),
+        "vendor": _text(device.get("vendor")),
+        "model": _text(device.get("model")),
+        "ip": _text(device.get("ip")),
+        "address": _text(device.get("address")),
+        "room": _text(device.get("room")),
+        "switchIp": _text(device.get("switchIp") or device.get("switch_ip")),
+        "switchPort": _text(device.get("switchPort") or device.get("switch_port")),
+    }
 
 
 def _change_row(
     *, mac: str, changed_at: str, change_type: str, field: str = "device",
     before: Any = "", after: Any = "", source: str = "history",
-) -> dict[str, str]:
+    before_device: dict[str, Any] | None = None, after_device: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     labels = {"added": "Добавлено", "removed": "Удалено", "modified": "Изменено"}
     normalized_field = {"switch_ip": "switchIp", "switch_port": "switchPort"}.get(field, field or "device")
+    previous = _device_context(before_device)
+    current = _device_context(after_device)
     return {
         "mac": mac, "macFormatted": ":".join(mac[index:index + 2] for index in range(0, 12, 2)) if len(mac) == 12 else mac,
         "date": changed_at, "type": change_type, "typeLabel": labels.get(change_type, "Изменено"),
         "field": normalized_field, "fieldLabel": CHANGE_FIELD_LABELS.get(normalized_field, normalized_field),
         "before": _text(before) or "-", "after": _text(after) or "-", "source": source,
-        "severity": _change_severity(change_type, normalized_field),
+        "severity": _change_severity(change_type, normalized_field, previous, current),
+        "beforeDevice": previous, "afterDevice": current,
     }
 
 
@@ -126,7 +190,7 @@ def analyze_dashboard_changes(
 ) -> dict[str, Any]:
     normalized = normalize_dashboard_settings(settings)
     options = dashboard_snapshot_options(snapshot_options if snapshot_options is not None else snapshots)
-    changes: list[dict[str, str]] = []
+    changes: list[dict[str, Any]] = []
     selected_from = normalized["changeDateFrom"]
     selected_to = normalized["changeDateTo"]
     baseline_id = normalized["baselineSnapshotId"]
@@ -142,15 +206,27 @@ def analyze_dashboard_changes(
         after_devices = {_mac(device): device for device in comparison.get("devices", []) if isinstance(device, dict) and _mac(device)}
         changed_at = _text(comparison.get("fileCreatedAt") or comparison.get("createdAt") or comparison.get("created_at"))
         for mac in sorted(set(after_devices) - set(before_devices)):
-            changes.append(_change_row(mac=mac, changed_at=changed_at, change_type="added", after=after_devices[mac].get("source") or "Устройство", source="snapshot"))
+            changes.append(_change_row(
+                mac=mac, changed_at=changed_at, change_type="added",
+                after=after_devices[mac].get("source") or "Устройство", source="snapshot",
+                after_device=after_devices[mac],
+            ))
         for mac in sorted(set(before_devices) - set(after_devices)):
-            changes.append(_change_row(mac=mac, changed_at=changed_at, change_type="removed", before=before_devices[mac].get("source") or "Устройство", source="snapshot"))
+            changes.append(_change_row(
+                mac=mac, changed_at=changed_at, change_type="removed",
+                before=before_devices[mac].get("source") or "Устройство", source="snapshot",
+                before_device=before_devices[mac],
+            ))
         for mac in sorted(set(before_devices) & set(after_devices)):
             for field in CHANGE_FIELDS:
                 before = before_devices[mac].get(field)
                 after = after_devices[mac].get(field)
                 if _text(before) != _text(after):
-                    changes.append(_change_row(mac=mac, changed_at=changed_at, change_type="modified", field=field, before=before, after=after, source="snapshot"))
+                    changes.append(_change_row(
+                        mac=mac, changed_at=changed_at, change_type="modified", field=field,
+                        before=before, after=after, source="snapshot",
+                        before_device=before_devices[mac], after_device=after_devices[mac],
+                    ))
     else:
         date_to = _parse_date(selected_to, end_of_day=True) or datetime.now()
         date_from = _parse_date(selected_from) or (date_to - timedelta(days=30))
@@ -171,15 +247,30 @@ def analyze_dashboard_changes(
                 change_type = "modified"
             changes.append(_change_row(mac=_mac(movement), changed_at=changed_at, change_type=change_type, field=field, before=before, after=after, source=_text(movement.get("source") or movement.get("file_name") or "history")))
 
+    period_groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for item in changes:
+        period_groups.setdefault((item["mac"], item["date"], item["source"]), []).append(item)
+    for grouped_changes in period_groups.values():
+        fields = {item["field"] for item in grouped_changes}
+        inferred_critical = "switchIp" in fields and not ({"ip", "room"} & fields)
+        if inferred_critical and not any(item.get("beforeDevice") or item.get("afterDevice") for item in grouped_changes):
+            for item in grouped_changes:
+                if item["field"] == "switchIp":
+                    item["severity"] = "critical"
+
     changes.sort(key=lambda item: item.get("date", ""), reverse=True)
-    summary = {key: sum(1 for item in changes if item["type"] == key) for key in ("added", "removed", "modified")}
-    summary["critical"] = sum(1 for item in changes if item["severity"] == "critical")
-    summary["total"] = len(changes)
+    summary = {
+        key: len({item["mac"] for item in changes if item["type"] == key})
+        for key in ("added", "removed", "modified")
+    }
+    summary["critical"] = len({item["mac"] for item in changes if item["severity"] == "critical"})
+    summary["total"] = len({item["mac"] for item in changes})
     field_counts = Counter(item["fieldLabel"] for item in changes)
     return {
         "mode": normalized["changeMode"], "dateFrom": selected_from, "dateTo": selected_to,
         "baselineSnapshotId": baseline_id, "comparisonSnapshotId": comparison_id,
         "snapshotOptions": options, "summary": summary, "changes": changes,
+        "fieldChanges": len(changes),
         "fieldCounts": [{"label": label, "value": value} for label, value in field_counts.most_common(12)],
     }
 
@@ -349,6 +440,21 @@ def build_dashboard_payload(
         comparison_movements if use_snapshot_comparison else movements,
         history_devices,
     )
+    if use_snapshot_comparison:
+        current_by_mac = {_mac(device): device for device in devices if isinstance(device, dict) and _mac(device)}
+        modified_macs = {
+            item["mac"] for item in change_analysis.get("changes", [])
+            if item.get("type") == "modified"
+        }
+        added_macs = {
+            item["mac"] for item in change_analysis.get("changes", [])
+            if item.get("type") == "added"
+        }
+        classified["changed"] = [current_by_mac[mac] for mac in sorted(modified_macs) if mac in current_by_mac]
+        classified["unchanged"] = [
+            device for mac, device in current_by_mac.items()
+            if mac not in modified_macs and mac not in added_macs
+        ]
     current_scope = filter_dashboard_devices(classified["all"], normalized)
     changed_scope = filter_dashboard_devices(classified["changed"], normalized)
     missing_scope = filter_dashboard_devices(classified["missing"], normalized)
@@ -361,6 +467,7 @@ def build_dashboard_payload(
     }
     filtered = status_devices[normalized["status"]]
     chart_payload = build_chart_payload(filtered, snapshots or [])
+    fleet = dashboard_upload_fleet(snapshots or [])
     vendors = sorted({_text(device.get("vendor")) for device in devices if _text(device.get("vendor"))})
     rooms = sorted({_text(device.get("room")) for device in devices if _text(device.get("room"))})
     return {
@@ -374,6 +481,7 @@ def build_dashboard_payload(
         "metrics": {
             "devices": len(filtered),
             "total": len(current_scope),
+            "totalAcross": max(int(fleet["uniqueAcrossUploads"] or 0), len(current_scope)),
             "changed": len(changed_scope),
             "missing": len(missing_scope),
             "unchanged": len(unchanged_scope),
@@ -383,6 +491,7 @@ def build_dashboard_payload(
             "switches": len({_text(device.get("switchIp") or device.get("switch_ip")) for device in filtered if _text(device.get("switchIp") or device.get("switch_ip"))}),
         },
         "statusCounts": {key: len(value) for key, value in status_devices.items()},
+        "uploadFleet": fleet,
         "changeAnalysis": change_analysis,
         "statusCharts": _status_charts({**classified, "missing": missing_scope}, filtered, normalized["chartLimit"]),
         "charts": [

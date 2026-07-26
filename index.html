@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
-  <meta name="application-build" content="2026.07.22.8">
-  <link rel="stylesheet" href="styles.css?v=20260722.7">
+  <meta name="application-build" content="2026.07.23.1">
+  <link rel="stylesheet" href="styles.css?v=20260723.1">
 </head>
 <body>
   <div class="app-shell">
@@ -262,9 +262,9 @@
           <button class="button secondary" type="button" id="openDashboardChangesButton">Журнал изменений</button>
         </div>
         <section class="metrics dashboard-status-metrics" aria-label="Показатели dashboard">
-          <button type="button" class="metric dashboard-kpi" data-dashboard-status="all" data-dashboard-card="total"><span>Всего устройств</span><strong id="dashboardTotalMetric">0</strong><small>Текущий набор</small></button>
+          <button type="button" class="metric dashboard-kpi" data-dashboard-status="all" data-dashboard-card="total"><span>Устройства</span><strong id="dashboardTotalMetric">0 / 0</strong><small>Уникальные во всех / в последней</small></button>
           <button type="button" class="metric dashboard-kpi" data-dashboard-status="changed" data-dashboard-card="changed"><span>Изменённые</span><strong id="dashboardChangedMetric">0</strong><small id="dashboardChangedHint">0% от всех</small></button>
-          <button type="button" class="metric dashboard-kpi" data-dashboard-status="missing" data-dashboard-card="missing"><span>Отсутствовавшие</span><strong id="dashboardMissingMetric">0</strong><small>За 30 дней</small></button>
+          <button type="button" class="metric dashboard-kpi" data-dashboard-status="missing" data-dashboard-card="missing"><span>Отсутствуют</span><strong id="dashboardMissingMetric">0</strong><small>От предыдущей выгрузки</small></button>
           <button type="button" class="metric dashboard-kpi" data-dashboard-status="unchanged" data-dashboard-card="unchanged"><span>Без изменений</span><strong id="dashboardUnchangedMetric">0</strong><small id="dashboardUnchangedHint">0% от всех</small></button>
           <article class="metric" data-dashboard-card="vendors"><span>Производителей</span><strong id="dashboardVendorMetric">0</strong><small>Уникальных</small></article>
           <article class="metric" data-dashboard-card="rooms"><span>Помещений</span><strong id="dashboardRoomCountMetric">0</strong><small>Уникальных</small></article>
@@ -276,10 +276,10 @@
           <article class="metric"><span>Помещений</span><strong id="roomMetric">0</strong></article>
         </section>
         <section class="analytics-grid">
-          <div class="tool-panel" data-dashboard-chart="dynamics"><div class="panel-head"><h2>Динамика изменений по дням</h2></div><div class="bar-list" id="dashboardDynamicsChart"></div></div>
+          <div class="tool-panel" data-dashboard-chart="dynamics"><div class="panel-head"><h2>Динамика общего числа устройств</h2></div><div class="bar-list" id="dashboardDynamicsChart"></div></div>
           <div class="tool-panel" data-dashboard-chart="vendors"><div class="panel-head"><h2>Топ производителей</h2></div><div class="bar-list" id="dashboardStatusVendorChart"></div></div>
           <div class="tool-panel" data-dashboard-chart="fields"><div class="panel-head"><h2>Изменения по полям</h2></div><div class="bar-list" id="dashboardFieldChangesChart"></div></div>
-          <div class="tool-panel" data-dashboard-chart="missing"><div class="panel-head"><h2>Отсутствовавшие устройства</h2></div><div class="bar-list" id="dashboardMissingChart"></div></div>
+          <div class="tool-panel" data-dashboard-chart="missing"><div class="panel-head"><h2>Отсутствующие устройства</h2></div><div class="bar-list" id="dashboardMissingChart"></div></div>
           <div class="tool-panel"><div class="panel-head"><h2>Вендоры</h2></div><div class="bar-list" id="vendorChart"></div></div>
           <div class="tool-panel"><div class="panel-head"><h2>Модели</h2></div><div class="bar-list" id="modelChart"></div></div>
           <div class="tool-panel room-occupancy-panel"><div class="panel-head"><div><h2>Заполненность помещений</h2><span class="muted" id="roomOccupancyStatus">Нет данных о распределении устройств</span></div></div><div class="bar-list" id="roomOccupancyChart"></div></div>
@@ -297,8 +297,8 @@
 
       <section class="view" id="historyView" role="tabpanel">
         <section class="results-section">
-          <div class="results-toolbar"><h2>История загрузок и изменений</h2><input id="historyDateFrom" type="date"><input id="historyDateTo" type="date"><input id="historySearchInput" type="search" placeholder="Поиск по MAC, производителю, модели, IP, адресу и файлу"><button class="button secondary" id="exportHistoryButton">Экспорт</button><button class="icon-button" id="clearHistoryFiltersButton" title="Очистить фильтры">×</button><button class="button secondary" id="clearHistoryButton" data-engineering-permission="delete:history">Очистить историю</button></div>
-          <div class="table-wrap"><table><thead><tr><th>Дата</th><th>Снимок</th><th>Устройств</th><th>Источник</th><th>Действие</th></tr></thead><tbody id="historyBody"></tbody></table></div>
+          <div class="results-toolbar"><h2>История загрузок и изменений</h2><input id="historyDateFrom" type="date"><input id="historyDateTo" type="date"><input id="historySearchInput" type="search" placeholder="Поиск по MAC, производителю, модели, IP, адресу и файлу"><button class="button secondary" id="exportHistoryButton">Экспорт</button><button class="icon-button" id="clearHistoryFiltersButton" title="Очистить фильтры">×</button><button class="button secondary danger-action" id="deleteSelectedSnapshotsButton" data-engineering-permission="delete:snapshots">Удалить выбранные</button><button class="button secondary" id="clearHistoryButton" data-engineering-permission="delete:history">Очистить историю</button></div>
+          <div class="table-wrap"><table><thead><tr><th><input type="checkbox" id="selectAllSnapshots" aria-label="Выбрать все выгрузки"></th><th>Дата</th><th>Снимок</th><th>Устройств</th><th>Источник</th><th>Действие</th></tr></thead><tbody id="historyBody"></tbody></table></div>
         </section>
         <section class="results-section enhanced-history-section">
           <div class="results-toolbar"><h2>Расширенная история изменений</h2><span class="muted">Группировка по MAC</span></div>
@@ -319,7 +319,7 @@
           </div>
           <details class="movement-column-settings"><summary>Колонки расширенной истории</summary><div id="movementColumnControls"></div><div class="enhanced-history-actions"><button class="button secondary" id="optimizeMovementColumnsButton">Оптимизировать ширину</button><button class="button secondary" id="resetMovementColumnsButton">Сбросить ширину</button><button class="button secondary" id="saveMovementColumnsButton">Сохранить колонки</button><button class="button secondary" id="loadMovementColumnsButton">Загрузить колонки</button></div></details>
           <div class="database-history-summary" id="movementHistorySummary"></div>
-          <div class="table-wrap enhanced-history-table-wrap"><table id="enhancedMovementTable"><thead><tr id="enhancedMovementHeader"><th data-movement-column="mac">MAC-адрес<span class="column-resize-handle" data-movement-resize="mac"></span></th><th data-movement-column="count">Изменений<span class="column-resize-handle" data-movement-resize="count"></span></th><th data-movement-column="dates">Дата/время<span class="column-resize-handle" data-movement-resize="dates"></span></th><th data-movement-column="vendor">Производитель<span class="column-resize-handle" data-movement-resize="vendor"></span></th><th data-movement-column="model">Модель<span class="column-resize-handle" data-movement-resize="model"></span></th><th data-movement-column="room">Помещение<span class="column-resize-handle" data-movement-resize="room"></span></th><th data-movement-column="field">Поле<span class="column-resize-handle" data-movement-resize="field"></span></th><th data-movement-column="before">Было<span class="column-resize-handle" data-movement-resize="before"></span></th><th data-movement-column="after">Стало<span class="column-resize-handle" data-movement-resize="after"></span></th><th data-movement-column="source">Файл<span class="column-resize-handle" data-movement-resize="source"></span></th></tr></thead><tbody id="localMovementBody"><tr><td colspan="10" class="empty-state">История изменений загружается...</td></tr></tbody></table></div>
+          <div class="table-wrap enhanced-history-table-wrap"><table id="enhancedMovementTable"><thead><tr id="enhancedMovementHeader"><th data-movement-column="mac">MAC-адрес<span class="column-resize-handle" data-movement-resize="mac"></span></th><th data-movement-column="count">Изменений<span class="column-resize-handle" data-movement-resize="count"></span></th><th data-movement-column="dates">Дата/время<span class="column-resize-handle" data-movement-resize="dates"></span></th><th data-movement-column="vendor">Производитель<span class="column-resize-handle" data-movement-resize="vendor"></span></th><th data-movement-column="model">Модель<span class="column-resize-handle" data-movement-resize="model"></span></th><th data-movement-column="address">Адрес помещения<span class="column-resize-handle" data-movement-resize="address"></span></th><th data-movement-column="room">Помещение<span class="column-resize-handle" data-movement-resize="room"></span></th><th data-movement-column="field">Поле<span class="column-resize-handle" data-movement-resize="field"></span></th><th data-movement-column="before">Было<span class="column-resize-handle" data-movement-resize="before"></span></th><th data-movement-column="after">Стало<span class="column-resize-handle" data-movement-resize="after"></span></th><th data-movement-column="source">Файл<span class="column-resize-handle" data-movement-resize="source"></span></th></tr></thead><tbody id="localMovementBody"><tr><td colspan="11" class="empty-state">История изменений загружается...</td></tr></tbody></table></div>
         </section>
         <section class="results-section">
           <div class="results-toolbar"><h2>SQLite MAC history</h2><div class="bar-list compact" id="sqliteHistorySummary"></div><button class="button secondary" id="copyHistoryTableButton">Копировать таблицу</button><button class="button secondary" id="copyHistoryMacButton">Копировать MAC</button></div>
@@ -675,17 +675,22 @@
   <dialog class="device-dialog dashboard-changes-dialog" id="dashboardChangesDialog">
     <div class="dialog-head"><div><h2>Изменения устройств</h2><p class="muted" id="dashboardChangesPeriodLabel">Изменения за выбранный период</p></div><button class="icon-button" id="closeDashboardChangesDialog" aria-label="Закрыть">×</button></div>
     <section class="metrics dashboard-change-metrics">
-      <article class="metric"><span>Всего</span><strong id="dashboardChangeTotal">0</strong></article>
-      <article class="metric change-critical"><span>Критические</span><strong id="dashboardCriticalCount">0</strong></article>
-      <article class="metric"><span>Добавлено</span><strong id="dashboardAddedCount">0</strong></article>
-      <article class="metric"><span>Удалено</span><strong id="dashboardRemovedCount">0</strong></article>
-      <article class="metric"><span>Изменено</span><strong id="dashboardModifiedCount">0</strong></article>
+      <button type="button" class="metric" data-dashboard-change-type="all"><span>Всего MAC</span><strong id="dashboardChangeTotal">0</strong></button>
+      <button type="button" class="metric change-critical" data-dashboard-change-type="critical"><span>Критические</span><strong id="dashboardCriticalCount">0</strong></button>
+      <button type="button" class="metric" data-dashboard-change-type="added"><span>Добавлено</span><strong id="dashboardAddedCount">0</strong></button>
+      <button type="button" class="metric" data-dashboard-change-type="removed"><span>Отсутствует</span><strong id="dashboardRemovedCount">0</strong></button>
+      <button type="button" class="metric" data-dashboard-change-type="modified"><span>Изменено</span><strong id="dashboardModifiedCount">0</strong></button>
     </section>
     <div class="dashboard-change-filters">
       <label>Важность<select id="dashboardChangeSeverityFilter"><option value="all">Все уровни</option><option value="critical">Критические</option><option value="high">Высокие</option><option value="medium">Средние</option><option value="low">Низкие</option></select></label>
+      <label>Тип<select id="dashboardChangeTypeFilter"><option value="all">Все типы</option><option value="added">Добавлено</option><option value="removed">Отсутствует</option><option value="modified">Изменено</option></select></label>
       <label>Поиск<input type="search" id="dashboardChangeSearch" placeholder="MAC, поле, значение"></label>
     </div>
-    <div class="table-wrap dashboard-changes-table"><table><thead><tr><th>Важность</th><th>Дата</th><th>MAC</th><th>Тип</th><th>Поле</th><th>Было</th><th>Стало</th><th>Источник</th></tr></thead><tbody id="dashboardChangesBody"><tr><td colspan="8" class="empty-state">Изменений не найдено.</td></tr></tbody></table></div>
+    <div class="table-wrap dashboard-changes-table"><table><thead><tr><th>Важность</th><th>Дата</th><th>MAC</th><th>Тип</th><th>Модель</th><th>Адрес помещения</th><th>Помещение</th><th>Что изменилось</th><th>Источник</th></tr></thead><tbody id="dashboardChangesBody"><tr><td colspan="9" class="empty-state">Изменений не найдено.</td></tr></tbody></table></div>
+  </dialog>
+  <dialog class="device-dialog dashboard-changes-dialog" id="dashboardDynamicsDialog">
+    <div class="dialog-head"><div><h2>Динамика общего числа устройств</h2><p class="muted">Количество уникальных MAC в каждой финальной выгрузке.</p></div><button class="icon-button" id="closeDashboardDynamicsDialog" aria-label="Закрыть">×</button></div>
+    <div class="table-wrap"><table><thead><tr><th>Дата</th><th>Выгрузка</th><th>Устройств</th><th>Изменение</th></tr></thead><tbody id="dashboardDynamicsBody"><tr><td colspan="4" class="empty-state">Нет данных.</td></tr></tbody></table></div>
   </dialog>
 
   <dialog class="device-dialog dashboard-settings-dialog" id="dashboardSettingsDialog">
@@ -741,12 +746,12 @@
   <script src="frontend/memory-guard.js?v=20260722.9"></script>
   <script src="frontend/file-readers.js?v=20260722.8"></script>
   <script src="frontend/state-persistence.js?v=20260722.7"></script>
-  <script src="frontend/browser-snapshot-store.js?v=20260722.9"></script>
+  <script src="frontend/browser-snapshot-store.js?v=20260723.1"></script>
   <script src="frontend/portable-database.js?v=20260722.7"></script>
   <script src="frontend/local-folder-store.js?v=20260722.7"></script>
   <script src="frontend/workspace-file-lifecycle.js?v=20260722.7"></script>
   <script src="frontend/guide.js?v=20260722.7"></script>
-  <script src="app.js?v=20260722.9"></script>
+  <script src="app.js?v=20260723.1"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;

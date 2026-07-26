@@ -38,7 +38,7 @@ def test_database_snapshot_bulk_delete():
     insert_snapshot(SNAPSHOTS[1], "source-b")
 
     assert snapshot_count() == 2
-    assert delete_snapshots(source="source-a") == 1
+    assert delete_snapshots(ids=[SNAPSHOTS[0]]) == 1
     assert snapshot_count() == 1
     assert delete_snapshots() >= 1
     assert snapshot_count() == 0

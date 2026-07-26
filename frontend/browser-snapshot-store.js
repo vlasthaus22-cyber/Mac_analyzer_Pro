@@ -333,6 +333,25 @@
     return count;
   }
 
+  async function countEnrichmentRows(jobId) {
+    const id = String(jobId || "");
+    if (!id) return 0;
+    const database = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const current = database.transaction(enrichmentRowStore, "readonly");
+      const request = current.objectStore(enrichmentRowStore).index("jobId").count(IDBKeyRange.only(id));
+      let count = 0;
+      request.onsuccess = () => { count = Number(request.result || 0); };
+      request.onerror = () => reject(request.error || new Error("Temporary enrichment count failed"));
+      current.oncomplete = () => { database.close(); resolve(count); };
+      current.onerror = () => {
+        const error = current.error;
+        database.close();
+        reject(error || new Error("Temporary enrichment count failed"));
+      };
+    });
+  }
+
   async function transformEnrichmentRows(jobId, transform) {
     let afterKey = "";
     let changed = 0;
@@ -533,6 +552,45 @@
     };
   }
 
+  async function aggregateSeries(snapshots, options = {}) {
+    const rows = Array.isArray(snapshots) ? snapshots : [];
+    const jobId = `snapshot-union-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const series = [];
+    await clearEnrichment(jobId).catch(() => false);
+    try {
+      for (let index = 0; index < rows.length; index += 1) {
+        const source = typeof rows[index] === "string" ? { id: rows[index] } : (rows[index] || {});
+        const snapshotId = String(source.id || source.snapshotId || "");
+        if (!snapshotId) continue;
+        let currentCount = 0;
+        const metadata = await streamSnapshot(snapshotId, async (kind, chunk) => {
+          if (kind !== "device") return;
+          const compact = chunk.map(compactComparisonDevice).filter((device) => device.mac).map((device) => ({ mac: device.mac }));
+          currentCount += compact.length;
+          await mergeEnrichmentRows(jobId, compact, { allowNew: true });
+          compact.length = 0;
+        });
+        if (!metadata) continue;
+        series.push({
+          id: snapshotId,
+          name: String(source.name || metadata.name || snapshotId),
+          date: String(source.date || source.fileCreatedAt || source.createdAt || metadata.createdAt || metadata.savedAt || ""),
+          count: currentCount,
+          delta: currentCount - Number(series.at(-1)?.count || 0),
+        });
+        if (typeof options.onProgress === "function") options.onProgress(index + 1, rows.length);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      return {
+        uniqueAcrossUploads: await countEnrichmentRows(jobId),
+        latestCount: Number(series.at(-1)?.count || 0),
+        series,
+      };
+    } finally {
+      await clearEnrichment(jobId).catch(() => false);
+    }
+  }
+
   function compactComparisonDevice(device) {
     return {
       mac: String(device?.mac || device?.macFormatted || "").toUpperCase().replace(/[^0-9A-F]/g, ""),
@@ -562,23 +620,32 @@
             result.added += 1;
             result.changedDevices += 1;
             tallyRows(result.changedVendors, device.vendor);
-            if (result.changes.length < limit) result.changes.push({ mac: device.mac, type: "added", field: "device", before: "", after: device.vendor || "Устройство" });
+            if (result.changes.length < limit) result.changes.push({
+              mac: device.mac, type: "added", field: "device", before: "", after: device.vendor || "Устройство",
+              beforeDevice: null, afterDevice: { ...device },
+            });
             return;
           }
           let modified = false;
+          const criticalMove = String(previous.switchIp || "") !== String(device.switchIp || "")
+            && String(previous.ip || "") === String(device.ip || "")
+            && String(previous.room || "") === String(device.room || "");
           for (const field of result.fields) {
             const before = String(previous[field] || "");
             const after = String(device[field] || "");
             if (before === after) continue;
             modified = true;
             result.modifiedFields += 1;
-            if (field === "switchIp" || field === "switchPort") result.critical += 1;
             result.fieldCounts.set(field, (result.fieldCounts.get(field) || 0) + 1);
-            if (result.changes.length < limit) result.changes.push({ mac: device.mac, type: "modified", field, before, after });
+            if (result.changes.length < limit) result.changes.push({
+              mac: device.mac, type: "modified", field, before, after,
+              beforeDevice: { ...previous }, afterDevice: { ...device },
+            });
           }
           if (modified) {
             result.modifiedDevices += 1;
             result.changedDevices += 1;
+            if (criticalMove) result.critical += 1;
             tallyRows(result.changedVendors, device.vendor);
           } else {
             result.unchanged += 1;
@@ -604,9 +671,11 @@
         if (!cursor) return;
         const previous = cursor.value?.device || {};
         result.removed += 1;
-        result.critical += 1;
         tallyRows(result.missingVendors, previous.vendor);
-        if (result.changes.length < limit) result.changes.push({ mac: previous.mac || cursor.value?.mac || "", type: "removed", field: "device", before: previous.vendor || "Устройство", after: "" });
+        if (result.changes.length < limit) result.changes.push({
+          mac: previous.mac || cursor.value?.mac || "", type: "removed", field: "device",
+          before: previous.vendor || "Устройство", after: "", beforeDevice: { ...previous }, afterDevice: null,
+        });
         cursor.continue();
       };
       request.onerror = () => reject(request.error || new Error("Snapshot comparison scan failed"));
@@ -646,12 +715,13 @@
         summary: {
           added: result.added,
           removed: result.removed,
-          modified: result.modifiedFields,
+          modified: result.modifiedDevices,
+          modifiedFields: result.modifiedFields,
           modifiedDevices: result.modifiedDevices,
           changedDevices: result.changedDevices,
           unchanged: result.unchanged,
           critical: result.critical,
-          total: result.added + result.removed + result.modifiedFields,
+          total: result.added + result.removed + result.modifiedDevices,
         },
         changes: result.changes.map((item) => ({ ...item })),
         fieldCounts: rankedRows(result.fieldCounts, 20),
@@ -780,6 +850,7 @@
     streamSnapshot,
     page,
     aggregate,
+    aggregateSeries,
     compareSnapshots,
     createPageCollector,
     clearEnrichment,

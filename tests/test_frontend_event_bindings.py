@@ -99,7 +99,7 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert '<script src="frontend/memory-guard.js?v=20260722.9"></script>' in html
     assert '<script src="frontend/file-readers.js?v=20260722.8"></script>' in html
-    assert '<meta name="application-build" content="2026.07.22.8">' in html
+    assert '<meta name="application-build" content="2026.07.23.1">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -547,9 +547,16 @@ def test_mapping_rules_are_backend_first():
 
 def test_snapshot_history_delete_uses_bulk_backend_endpoint():
     app = read_app_js()
+    html = read_index_html()
 
     assert app.count('$("#clearHistoryButton").addEventListener') == 1
     assert 'api("/database/snapshots/delete",{method:"POST",body:JSON.stringify({})})' in app
+    assert 'api("/database/snapshots/delete",{method:"POST",body:JSON.stringify({ids})})' in app
+    assert "async function deleteSelectedSnapshots()" in app
+    assert "BrowserSnapshots?.removeSnapshot?.(id)" in app
+    assert 'id="deleteSelectedSnapshotsButton"' in html
+    assert 'id="selectAllSnapshots"' in html
+    assert 'data-snapshot-select' in app
 
     for legacy_marker in (
         'snapshots.map((item)=>api("/snapshots/"+encodeURIComponent(item.id),{method:"DELETE"}))',
@@ -953,7 +960,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260722.9"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260723.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
     assert 'async function storeLocalSnapshot(' in app
     assert 'devices:rows.slice(0,previewLimit)' in app
@@ -971,8 +978,10 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert 'await BrowserSnapshots?.pruneEnrichmentRows?.().catch(()=>0);' in app
     assert 'async function saveEnrichmentSnapshot(jobId, snapshot, invalid = [], onProgress = () => {})' in snapshot_store
     assert 'async function aggregate(id, options = {})' in snapshot_store
+    assert 'async function aggregateSeries(snapshots, options = {})' in snapshot_store
     assert 'async function compareSnapshots(baselineId, comparisonId, options = {})' in snapshot_store
-    assert 'if (field === "switchIp" || field === "switchPort") result.critical += 1;' in snapshot_store
+    assert 'const criticalMove = String(previous.switchIp || "") !== String(device.switchIp || "")' in snapshot_store
+    assert 'if (criticalMove) result.critical += 1;' in snapshot_store
     assert 'critical: result.critical,' in snapshot_store
     assert 'async function localAnalyzeFilesToSnapshot(fields,strategy,source,createdAt,onProgress=()=>{})' in app
     assert 'local=await localAnalyzeFilesToSnapshot(enrich,strategy,source,sourceCreatedAt' in app
@@ -1941,13 +1950,15 @@ def test_dashboard_change_period_snapshot_drilldown_is_wired_backend_and_local()
         'id="dashboardChangeMode"', 'id="dashboardChangeDateFrom"', 'id="dashboardChangeDateTo"',
         'id="dashboardBaselineSnapshot"', 'id="dashboardComparisonSnapshot"',
         'id="dashboardChangesDialog"', 'id="dashboardCriticalCount"', 'id="dashboardChangesBody"',
+        'id="dashboardChangeTypeFilter"', 'id="dashboardDynamicsDialog"', 'data-dashboard-change-type="added"',
     ):
         assert marker in html
     for marker in (
         "function localDashboardChangeAnalysis", "function renderDashboardChanges", "function showDashboardChangesDialog",
         "payload.changeAnalysis", "dashboardChangeSeverity", "applyDashboardChangeRangeButton",
         "function finalDashboardSnapshots", "function selectLatestDashboardPair", "function loadBrowserDashboardCache",
-        "BrowserSnapshots.compareSnapshots", 'changeMode:"snapshots"',
+        "BrowserSnapshots.compareSnapshots", "BrowserSnapshots.aggregateSeries", 'changeMode:"snapshots"',
+        "function groupDashboardChanges", "function showDashboardDynamicsDialog",
     ):
         assert marker in app
     assert "function buildFallbackChangeAnalysis" in html

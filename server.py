@@ -89,15 +89,15 @@ DEFAULT_RESULT_COLUMN_WIDTHS = {
     "switchPort": 100,
     "source": 150,
 }
-ENHANCED_HISTORY_COLUMNS = ["mac", "count", "dates", "vendor", "model", "room", "field", "before", "after", "source"]
+ENHANCED_HISTORY_COLUMNS = ["mac", "count", "dates", "vendor", "model", "address", "room", "field", "before", "after", "source"]
 ENHANCED_HISTORY_COLUMN_LABELS = {
     "mac": "MAC-адрес", "count": "Изменений", "dates": "Дата/время",
-    "vendor": "Производитель", "model": "Модель", "room": "Помещение",
+    "vendor": "Производитель", "model": "Модель", "address": "Адрес помещения", "room": "Помещение",
     "field": "Поле", "before": "Было", "after": "Стало", "source": "Файл",
 }
 ENHANCED_HISTORY_COLUMN_WIDTHS = {
     "mac": 180, "count": 100, "dates": 170, "vendor": 160, "model": 160,
-    "room": 120, "field": 120, "before": 240, "after": 240, "source": 160,
+    "address": 220, "room": 120, "field": 120, "before": 240, "after": 240, "source": 160,
 }
 DEFAULT_RESULT_LABELS = {
     "mac": "MAC-адрес",
@@ -1658,14 +1658,7 @@ def mapping_rules(kind: str) -> list[dict[str, Any]]:
 def mapping_rows_html(rules: list[dict[str, Any]], kind: str) -> str:
     rows = []
     is_model = kind == "model"
-    prioritized_rules = sorted(
-        rules,
-        key=lambda item: (
-            as_text(item.get("source")) in {"reference", "builtin"},
-            -len(as_text(item.get("prefix") if is_model else item.get("oui"))),
-            as_text(item.get("prefix") if is_model else item.get("oui")),
-        ),
-    )
+    prioritized_rules = list(rules)
     for item in prioritized_rules[:100]:
         key = as_text(item.get("prefix") if is_model else item.get("oui"))
         value = as_text(item.get("model") if is_model else item.get("vendor"))
@@ -2603,6 +2596,8 @@ def enhanced_history_column_settings() -> dict[str, Any]:
     visible = [column for column in raw.get("visible", []) if column in ENHANCED_HISTORY_COLUMNS]
     if not visible:
         visible = list(ENHANCED_HISTORY_COLUMNS)
+    elif int(raw.get("version") or 1) < 2 and "address" not in visible:
+        visible.insert(visible.index("room") if "room" in visible else len(visible), "address")
     widths: dict[str, int] = {}
     raw_widths = raw.get("widths", {}) if isinstance(raw.get("widths"), dict) else {}
     for column in ENHANCED_HISTORY_COLUMNS:
@@ -2642,7 +2637,7 @@ def save_enhanced_history_column_settings(settings: dict[str, Any]) -> dict[str,
             width = ENHANCED_HISTORY_COLUMN_WIDTHS[column]
         widths[column] = max(64, min(width, 600))
     timestamp = utc_now()
-    value = json.dumps({"visible": visible, "widths": widths}, ensure_ascii=False)
+    value = json.dumps({"version": 2, "visible": visible, "widths": widths}, ensure_ascii=False)
     with db_connection() as conn:
         conn.execute(
             "INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?) "
@@ -2662,7 +2657,7 @@ def enhanced_movement_history(filters: Optional[dict[str, Any]] = None, limit: i
     with db_connection() as conn:
         total = int(conn.execute(
             "SELECT COUNT(*) FROM mac_movements m LEFT JOIN mac_history h ON h.id = "
-            "(SELECT id FROM mac_history WHERE mac = m.mac ORDER BY recorded_at DESC, id DESC LIMIT 1)" + where_sql,
+            "(SELECT id FROM mac_history WHERE mac = m.mac AND recorded_at <= m.changed_at ORDER BY recorded_at DESC, id DESC LIMIT 1)" + where_sql,
             params,
         ).fetchone()[0] or 0)
         records = [dict(row) for row in conn.execute(
@@ -2670,7 +2665,7 @@ def enhanced_movement_history(filters: Optional[dict[str, Any]] = None, limit: i
             SELECT m.*, h.mac_formatted, h.vendor, h.model, h.room, h.address, h.switch_ip, h.switch_port
             FROM mac_movements m
             LEFT JOIN mac_history h ON h.id = (
-                SELECT id FROM mac_history WHERE mac = m.mac ORDER BY recorded_at DESC, id DESC LIMIT 1
+                SELECT id FROM mac_history WHERE mac = m.mac AND recorded_at <= m.changed_at ORDER BY recorded_at DESC, id DESC LIMIT 1
             )
             """ + where_sql + " ORDER BY m.changed_at DESC, m.id DESC LIMIT ?",
             (*params, bounded_limit),
@@ -2698,7 +2693,8 @@ def enhanced_movement_history(filters: Optional[dict[str, Any]] = None, limit: i
             "mac": f'<button class="movement-group-toggle" data-toggle-movement-group="{safe_mac}" aria-expanded="true" title="Свернуть группу">▾</button> {html_lib.escape(first["mac_formatted"])}',
             "count": str(len(movements)), "dates": html_lib.escape(date_range),
             "vendor": html_lib.escape(as_text(first.get("vendor")) or "Unknown"),
-            "model": html_lib.escape(as_text(first.get("model"))), "room": html_lib.escape(as_text(first.get("room"))),
+            "model": html_lib.escape(as_text(first.get("model"))), "address": html_lib.escape(as_text(first.get("address"))),
+            "room": html_lib.escape(as_text(first.get("room"))),
             "field": f'+{group_counts["added"]} −{group_counts["removed"]} Δ{group_counts["modified"]}',
             "before": "", "after": "", "source": "",
         }
@@ -2710,7 +2706,8 @@ def enhanced_movement_history(filters: Optional[dict[str, Any]] = None, limit: i
             child_values = {
                 "mac": "", "count": "", "dates": html_lib.escape(format_display_datetime(movement.get("changed_at"))),
                 "vendor": html_lib.escape(as_text(movement.get("vendor"))), "model": html_lib.escape(as_text(movement.get("model"))),
-                "room": html_lib.escape(as_text(movement.get("room"))), "field": html_lib.escape(as_text(movement.get("field_name"))),
+                "address": html_lib.escape(as_text(movement.get("address"))), "room": html_lib.escape(as_text(movement.get("room"))),
+                "field": html_lib.escape(as_text(movement.get("field_name"))),
                 "before": html_lib.escape(as_text(movement.get("from_value"))), "after": html_lib.escape(as_text(movement.get("to_value"))),
                 "source": html_lib.escape(as_text(movement.get("source"))),
             }
@@ -3403,11 +3400,16 @@ def database_device_or_lookup(mac_value: Any) -> dict[str, Any]:
     return {"device": device, "source": device["lookupSource"], "found": False}
 
 
-def delete_snapshots(source: str = "", before: str = "") -> int:
+def delete_snapshots(source: str = "", before: str = "", ids: Optional[list[Any]] = None) -> int:
     where: list[str] = []
     params: list[Any] = []
     source_filter = as_text(source)
     before_filter = as_text(before)
+    selected_ids = [as_text(value) for value in (ids or []) if as_text(value)]
+    if selected_ids:
+        placeholders = ",".join("?" for _ in selected_ids)
+        where.append(f"id IN ({placeholders})")
+        params.extend(selected_ids)
     if source_filter:
         where.append("source = ?")
         params.append(source_filter)
@@ -3418,7 +3420,7 @@ def delete_snapshots(source: str = "", before: str = "") -> int:
     with db_connection() as conn:
         count = conn.execute(f"SELECT COUNT(*) FROM snapshots{where_sql}", params).fetchone()[0]
         conn.execute(f"DELETE FROM snapshots{where_sql}", params)
-    log_action("Delete snapshots", f"source={source_filter or '*'}, before={before_filter or '*'}, deleted={count}")
+    log_action("Delete snapshots", f"ids={len(selected_ids)}, source={source_filter or '*'}, before={before_filter or '*'}, deleted={count}")
     return int(count or 0)
 
 
@@ -3619,6 +3621,7 @@ def statistics_snapshot_history(
         })
     table_rows_html = "".join(
         "<tr>"
+        f'<td><input type="checkbox" data-snapshot-select value="{html_lib.escape(as_text(snapshot.get("id")), quote=True)}" aria-label="Выбрать выгрузку"></td>'
         f"<td>{html_lib.escape(format_display_datetime(snapshot.get('createdAt')))}</td>"
         f"<td>{html_lib.escape(as_text(snapshot.get('name')))}</td>"
         f"<td>{int(snapshot.get('deviceCount') or 0)}</td>"
@@ -3630,7 +3633,7 @@ def statistics_snapshot_history(
     return {
         "snapshots": snapshots,
         "tableRowsHtml": table_rows_html,
-        "emptyTableRowsHtml": '<tr><td colspan="5" class="empty-state">Backend snapshot history is empty.</td></tr>',
+        "emptyTableRowsHtml": '<tr><td colspan="6" class="empty-state">Backend snapshot history is empty.</td></tr>',
         "summary": {
             "snapshots": len(snapshots),
             "devices": sum(item["deviceCount"] for item in snapshots),
@@ -5960,7 +5963,11 @@ class AppHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/database/snapshots/delete":
                 if not self.require_engineering("delete:snapshots"):
                     return
-                deleted = delete_snapshots(as_text(payload.get("source")), as_text(payload.get("before")))
+                ids = payload.get("ids", [])
+                if not isinstance(ids, list):
+                    self.error_response("ids must be an array")
+                    return
+                deleted = delete_snapshots(as_text(payload.get("source")), as_text(payload.get("before")), ids)
                 self.json_response({"ok": True, "deleted": deleted})
             elif parsed.path == "/api/database/history/delete":
                 if not self.require_engineering("delete:history"):
