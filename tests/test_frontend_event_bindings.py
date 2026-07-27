@@ -99,7 +99,7 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert '<script src="frontend/memory-guard.js?v=20260722.9"></script>' in html
     assert '<script src="frontend/file-readers.js?v=20260722.8"></script>' in html
-    assert '<meta name="application-build" content="2026.07.23.1">' in html
+    assert '<meta name="application-build" content="2026.07.27.1">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -960,7 +960,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260723.1"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260727.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
     assert 'async function storeLocalSnapshot(' in app
     assert 'devices:rows.slice(0,previewLimit)' in app
@@ -1636,13 +1636,25 @@ def test_oui_prefix_lengths_and_dashboard_render_locally():
 def test_analysis_tab_dashboard_and_mapping_learning_refresh_results():
     app = read_app_js()
     html = Path("index.html").read_text(encoding="utf-8")
+    styles = Path("styles.css").read_text(encoding="utf-8")
+    snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
 
     for marker in (
         'id="analysisDashboardPanel"',
         'id="analysisMetricDevices"',
+        'id="analysisMetricKnown"',
+        'id="analysisMetricRooms"',
+        'id="analysisMetricSwitches"',
+        'id="analysisMetricInvalid"',
         'id="analysisVendorChart"',
         'id="analysisModelChart"',
+        'id="analysisRoomChart"',
+        'id="analysisSwitchChart"',
         'id="analysisOuiChart"',
+        'id="analysisOui3Chart"',
+        'id="analysisOui4Chart"',
+        'id="analysisOui5Chart"',
+        'id="analysisCoverageChart"',
         'id="analysisQualityChart"',
         'id="metricModels"',
         'id="metricOuiCoverage"',
@@ -1669,9 +1681,17 @@ def test_analysis_tab_dashboard_and_mapping_learning_refresh_results():
         "learned=learnLocalRulesFromDevices(rows,settings.minCount)",
         'if(model)count(modelCounts,mac.slice(0,10),model);',
         "function renderAnalysisDashboard()",
-        '$("#analysisMetricDevices").textContent=total;',
-        '$("#analysisVendorChart").innerHTML=localChartHtml(localTally(devices,"vendor",10)',
-        '$("#analysisOuiChart").innerHTML=localChartHtml(localTally(devices.map((device)=>({oui:formatOuiValue(device.mac||device.macFormatted||device.oui)})),"oui",10)',
+        "function analysisDashboardLocalPayload(devices=state.devices,summary=state.resultSummary)",
+        "function analysisDashboardAggregatePayload(aggregate={})",
+        "function renderAnalysisDashboardPayload(payload={},statusText=\"\")",
+        "async function refreshAnalysisDashboard(key)",
+        "BrowserSnapshots.aggregate(state.resultBrowserSnapshotId,{limit:20})",
+        'api("/dashboard/metrics"',
+        'set("#analysisMetricDevices",total)',
+        'chart("#analysisRoomChart",distributions.rooms',
+        'chart("#analysisSwitchChart",distributions.switches',
+        'chart("#analysisOui3Chart",distributions.oui3',
+        'chart("#analysisCoverageChart",coverage',
         "renderAnalysisDashboard();",
         "state.localVendorMappings=data.vendors||state.localVendorMappings||{};",
         "state.localModelMappings=data.models||state.localModelMappings||{};",
@@ -1680,6 +1700,16 @@ def test_analysis_tab_dashboard_and_mapping_learning_refresh_results():
         "state.localModelMappings[p]=name;",
     ):
         assert marker in app
+    for marker in (
+        "const oui3Rows = new Map();",
+        "const oui4Rows = new Map();",
+        "const oui5Rows = new Map();",
+        "tallyRowsBounded(switchRows, switchIp)",
+        "uniqueOui3: oui3Rows.size",
+        "switches: rankedRows(switchRows, limit)",
+    ):
+        assert marker in snapshot_store
+    assert ".analysis-dashboard-metrics" in styles
 
 
 def test_database_device_open_uses_backend_lookup_fallback():
@@ -1963,6 +1993,9 @@ def test_dashboard_change_period_snapshot_drilldown_is_wired_backend_and_local()
         assert marker in app
     assert "function buildFallbackChangeAnalysis" in html
     assert ".severity-critical" in styles
+    assert ".dashboard-changes-dialog[open] { display:flex; flex-direction:column; }" in styles
+    assert "resize:both;" in styles
+    assert ".dashboard-changes-table { flex:1 1 260px;" in styles
 
 
 def test_pyqt_single_device_analytics_text_report_is_rendered_locally_and_from_api():

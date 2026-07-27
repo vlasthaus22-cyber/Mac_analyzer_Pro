@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
-  <meta name="application-build" content="2026.07.23.1">
-  <link rel="stylesheet" href="styles.css?v=20260723.1">
+  <meta name="application-build" content="2026.07.27.1">
+  <link rel="stylesheet" href="styles.css?v=20260727.1">
 </head>
 <body>
   <div class="app-shell">
@@ -154,16 +154,26 @@
         </section>
         <section class="results-section compact" id="analysisDashboardPanel">
           <div class="results-toolbar"><h2>Dashboard анализа</h2><span class="muted" id="analysisDashboardStatus">Запустите анализ, чтобы построить dashboard.</span></div>
-          <section class="metrics analytics-metrics">
+          <section class="metrics analytics-metrics analysis-dashboard-metrics">
             <article class="metric"><span>Устройств</span><strong id="analysisMetricDevices">0</strong></article>
+            <article class="metric"><span>Опознано</span><strong id="analysisMetricKnown">0 / 0%</strong></article>
+            <article class="metric"><span>Unknown</span><strong id="analysisMetricUnknown">0</strong></article>
             <article class="metric"><span>Производителей</span><strong id="analysisMetricVendors">0</strong></article>
             <article class="metric"><span>Моделей</span><strong id="analysisMetricModels">0</strong></article>
-            <article class="metric"><span>Unknown</span><strong id="analysisMetricUnknown">0</strong></article>
+            <article class="metric"><span>Помещений</span><strong id="analysisMetricRooms">0</strong></article>
+            <article class="metric"><span>Коммутаторов</span><strong id="analysisMetricSwitches">0</strong></article>
+            <article class="metric"><span>Ошибок</span><strong id="analysisMetricInvalid">0</strong></article>
           </section>
-          <section class="analytics-grid">
+          <section class="analytics-grid analysis-dashboard-grid">
             <div class="tool-panel"><div class="panel-head"><h2>Производители</h2></div><div class="bar-list" id="analysisVendorChart"></div></div>
             <div class="tool-panel"><div class="panel-head"><h2>Модели</h2></div><div class="bar-list" id="analysisModelChart"></div></div>
+            <div class="tool-panel"><div class="panel-head"><h2>Помещения</h2></div><div class="bar-list" id="analysisRoomChart"></div></div>
+            <div class="tool-panel"><div class="panel-head"><h2>IP коммутаторов</h2></div><div class="bar-list" id="analysisSwitchChart"></div></div>
             <div class="tool-panel"><div class="panel-head"><h2>OUI 3/4/5 байт</h2></div><div class="bar-list" id="analysisOuiChart"></div></div>
+            <div class="tool-panel"><div class="panel-head"><h2>Топ OUI 3 байта</h2></div><div class="bar-list" id="analysisOui3Chart"></div></div>
+            <div class="tool-panel"><div class="panel-head"><h2>Топ OUI 4 байта</h2></div><div class="bar-list" id="analysisOui4Chart"></div></div>
+            <div class="tool-panel"><div class="panel-head"><h2>Топ OUI 5 байт</h2></div><div class="bar-list" id="analysisOui5Chart"></div></div>
+            <div class="tool-panel"><div class="panel-head"><h2>Заполненность данных</h2></div><div class="bar-list" id="analysisCoverageChart"></div></div>
             <div class="tool-panel"><div class="panel-head"><h2>Качество</h2></div><div class="bar-list" id="analysisQualityChart"></div></div>
           </section>
         </section>
@@ -746,12 +756,12 @@
   <script src="frontend/memory-guard.js?v=20260722.9"></script>
   <script src="frontend/file-readers.js?v=20260722.8"></script>
   <script src="frontend/state-persistence.js?v=20260722.7"></script>
-  <script src="frontend/browser-snapshot-store.js?v=20260723.1"></script>
+  <script src="frontend/browser-snapshot-store.js?v=20260727.1"></script>
   <script src="frontend/portable-database.js?v=20260722.7"></script>
   <script src="frontend/local-folder-store.js?v=20260722.7"></script>
   <script src="frontend/workspace-file-lifecycle.js?v=20260722.7"></script>
   <script src="frontend/guide.js?v=20260722.7"></script>
-  <script src="app.js?v=20260723.1"></script>
+  <script src="app.js?v=20260727.1"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;
@@ -1689,14 +1699,38 @@
         const devices = fallbackState.devices || [];
         const known = devices.filter((device) => device.vendor && device.vendor !== "Unknown").length;
         const unknown = Math.max(0, devices.length - known);
+        const models = new Set(devices.map((device) => device.model).filter(Boolean));
+        const rooms = new Set(devices.map((device) => device.room).filter(Boolean));
+        const switches = new Set(devices.map((device) => device.switchIp || device.switch_ip).filter(Boolean));
+        const ouiRows = (length) => fallbackTally(devices.map((device) => ({ oui: fallbackFormatOui(device.mac || device.oui, length, "plain") })), "oui", 20);
+        const oui3 = ouiRows(3), oui4 = ouiRows(4), oui5 = ouiRows(5);
+        const filled = (getter) => devices.filter((device) => String(getter(device) || "").trim()).length;
+        const coverage = [
+          ["Производитель", known],
+          ["Модель", filled((device) => device.model)],
+          ["Адрес помещения", filled((device) => device.address)],
+          ["Помещение", filled((device) => device.room)],
+          ["IP устройства", filled((device) => device.ip)],
+          ["IP коммутатора", filled((device) => device.switchIp || device.switch_ip)]
+        ].map(([label, count]) => [`${label} · ${devices.length ? Math.round(count / devices.length * 100) : 0}%`, count]);
         if ($("#analysisMetricDevices")) $("#analysisMetricDevices").textContent = devices.length;
+        if ($("#analysisMetricKnown")) $("#analysisMetricKnown").textContent = `${known} / ${devices.length ? Math.round(known / devices.length * 100) : 0}%`;
         if ($("#analysisMetricVendors")) $("#analysisMetricVendors").textContent = new Set(devices.map((device) => device.vendor).filter((value) => value && value !== "Unknown")).size;
-        if ($("#analysisMetricModels")) $("#analysisMetricModels").textContent = new Set(devices.map((device) => device.model).filter(Boolean)).size;
+        if ($("#analysisMetricModels")) $("#analysisMetricModels").textContent = models.size;
         if ($("#analysisMetricUnknown")) $("#analysisMetricUnknown").textContent = unknown;
+        if ($("#analysisMetricRooms")) $("#analysisMetricRooms").textContent = rooms.size;
+        if ($("#analysisMetricSwitches")) $("#analysisMetricSwitches").textContent = switches.size;
+        if ($("#analysisMetricInvalid")) $("#analysisMetricInvalid").textContent = fallbackState.invalid.length;
         if ($("#analysisDashboardStatus")) $("#analysisDashboardStatus").textContent = devices.length ? "Dashboard built from current analysis results." : "Run analysis to build dashboard.";
         if ($("#analysisVendorChart")) $("#analysisVendorChart").innerHTML = fallbackChartHtml(fallbackTally(devices, "vendor", 10), "No vendor data.");
         if ($("#analysisModelChart")) $("#analysisModelChart").innerHTML = fallbackChartHtml(fallbackTally(devices, "model", 10), "No model data.");
-        if ($("#analysisOuiChart")) $("#analysisOuiChart").innerHTML = fallbackChartHtml(fallbackTally(devices.map((device) => ({ oui: fallbackFormatOui(device.mac || device.oui) })), "oui", 10), "No OUI data.");
+        if ($("#analysisRoomChart")) $("#analysisRoomChart").innerHTML = fallbackChartHtml(fallbackTally(devices, "room", 20), "No room data.");
+        if ($("#analysisSwitchChart")) $("#analysisSwitchChart").innerHTML = fallbackChartHtml(fallbackTally(devices.map((device) => ({ switchIp: device.switchIp || device.switch_ip })), "switchIp", 20), "No switch data.");
+        if ($("#analysisOuiChart")) $("#analysisOuiChart").innerHTML = fallbackChartHtml([["3 bytes", new Set(devices.map((device) => fallbackFormatOui(device.mac || device.oui, 3, "plain")).filter(Boolean)).size], ["4 bytes", new Set(devices.map((device) => fallbackFormatOui(device.mac || device.oui, 4, "plain")).filter(Boolean)).size], ["5 bytes", new Set(devices.map((device) => fallbackFormatOui(device.mac || device.oui, 5, "plain")).filter(Boolean)).size]], "No OUI data.");
+        if ($("#analysisOui3Chart")) $("#analysisOui3Chart").innerHTML = fallbackChartHtml(oui3, "No OUI 3-byte data.");
+        if ($("#analysisOui4Chart")) $("#analysisOui4Chart").innerHTML = fallbackChartHtml(oui4, "No OUI 4-byte data.");
+        if ($("#analysisOui5Chart")) $("#analysisOui5Chart").innerHTML = fallbackChartHtml(oui5, "No OUI 5-byte data.");
+        if ($("#analysisCoverageChart")) $("#analysisCoverageChart").innerHTML = fallbackChartHtml(coverage, "No coverage data.");
         if ($("#analysisQualityChart")) $("#analysisQualityChart").innerHTML = fallbackChartHtml([["Known", known], ["Unknown", unknown], ["Errors", fallbackState.invalid.length]].filter((item) => item[1] > 0), "No quality issues.");
       }
 

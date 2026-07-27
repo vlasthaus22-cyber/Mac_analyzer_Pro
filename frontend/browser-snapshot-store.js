@@ -490,6 +490,16 @@
     map.set(key, (map.get(key) || 0) + 1);
   }
 
+  function tallyRowsBounded(map, value, limit = 20000) {
+    const key = String(value || "").trim();
+    if (!key) return;
+    if (map.has(key)) {
+      map.set(key, map.get(key) + 1);
+      return;
+    }
+    if (map.size < limit) map.set(key, 1);
+  }
+
   function rankedRows(map, limit = 50) {
     return Array.from(map.entries())
       .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
@@ -501,6 +511,10 @@
     const vendors = new Map();
     const models = new Map();
     const rooms = new Map();
+    const switchRows = new Map();
+    const oui3Rows = new Map();
+    const oui4Rows = new Map();
+    const oui5Rows = new Map();
     const switches = new Set();
     let devices = 0;
     let known = 0;
@@ -508,6 +522,9 @@
     let withRoom = 0;
     let withIp = 0;
     let withSwitch = 0;
+    let withModel = 0;
+    let autoVendors = 0;
+    let autoModels = 0;
     const unknown = new Set(["", "unknown", "не определено", "неизвестный вендор", "unknown vendor"]);
     const metadata = await streamSnapshot(id, async (kind, rows) => {
       if (kind !== "device") return;
@@ -517,14 +534,22 @@
         const model = String(device?.model || "").trim();
         const room = String(device?.room || "").trim();
         const switchIp = String(device?.switchIp || device?.switch_ip || "").trim();
+        const mac = String(device?.mac || device?.macFormatted || device?.mac_formatted || device?.oui || "").replace(/[^0-9a-f]/gi, "").toUpperCase();
         tallyRows(vendors, vendor);
         if (model) tallyRows(models, model);
         if (room) tallyRows(rooms, room);
+        if (switchIp) tallyRowsBounded(switchRows, switchIp);
+        if (mac.length >= 6) tallyRowsBounded(oui3Rows, mac.slice(0, 6));
+        if (mac.length >= 8) tallyRowsBounded(oui4Rows, mac.slice(0, 8));
+        if (mac.length >= 10) tallyRowsBounded(oui5Rows, mac.slice(0, 10));
         if (!unknown.has(vendor.toLowerCase())) known += 1;
         if (String(device?.address || "").trim()) withAddress += 1;
         if (room) withRoom += 1;
         if (String(device?.ip || "").trim()) withIp += 1;
         if (switchIp) { withSwitch += 1; switches.add(switchIp); }
+        if (model) withModel += 1;
+        if (!unknown.has(vendor.toLowerCase()) && (device?.vendorMatchedPrefix || !device?.vendorSource || !["file", "history"].includes(device.vendorSource))) autoVendors += 1;
+        if (model && (device?.modelMatchedPrefix || !device?.modelSource || !["file", "history"].includes(device.modelSource))) autoModels += 1;
       }
     });
     if (!metadata) return null;
@@ -545,9 +570,19 @@
       withRoom,
       withIp,
       withSwitch,
+      withModel,
+      autoVendors,
+      autoModels,
+      uniqueOui3: oui3Rows.size,
+      uniqueOui4: oui4Rows.size,
+      uniqueOui5: oui5Rows.size,
       vendors: rankedRows(vendors, limit),
       models: rankedRows(models, limit),
       rooms: rankedRows(rooms, limit),
+      switches: rankedRows(switchRows, limit),
+      oui3: rankedRows(oui3Rows, limit),
+      oui4: rankedRows(oui4Rows, limit),
+      oui5: rankedRows(oui5Rows, limit),
       metadata: { ...metadata, devices: [], invalid: [] },
     };
   }

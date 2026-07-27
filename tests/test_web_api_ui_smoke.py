@@ -662,11 +662,17 @@ def test_rest_api_and_ui_controls_smoke():
         )
         assert status == 200
         assert dashboard_metrics["metrics"]["devices"] == 2
-        assert dashboard_metrics["metrics"]["vendors"] == 2
+        assert dashboard_metrics["metrics"]["vendors"] == 1
         assert dashboard_metrics["metrics"]["knownDevices"] == 1
         assert dashboard_metrics["metrics"]["unknownVendor"] == 1
         assert dashboard_metrics["metrics"]["knownPercent"] == 50
         assert dashboard_metrics["metrics"]["invalid"] == 1
+        assert dashboard_metrics["metrics"]["rooms"] == 1
+        assert dashboard_metrics["metrics"]["switches"] == 0
+        assert dashboard_metrics["metrics"]["uniqueOui3"] == 1
+        assert dashboard_metrics["distributions"]["vendors"][0] == {"label": "SmokeVendor", "value": 1}
+        assert dashboard_metrics["distributions"]["rooms"][0] == {"label": "909", "value": 1}
+        assert dashboard_metrics["distributions"]["oui3"][0] == {"label": "AABBCC", "value": 2}
 
         status, loaded_dashboard = request_json(app.base_url, "GET", "/api/dashboard/settings")
         assert status == 200

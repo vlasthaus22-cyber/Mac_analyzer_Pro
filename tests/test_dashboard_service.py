@@ -41,11 +41,27 @@ def test_dashboard_metrics_payload_counts_known_and_invalid_records():
     payload = build_dashboard_metrics_payload(DEVICES, invalid=[{"row": 9}], snapshots=[], settings={})
 
     assert payload["metrics"]["devices"] == 4
-    assert payload["metrics"]["vendors"] == 3
+    assert payload["metrics"]["vendors"] == 2
+    assert payload["metrics"]["models"] == 3
+    assert payload["metrics"]["rooms"] == 2
+    assert payload["metrics"]["switches"] == 2
     assert payload["metrics"]["knownDevices"] == 3
     assert payload["metrics"]["unknownVendor"] == 1
     assert payload["metrics"]["knownPercent"] == 75
     assert payload["metrics"]["invalid"] == 1
+    assert payload["metrics"]["withRoom"] == 3
+    assert payload["metrics"]["withSwitch"] == 3
+    assert payload["metrics"]["withModel"] == 3
+    assert payload["metrics"]["uniqueOui3"] == 1
+    assert payload["metrics"]["uniqueOui4"] == 1
+    assert payload["metrics"]["uniqueOui5"] == 1
+    assert payload["distributions"]["vendors"][:2] == [
+        {"label": "Cisco", "value": 2},
+        {"label": "Apple", "value": 1},
+    ]
+    assert payload["distributions"]["rooms"][0] == {"label": "101", "value": 2}
+    assert payload["distributions"]["switches"][0] == {"label": "10.1.1.1", "value": 2}
+    assert payload["distributions"]["oui3"] == [{"label": "AABBCC", "value": 4}]
 
 
 def test_dashboard_reproduces_python_status_filters_and_history_charts():

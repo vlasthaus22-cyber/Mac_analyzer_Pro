@@ -513,14 +513,69 @@ def build_dashboard_metrics_payload(
     unknown_vendor = sum(1 for device in filtered if _text(device.get("vendor")).lower() in unknown_labels)
     total = int(payload.get("metrics", {}).get("devices") or 0)
     known = max(0, total - unknown_vendor)
+    def value(device: dict[str, Any], *keys: str) -> str:
+        for key in keys:
+            current = _text(device.get(key))
+            if current:
+                return current
+        return ""
+
+    def ranked(values: list[str], limit: int = 20) -> list[dict[str, Any]]:
+        return [{"label": label, "value": count} for label, count in Counter(item for item in values if item).most_common(limit)]
+
+    normalized_macs = [_mac(device) for device in filtered]
+    vendors = [value(device, "vendor") or "Unknown" for device in filtered]
+    models = [value(device, "model") for device in filtered]
+    rooms = [value(device, "room") for device in filtered]
+    switches = [value(device, "switchIp", "switch_ip") for device in filtered]
+    oui3 = [mac[:6] for mac in normalized_macs if len(mac) >= 6]
+    oui4 = [mac[:8] for mac in normalized_macs if len(mac) >= 8]
+    oui5 = [mac[:10] for mac in normalized_macs if len(mac) >= 10]
+    with_model = sum(bool(item) for item in models)
+    with_address = sum(bool(value(device, "address")) for device in filtered)
+    with_room = sum(bool(item) for item in rooms)
+    with_ip = sum(bool(value(device, "ip")) for device in filtered)
+    with_switch = sum(bool(item) for item in switches)
+    auto_vendors = sum(
+        value(device, "vendor").lower() not in unknown_labels
+        and (device.get("vendorMatchedPrefix") or not device.get("vendorSource") or device.get("vendorSource") not in {"file", "history"})
+        for device in filtered
+    )
+    auto_models = sum(
+        bool(value(device, "model"))
+        and (device.get("modelMatchedPrefix") or not device.get("modelSource") or device.get("modelSource") not in {"file", "history"})
+        for device in filtered
+    )
     return {
         "metrics": {
             "devices": total,
-            "vendors": len({_text(device.get("vendor")) for device in filtered if _text(device.get("vendor"))}),
+            "vendors": len({item for item in vendors if item.lower() not in unknown_labels}),
+            "models": len({item for item in models if item}),
+            "rooms": len({item for item in rooms if item}),
+            "switches": len({item for item in switches if item}),
             "knownDevices": known,
             "unknownVendor": unknown_vendor,
             "knownPercent": round(known / total * 100) if total else 0,
             "invalid": len(invalid or []),
+            "withAddress": with_address,
+            "withRoom": with_room,
+            "withIp": with_ip,
+            "withSwitch": with_switch,
+            "withModel": with_model,
+            "autoVendors": auto_vendors,
+            "autoModels": auto_models,
+            "uniqueOui3": len(set(oui3)),
+            "uniqueOui4": len(set(oui4)),
+            "uniqueOui5": len(set(oui5)),
+        },
+        "distributions": {
+            "vendors": ranked(vendors),
+            "models": ranked(models),
+            "rooms": ranked(rooms),
+            "switches": ranked(switches),
+            "oui3": ranked(oui3),
+            "oui4": ranked(oui4),
+            "oui5": ranked(oui5),
         },
         "filters": payload.get("filters", {}),
         "settings": payload.get("settings", {}),
