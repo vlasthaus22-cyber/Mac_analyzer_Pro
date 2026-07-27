@@ -63,6 +63,8 @@ def test_project_structure_and_maintenance_commands_exist():
         "frontend/file-readers.js",
         "frontend/state-persistence.js",
         "frontend/browser-snapshot-store.js",
+        "frontend/xlsx-exporter.js",
+        "frontend/full-xlsx-report.js",
         "frontend/portable-database.js",
         "frontend/workspace-file-lifecycle.js",
         "frontend/guide.js",

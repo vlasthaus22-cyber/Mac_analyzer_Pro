@@ -6,6 +6,7 @@
 - `state-persistence.js` prevents large server-backed XLSX rows and result pages from being cloned into browser storage.
 - `browser-snapshot-store.js` keeps complete browser-only snapshots in a dedicated IndexedDB store; the live workspace keeps only metadata and a 500-row preview.
 - `xlsx-exporter.js` creates real single- or multi-sheet XLSX workbooks in the browser. The full report streams devices and every saved MAC appearance from IndexedDB into one workbook with analytics, snapshots, changes, errors, source-file metadata, references, and settings without hydrating the full device collection.
+- `full-xlsx-report.js` owns the report schema, history-sheet partitioning and row mapping. `app.js` only supplies state/streams and coordinates progress plus download.
 - Repeated browser enrichment streams worksheets and shared strings, releases transient dashboard/result references, and removes consumed input files from the next workspace.
 - Backend imports send the original binary file, retain only a bounded 100-row preview in browser memory, and stream full rows from `data/imports/workspace-cache/workspace_cache.db` during enrichment.
 - Autonomous enrichment stores complete results in chunked IndexedDB snapshots and keeps only the current result page in live JavaScript state.

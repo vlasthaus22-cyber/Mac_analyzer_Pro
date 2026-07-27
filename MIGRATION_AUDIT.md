@@ -48,9 +48,32 @@ SQLite persistence. The machine-checkable source of truth is
 .venv\Scripts\python.exe -m tests.test_legacy_migration_service
 ```
 
+## Architecture Audit
+
+- `app.js` is the browser UI coordinator. The complete Excel report schema,
+  history partitioning and row mapping are isolated in
+  `frontend/full-xlsx-report.js`; ZIP/XML writing remains in
+  `frontend/xlsx-exporter.js`.
+- Complete snapshots and per-MAC history are streamed through
+  `frontend/browser-snapshot-store.js`. Neither report module hydrates all
+  saved snapshots into a second device collection.
+- Frontend source modules are embedded by `scripts/build_html_portable.ps1`;
+  generated files under `portable/` are never hand-edited.
+- Backend domain behavior is grouped under `backend/services/analytics`,
+  `comparison`, `detection`, `exporting`, `integrations`, `system`, and
+  `workspace`. Root service files remain compatibility wrappers.
+- The PyQt source remains an immutable parity reference. Current machine
+  parity has no missing equivalent and no unchecked registry item.
+
 ## Latest Verification
 
-- Full automated suite: 82/82 test files, 242/242 test functions.
+- Full automated suite: 84/84 Python test files, 264/264 test functions, plus
+  all frontend Node regression and syntax checks.
+- The complete browser Excel report is verified as a real ten-sheet XLSX with
+  current devices, analytics, snapshots, every available MAC appearance,
+  changes, invalid rows, source-file metadata, references, and settings.
+  History is partitioned by the Excel row limit and the complete workbook has
+  a 512 MB bounded-memory guard.
 - System diagnostics: healthy, readiness 100%, 8/8 checks, SQLite
   `PRAGMA quick_check: ok`, 14/14 required tables.
 - Browser XLSX stress test: 100,000 rows and 800,000 cells parsed by the

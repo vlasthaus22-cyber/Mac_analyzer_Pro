@@ -20,6 +20,8 @@ Mac_analyzer_Pro/
     memory-guard.js        ранние лимиты файла/ZIP/heap, суммы файлов обогащения, локального экспорта, paging и cooperative yield
     file-readers.js        XLSX ZIP-каталог и листы читаются срезами File.slice без полного ArrayBuffer книги
     browser-snapshot-store.js порционное IndexedDB-хранилище локальных снимков без полной копии при записи
+    xlsx-exporter.js       низкоуровневая потоковая запись однолистовых и многолистовых XLSX/ZIP
+    full-xlsx-report.js    схема полного Excel-отчёта, аналитика и разбиение истории MAC по листам
     portable-database.js  потоковая файловая база MADB для переноса данных между браузерами и ПК
     local-folder-store.js локальная структура database/imports/exports/settings/logs/backups, сохранённая ссылка браузера и дедупликация повторных импортов
     workspace-file-lifecycle.js жизненный цикл файлов: использованные входы заменяются в следующем запуске, история остаётся в снимках
@@ -56,7 +58,7 @@ Mac_analyzer_Pro/
   STOP_MAC_ANALYZER.cmd     остановка необязательного backend
   index.html               HTML-интерфейс и автономный browser fallback
   mac_analyzer_standalone.html устаревший parity-артефакт; в пользовательскую сборку не включается
-  app.js                   основная логика web frontend
+  app.js                   UI-контроллер web frontend; доменная логика выносится в frontend-модули
   styles.css               стили web frontend
   server.py                HTTP API, SQLite и раздача frontend
   *_service.py             совместимые импорты и ещё не сгруппированные сервисы

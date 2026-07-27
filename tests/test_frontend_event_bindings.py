@@ -99,7 +99,7 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert '<script src="frontend/memory-guard.js?v=20260722.9"></script>' in html
     assert '<script src="frontend/file-readers.js?v=20260722.8"></script>' in html
-    assert '<meta name="application-build" content="2026.07.27.3">' in html
+    assert '<meta name="application-build" content="2026.07.27.4">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -198,24 +198,25 @@ def test_migrated_controls_have_single_backend_binding():
 def test_full_xlsx_export_includes_analytics_changes_and_mac_history():
     app = read_app_js()
     html = read_index_html()
+    report = Path("frontend/full-xlsx-report.js").read_text(encoding="utf-8")
 
     assert 'id="exportFullXlsxButton"' in html
     assert "Скачать всё XLSX" in html
+    assert '<script src="frontend/full-xlsx-report.js?v=20260727.4"></script>' in html
     assert "async function exportFullWorkbook()" in app
-    assert 'sheetName:"Сводка"' in app
-    assert 'sheetName:"Устройства"' in app
-    assert 'sheetName:"Аналитика"' in app
-    assert 'sheetName:"Выгрузки"' in app
-    assert 'sheetName:"Изменения"' in app
-    assert 'sheetName:"Ошибки"' in app
-    assert 'sheetName:"Исходные файлы"' in app
-    assert 'sheetName:"Справочники"' in app
-    assert 'sheetName:"Настройки"' in app
-    assert '"История MAC"' in app
-    assert "streamStoredSnapshotDevices(snapshot" in app
-    assert "fullExportHistoryGroups(snapshots)" in app
+    assert "const FullXlsxReport = window.MacAnalyzerFullXlsxReport;" in app
+    assert "FullXlsxReport.buildReport({" in app
+    assert "streamFullReportSnapshotRows" in app
+    assert "streamFullReportInvalidRows" in app
     assert 'deliverDownload(`mac-analyzer-full-${date}.xlsx`,result.blob)' in app
     assert app.count('$("#exportFullXlsxButton").addEventListener') == 1
+    assert "function fullExportDeviceColumns()" not in app
+    assert "function fullExportHistoryGroups(" not in app
+    for sheet in ("Сводка", "Устройства", "Аналитика", "Выгрузки", "Изменения", "Ошибки", "Исходные файлы", "Справочники", "Настройки", "История MAC"):
+        assert f'sheetName: "{sheet}"' in report or f'? "{sheet}"' in report
+    assert "async function buildReport(options = {})" in report
+    assert "function historyGroups(" in report
+    assert "window.MacAnalyzerFullXlsxReport" in report
 
 
 def test_single_snapshot_compare_uses_backend_snapshot_resolver():
@@ -983,8 +984,9 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260727.3"></script>' in html
-    assert '<script src="frontend/xlsx-exporter.js?v=20260727.3"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260727.4"></script>' in html
+    assert '<script src="frontend/xlsx-exporter.js?v=20260727.4"></script>' in html
+    assert '<script src="frontend/full-xlsx-report.js?v=20260727.4"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
     assert 'async function storeLocalSnapshot(' in app
     assert 'devices:rows.slice(0,previewLimit)' in app
