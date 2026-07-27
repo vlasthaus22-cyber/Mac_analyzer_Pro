@@ -2400,6 +2400,157 @@
     deliverDownload(`mac-analysis-${date}.xlsx`,result.blob);
     return result;
   }
+  function fullExportDeviceColumns(){
+    return[
+      {key:"row",title:"№"},{key:"macFormatted",title:"MAC-адрес"},{key:"oui3",title:"OUI 3 байта"},{key:"oui4",title:"OUI 4 байта"},{key:"oui5",title:"OUI 5 байт"},
+      {key:"vendor",title:"Производитель"},{key:"model",title:"Модель"},{key:"ip",title:"IP устройства"},{key:"address",title:"Адрес помещения"},{key:"room",title:"Помещение"},
+      {key:"switchIp",title:"IP коммутатора"},{key:"switchPort",title:"Порт"},{key:"source",title:"Источник"},{key:"vendorSource",title:"Источник производителя"},
+      {key:"vendorConfidence",title:"Уверенность производителя"},{key:"vendorMatchedPrefix",title:"Префикс производителя"},{key:"modelSource",title:"Источник модели"},
+      {key:"modelConfidence",title:"Уверенность модели"},{key:"modelMatchedPrefix",title:"Префикс модели"},{key:"valid",title:"Корректная запись"},
+    ];
+  }
+  function fullExportDeviceCell(device,key,index){
+    if(key==="row")return index+1;
+    if(key==="macFormatted")return device.macFormatted||formatMac(device.mac);
+    if(key==="oui3")return formatOuiValue(device.mac||device.macFormatted||device.oui,3,"plain");
+    if(key==="oui4")return formatOuiValue(device.mac||device.macFormatted||device.oui,4,"plain");
+    if(key==="oui5")return formatOuiValue(device.mac||device.macFormatted||device.oui,5,"plain");
+    if(key==="valid")return device.valid===false||device.invalid?"Нет":"Да";
+    return device[key]??device[key.replace(/[A-Z]/g,(letter)=>"_"+letter.toLowerCase())]??"";
+  }
+  function snapshotExportDate(snapshot){return snapshot.fileCreatedAt||snapshot.createdAt||snapshot.created_at||snapshot.savedAt||"";}
+  function snapshotAvailableRows(snapshot){return snapshot.browserStored?Math.max(0,Number(snapshot.deviceCount||0)):Math.max(0,(snapshot.devices||[]).length);}
+  async function streamStoredSnapshotDevices(snapshot,acceptRows){
+    if(snapshot?.browserStored&&BrowserSnapshots?.streamSnapshot){
+      const metadata=await BrowserSnapshots.streamSnapshot(snapshot.id,async(kind,rows)=>{if(kind==="device")await acceptRows(rows);});
+      if(metadata)return;
+    }
+    await acceptRows(snapshot?.devices||[]);
+  }
+  async function streamCurrentInvalidRows(acceptRows){
+    if(state.resultBrowserSnapshotId&&BrowserSnapshots?.streamSnapshot){
+      const metadata=await BrowserSnapshots.streamSnapshot(state.resultBrowserSnapshotId,async(kind,rows)=>{if(kind==="invalid")await acceptRows(rows);});
+      if(metadata)return;
+    }
+    await acceptRows(state.invalid||[]);
+  }
+  async function fullExportAnalyticsPayload(){
+    if(state.resultBrowserSnapshotId&&BrowserSnapshots?.aggregate){
+      const aggregate=await BrowserSnapshots.aggregate(state.resultBrowserSnapshotId,{limit:200});
+      if(aggregate)return analysisDashboardAggregatePayload(aggregate);
+    }
+    return analysisDashboardLocalPayload(state.devices,state.resultSummary);
+  }
+  function fullExportSummaryRows(payload,snapshots,historyRows){
+    const metrics=payload.metrics||{},metricLabels={
+      devices:"Устройств в последней выгрузке",knownDevices:"Определён производитель",unknownVendor:"Производитель не определён",knownPercent:"Определено производителей, %",
+      vendors:"Уникальных производителей",models:"Уникальных моделей",rooms:"Уникальных помещений",switches:"Уникальных коммутаторов",invalid:"Ошибочных записей",
+      withAddress:"Заполнен адрес помещения",withRoom:"Заполнено помещение",withIp:"Заполнен IP устройства",withSwitch:"Заполнен IP коммутатора",withModel:"Определена модель",
+      autoVendors:"Автоопределено производителей",autoModels:"Автоопределено моделей",uniqueOui3:"Уникальных OUI 3 байта",uniqueOui4:"Уникальных OUI 4 байта",uniqueOui5:"Уникальных OUI 5 байт",
+    };
+    return[
+      ["Отчёт","Полный отчёт MAC Analyzer Pro",""],
+      ["Дата экспорта",new Date().toISOString(),""],
+      ["Выгрузок",snapshots.length,"Все сохранённые точки истории"],
+      ["Строк в хронологии MAC",historyRows,"Появления устройств во всех доступных выгрузках"],
+      ["Записей изменений",(state.movementHistory||[]).length,"Сохранённая расширенная история"],
+      ...Object.entries(metricLabels).map(([key,label])=>[label,metrics[key]??0,key==="knownPercent"?"Процент":""]),
+    ];
+  }
+  function fullExportAnalyticsRows(payload){
+    const metrics=payload.metrics||{},total=Math.max(1,Number(metrics.devices||0)),labels={
+      vendors:"Производитель",models:"Модель",rooms:"Помещение",switches:"IP коммутатора",oui3:"OUI 3 байта",oui4:"OUI 4 байта",oui5:"OUI 5 байт",
+    },rows=[];
+    for(const [key,label] of Object.entries(labels)){
+      for(const item of payload.distributions?.[key]||[]){
+        const count=Number(item.value??item.count??0);
+        rows.push([label,item.label||"",count,Number((count/total*100).toFixed(2))]);
+      }
+    }
+    return rows;
+  }
+  function fullExportHistoryGroups(snapshots){
+    const groups=[];let current=[],rows=0;
+    for(const snapshot of snapshots){
+      const count=snapshotAvailableRows(snapshot);
+      if(current.length&&rows+count>XlsxExporter.maximumRows){groups.push({snapshots:current,totalRows:rows});current=[];rows=0;}
+      current.push(snapshot);rows+=count;
+    }
+    if(current.length||!groups.length)groups.push({snapshots:current,totalRows:rows});
+    return groups;
+  }
+  function fullExportMovementRow(item){
+    const device=compactDashboardDevice(item.afterDevice)||compactDashboardDevice(item.beforeDevice)||{};
+    return[
+      item.changedAt||item.changed_at||item.date_str||"",formatMac(item.mac)||item.mac||"",item.type||item.change_type||localMovementChangeType(item),
+      item.field||item.field_name||"",item.before??item.from_value??item.old_value??"",item.after??item.to_value??item.new_value??"",
+      device.vendor||"",device.model||"",device.ip||"",device.address||"",device.room||"",device.switchIp||"",device.switchPort||"",item.source||item.file_name||"",
+    ];
+  }
+  function fullExportReferenceRows(){
+    const rows=[];
+    Object.entries(state.localVendorMappings||{}).sort().forEach(([prefix,value])=>rows.push(["Производитель",prefix,value,""]));
+    Object.entries(state.localModelMappings||{}).sort().forEach(([prefix,value])=>rows.push(["Модель",prefix,value,""]));
+    for(const item of state.ipMappings||[]){
+      const key=item.switchIp||item.switch_ip||item.ip||item.key||"";
+      rows.push(["IP коммутатора",key,item.address||item.value||"",item.room||""]);
+    }
+    return rows;
+  }
+  function fullExportSettingsRows(){
+    return[
+      ["Тема",state.theme||"light"],["Режим OUI",`${state.ouiLength||3} байта / ${state.ouiStyle||"plain"}`],
+      ["Автоопределение vendor/model",JSON.stringify(state.vendorDetectorSettings||{})],
+      ["Историческое обогащение",JSON.stringify(state.historyEnrichmentSettings||{})],
+      ["Настройки dashboard",JSON.stringify(state.dashboardSettings||{})],
+      ["Пользовательские колонки",JSON.stringify(state.customColumns||[])],
+      ["Порядок колонок",JSON.stringify(state.columnOrder||[])],
+      ["Видимые колонки",JSON.stringify(state.visibleColumns||[])],
+    ];
+  }
+  async function exportFullWorkbook(){
+    if(!currentDeviceCount()&&!(state.snapshots||[]).length){toast("Нет данных для полного Excel-отчёта.");return null;}
+    const processId=beginProcess("Полный Excel","Сбор аналитики и всей истории",5);
+    try{
+      const snapshots=(state.snapshots||[]).slice().sort((left,right)=>(Date.parse(snapshotExportDate(left))||0)-(Date.parse(snapshotExportDate(right))||0));
+      const historyGroups=fullExportHistoryGroups(snapshots),historyRows=historyGroups.reduce((sum,group)=>sum+group.totalRows,0);
+      updateProcess(processId,8,"Расчёт аналитики полного результата");
+      const analytics=await fullExportAnalyticsPayload(),deviceColumns=fullExportDeviceColumns();
+      const sheets=[
+        {sheetName:"Сводка",columns:["Показатель","Значение","Примечание"],rows:fullExportSummaryRows(analytics,snapshots,historyRows)},
+        {sheetName:"Устройства",columns:deviceColumns.map((column)=>column.title),totalRows:currentDeviceCount(),streamRows:streamCurrentXlsxRows,rowMapper:(device,index)=>deviceColumns.map((column)=>fullExportDeviceCell(device,column.key,index))},
+        {sheetName:"Аналитика",columns:["Разрез","Значение","Количество","Доля от устройств, %"],rows:fullExportAnalyticsRows(analytics)},
+        {sheetName:"Выгрузки",columns:["ID","Название","Дата файла","Сохранено","Источник","Тип","Устройств","Ошибок","Полнота"],rows:snapshots.map((snapshot)=>[snapshot.id||"",snapshot.name||"",snapshotExportDate(snapshot),snapshot.savedAt||"",snapshot.source||"",snapshot.kind||"",snapshot.deviceCount??(snapshot.devices||[]).length,snapshot.invalidCount??(snapshot.invalid||[]).length,snapshot.browserStored?"Полная IndexedDB":"Доступные строки"])},
+        {sheetName:"Изменения",columns:["Дата","MAC-адрес","Тип","Поле","Было","Стало","Производитель","Модель","IP устройства","Адрес помещения","Помещение","IP коммутатора","Порт","Источник"],rows:(state.movementHistory||[]),rowMapper:fullExportMovementRow},
+        {sheetName:"Ошибки",columns:["Строка","Источник","Ошибка","Исходные данные"],totalRows:state.resultBrowserSnapshotId?Number(state.resultInvalidCount||0):(state.invalid||[]).length,streamRows:streamCurrentInvalidRows,rowMapper:(item)=>[item.row||"",item.source||"",item.error||item.message||"Некорректный MAC",item.raw||item.value||""]},
+        {sheetName:"Исходные файлы",columns:["ID","Имя","Роль","Лист","Строк","Размер, байт","Дата файла","Статус"],rows:(state.files||[]).map((file)=>[file.id||"",file.name||"",file.role||"",file.sheet||file.sheetName||"",file.rowCount??(file.rows||[]).length,file.sourceBytes||file.size||0,file.fileCreatedAt||file.lastModified||"",file.consumedAt?"Обработан":"Загружен"])},
+        {sheetName:"Справочники",columns:["Тип","Ключ","Значение","Дополнительно"],rows:fullExportReferenceRows()},
+        {sheetName:"Настройки",columns:["Параметр","Значение"],rows:fullExportSettingsRows()},
+      ];
+      historyGroups.forEach((group,index)=>{
+        sheets.splice(4+index,0,{
+          sheetName:historyGroups.length===1?"История MAC":`История MAC ${index+1}`,
+          columns:["Дата выгрузки","Снимок","Источник выгрузки",...deviceColumns.slice(1).map((column)=>column.title)],
+          totalRows:group.totalRows,
+          streamRows:async(acceptRows)=>{
+            for(const snapshot of group.snapshots){
+              await streamStoredSnapshotDevices(snapshot,async(rows)=>{
+                const prefix=[snapshotExportDate(snapshot),snapshot.name||snapshot.id||"",snapshot.source||""];
+                await acceptRows(rows.map((device,rowIndex)=>[...prefix,...deviceColumns.slice(1).map((column)=>fullExportDeviceCell(device,column.key,rowIndex))]));
+              });
+            }
+          },
+        });
+      });
+      updateProcess(processId,12,`Формирование ${sheets.length} листов Excel`);
+      const result=await XlsxExporter.createWorkbook({sheets,onProgress:(percent,message)=>updateProcess(processId,Math.max(12,Math.min(98,percent)),message)});
+      const date=new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
+      deliverDownload(`mac-analyzer-full-${date}.xlsx`,result.blob);
+      finishProcess(processId,`Полный Excel готов: ${result.sheets.length} листов`);
+      toast(`Полный Excel сохранён: ${result.sheets.length} листов, ${result.rows.toLocaleString("ru-RU")} строк.`);
+      return result;
+    }catch(error){failProcess(processId,error);toast(error.message);throw error;}
+  }
   async function exportManagedBinary(type){
     if(!currentDeviceCount()){toast("Нет результатов для экспорта.");return;}
     const processId=beginProcess("Экспорт "+type.toUpperCase(),"Подготовка "+currentDeviceCount()+" записей",10),columns=exportColumns(),ouiSettings={length:state.ouiLength,style:state.ouiStyle};
@@ -2881,6 +3032,7 @@
   $("#multiCompareButton").addEventListener("click",multiCompare,true);
   $("#clearResultFiltersButton").addEventListener("click",()=>{$("#searchInput").value="";$("#vendorFilter").value="";$("#validityFilter").value="";resultPage=1;renderResults();});
   $("#exportXlsxButton").addEventListener("click",async()=>{try{await exportManagedBinary("xlsx");}catch(error){toast(error.message);}});
+  $("#exportFullXlsxButton").addEventListener("click",async()=>{try{await exportFullWorkbook();}catch{}});
   $("#exportPdfButton").addEventListener("click",async()=>{try{await exportManagedBinary("pdf");}catch(error){toast(error.message);}});
   $("#comparisonFilters").addEventListener("click",(e)=>{const filter=e.target.dataset.comparisonFilter;if(!filter)return;$$("[data-comparison-filter]").forEach((button)=>button.classList.toggle("active-filter",button.dataset.comparisonFilter===filter));const types={added:"Добавлено",removed:"Удалено",modified:"Изменено"};$$("#comparisonBody tr").forEach((row)=>{const type=row.children[1]?.textContent;row.hidden=filter!=="all"&&type!==types[filter];});});
   $("#historyBody").addEventListener("click",async(e)=>{

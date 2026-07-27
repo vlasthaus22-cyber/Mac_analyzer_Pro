@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
-  <meta name="application-build" content="2026.07.27.2">
-  <link rel="stylesheet" href="styles.css?v=20260727.2">
+  <meta name="application-build" content="2026.07.27.3">
+  <link rel="stylesheet" href="styles.css?v=20260727.3">
 </head>
 <body>
   <div class="app-shell">
@@ -125,6 +125,7 @@
             <button class="icon-button" id="clearResultFiltersButton" title="Очистить фильтры" aria-label="Очистить фильтры">×</button>
             <button class="button secondary" id="exportExcelButton">Excel</button>
             <button class="button secondary" id="exportXlsxButton">XLSX</button>
+            <button class="button primary" id="exportFullXlsxButton" title="Устройства, аналитика, выгрузки, изменения и история каждого MAC в одной книге">Скачать всё XLSX</button>
             <button class="button secondary" id="exportPdfButton">PDF / печать</button>
             <button class="button secondary" id="exportCsvButton">CSV</button>
             <button class="button secondary" id="exportTxtButton">TXT</button>
@@ -756,13 +757,13 @@
   <script src="frontend/memory-guard.js?v=20260722.9"></script>
   <script src="frontend/file-readers.js?v=20260722.8"></script>
   <script src="frontend/state-persistence.js?v=20260722.7"></script>
-  <script src="frontend/browser-snapshot-store.js?v=20260727.2"></script>
-  <script src="frontend/xlsx-exporter.js?v=20260727.2"></script>
+  <script src="frontend/browser-snapshot-store.js?v=20260727.3"></script>
+  <script src="frontend/xlsx-exporter.js?v=20260727.3"></script>
   <script src="frontend/portable-database.js?v=20260722.7"></script>
   <script src="frontend/local-folder-store.js?v=20260722.7"></script>
   <script src="frontend/workspace-file-lifecycle.js?v=20260722.7"></script>
   <script src="frontend/guide.js?v=20260722.7"></script>
-  <script src="app.js?v=20260727.2"></script>
+  <script src="app.js?v=20260727.3"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;

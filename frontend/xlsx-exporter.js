@@ -5,6 +5,8 @@
   const maximumRows = 1_048_575;
   const maximumColumns = 16_384;
   const maximumWorksheetBytes = 512 * 1024 * 1024;
+  const maximumWorkbookBytes = 512 * 1024 * 1024;
+  const maximumSheets = 255;
   const encoder = new TextEncoder();
   const crcTable = new Uint32Array(256);
 
@@ -129,8 +131,34 @@
     return bytes;
   }
 
-  function workbookEntries(sheetName, worksheetEntry) {
-    const safeSheetName = xmlText(String(sheetName || "MAC Analyzer").slice(0, 31) || "MAC Analyzer");
+  function safeSheetNames(sheets) {
+    const used = new Set();
+    return sheets.map((sheet, index) => {
+      const base = String(sheet.sheetName || sheet.name || `Лист ${index + 1}`)
+        .replace(/[\[\]:*?/\\]/g, " ")
+        .trim() || `Лист ${index + 1}`;
+      let name = base.slice(0, 31);
+      let suffix = 1;
+      while (used.has(name.toLocaleLowerCase())) {
+        suffix += 1;
+        const tail = ` ${suffix}`;
+        name = base.slice(0, 31 - tail.length) + tail;
+      }
+      used.add(name.toLocaleLowerCase());
+      return name;
+    });
+  }
+
+  function workbookEntries(sheetNames, worksheetEntries) {
+    const contentOverrides = worksheetEntries.map((_entry, index) => (
+      `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+    ));
+    const workbookSheets = sheetNames.map((name, index) => (
+      `<sheet name="${xmlText(name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`
+    ));
+    const worksheetRelationships = worksheetEntries.map((_entry, index) => (
+      `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`
+    ));
     return [
       buildEntry("[Content_Types].xml", [
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
@@ -138,7 +166,7 @@
         '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
         '<Default Extension="xml" ContentType="application/xml"/>',
         '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
-        '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>',
+        ...contentOverrides,
         "</Types>",
       ]),
       buildEntry("_rels/.rels", [
@@ -151,15 +179,17 @@
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
         '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ',
         'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">',
-        `<sheets><sheet name="${safeSheetName}" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+        "<sheets>",
+        ...workbookSheets,
+        "</sheets></workbook>",
       ]),
       buildEntry("xl/_rels/workbook.xml.rels", [
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">',
-        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>',
+        ...worksheetRelationships,
         "</Relationships>",
       ]),
-      worksheetEntry,
+      ...worksheetEntries,
     ];
   }
 
@@ -188,17 +218,17 @@
     return `<row r="${rowNumber}">${cells}</row>`;
   }
 
-  async function createWorkbook(options = {}) {
-    const columns = Array.isArray(options.columns) ? options.columns : [];
-    const totalRows = Math.max(0, Number(options.totalRows || 0) || 0);
-    const rowMapper = typeof options.rowMapper === "function" ? options.rowMapper : (row) => row;
-    const streamRows = typeof options.streamRows === "function"
-      ? options.streamRows
-      : async (accept) => accept(Array.isArray(options.rows) ? options.rows : []);
-    const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {};
-    if (!columns.length) throw new Error("Для XLSX не выбраны колонки");
+  async function createWorksheet(sheet, sheetIndex, sheetCount, onProgress) {
+    const columns = Array.isArray(sheet.columns) ? sheet.columns : [];
+    const totalRows = Math.max(0, Number(sheet.totalRows ?? sheet.rows?.length ?? 0) || 0);
+    const rowMapper = typeof sheet.rowMapper === "function" ? sheet.rowMapper : (row) => row;
+    const streamRows = typeof sheet.streamRows === "function"
+      ? sheet.streamRows
+      : async (accept) => accept(Array.isArray(sheet.rows) ? sheet.rows : []);
+    const sheetName = String(sheet.sheetName || sheet.name || `Лист ${sheetIndex + 1}`);
+    if (!columns.length) throw new Error(`Для листа «${sheetName}» не выбраны колонки`);
     if (columns.length > maximumColumns) throw new Error(`XLSX поддерживает не более ${maximumColumns} колонок`);
-    if (totalRows > maximumRows) throw new Error(`XLSX поддерживает не более ${maximumRows.toLocaleString("ru-RU")} строк данных`);
+    if (totalRows > maximumRows) throw new Error(`Лист «${sheetName}» содержит больше ${maximumRows.toLocaleString("ru-RU")} строк`);
 
     const worksheetParts = [];
     let worksheetBytes = 0;
@@ -207,7 +237,7 @@
     let batch = "";
     const appendBytes = (bytes) => {
       if (worksheetBytes + bytes.byteLength > maximumWorksheetBytes) {
-        throw new Error("XLSX превысил безопасный лимит 512 МБ; разделите результат на несколько файлов");
+        throw new Error(`Лист «${sheetName}» превысил безопасный лимит 512 МБ`);
       }
       worksheetParts.push(bytes);
       worksheetBytes += bytes.byteLength;
@@ -227,29 +257,84 @@
 
     await streamRows(async (sourceRows) => {
       for (const sourceRow of Array.isArray(sourceRows) ? sourceRows : []) {
-        if (processedRows >= maximumRows) throw new Error(`XLSX поддерживает не более ${maximumRows.toLocaleString("ru-RU")} строк данных`);
+        if (processedRows >= maximumRows) {
+          throw new Error(`Лист «${sheetName}» содержит больше ${maximumRows.toLocaleString("ru-RU")} строк`);
+        }
         batch += rowXml(rowMapper(sourceRow, processedRows), processedRows + 2);
         processedRows += 1;
         if (batch.length >= 256 * 1024) flushBatch();
       }
       flushBatch();
-      const percent = totalRows ? Math.min(96, Math.round(processedRows / totalRows * 94) + 2) : 50;
-      onProgress(percent, `XLSX: ${processedRows.toLocaleString("ru-RU")} / ${totalRows.toLocaleString("ru-RU")} строк`);
+      const localRatio = totalRows ? Math.min(1, processedRows / totalRows) : 0.5;
+      const percent = Math.min(96, Math.round((sheetIndex + localRatio) / Math.max(1, sheetCount) * 94) + 2);
+      onProgress(percent, `XLSX · ${sheetName}: ${processedRows.toLocaleString("ru-RU")} / ${totalRows.toLocaleString("ru-RU")} строк`);
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     flushBatch();
     append("</sheetData></worksheet>");
 
-    const worksheetEntry = {
-      name: "xl/worksheets/sheet1.xml",
-      nameBytes: encoder.encode("xl/worksheets/sheet1.xml"),
-      parts: worksheetParts,
-      size: worksheetBytes,
-      crc: (crcState ^ 0xffffffff) >>> 0,
+    const entryName = `xl/worksheets/sheet${sheetIndex + 1}.xml`;
+    return {
+      entry: {
+        name: entryName,
+        nameBytes: encoder.encode(entryName),
+        parts: worksheetParts,
+        size: worksheetBytes,
+        crc: (crcState ^ 0xffffffff) >>> 0,
+      },
+      rows: processedRows,
+      bytes: worksheetBytes,
     };
-    const blob = workbookBlob(workbookEntries(options.sheetName, worksheetEntry));
-    onProgress(100, `XLSX готов: ${processedRows.toLocaleString("ru-RU")} строк`);
-    return { blob, rows: processedRows, bytes: blob.size, mimeType };
+  }
+
+  async function createWorkbook(options = {}) {
+    const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {};
+    const sourceSheets = Array.isArray(options.sheets) && options.sheets.length
+      ? options.sheets
+      : [{
+        columns: options.columns,
+        totalRows: options.totalRows,
+        rows: options.rows,
+        rowMapper: options.rowMapper,
+        streamRows: options.streamRows,
+        sheetName: options.sheetName,
+      }];
+    if (sourceSheets.length > maximumSheets) throw new Error(`XLSX поддерживает не более ${maximumSheets} листов в одном отчёте`);
+    const sheetNames = safeSheetNames(sourceSheets);
+    const worksheetEntries = [];
+    const sheetResults = [];
+    let worksheetBytes = 0;
+
+    for (let index = 0; index < sourceSheets.length; index += 1) {
+      const result = await createWorksheet(
+        { ...sourceSheets[index], sheetName: sheetNames[index] },
+        index,
+        sourceSheets.length,
+        onProgress,
+      );
+      worksheetBytes += result.bytes;
+      if (worksheetBytes > maximumWorkbookBytes) {
+        throw new Error("XLSX превысил безопасный лимит 512 МБ; сократите число сохраняемых выгрузок");
+      }
+      worksheetEntries.push(result.entry);
+      sheetResults.push({ name: sheetNames[index], rows: result.rows, bytes: result.bytes });
+      onProgress(
+        Math.min(97, Math.round((index + 1) / sourceSheets.length * 94) + 2),
+        `XLSX: лист «${sheetNames[index]}» готов`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    const blob = workbookBlob(workbookEntries(sheetNames, worksheetEntries));
+    const processedRows = sheetResults.reduce((total, sheet) => total + sheet.rows, 0);
+    onProgress(100, `XLSX готов: ${sheetResults.length} листов, ${processedRows.toLocaleString("ru-RU")} строк`);
+    return {
+      blob,
+      rows: sourceSheets.length === 1 ? sheetResults[0].rows : processedRows,
+      bytes: blob.size,
+      mimeType,
+      sheets: sheetResults,
+    };
   }
 
   window.MacAnalyzerXlsxExporter = Object.freeze({
@@ -257,6 +342,7 @@
     mimeType,
     maximumRows,
     maximumColumns,
+    maximumWorkbookBytes,
     xmlText,
     columnName,
   });

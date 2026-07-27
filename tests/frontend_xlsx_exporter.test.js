@@ -67,6 +67,44 @@ const readers = global.MacAnalyzerFileReaders;
   );
   assert.match(workbook, /name="MAC &quot;Analyzer&quot;"/);
 
+  const multiSheet = await exporter.createWorkbook({
+    sheets: [
+      {
+        sheetName: "Сводка/аналитика",
+        columns: ["Показатель", "Значение"],
+        rows: [["Устройств", 3], ["Выгрузок", 2]],
+      },
+      {
+        sheetName: "Сводка:аналитика",
+        columns: ["Дата", "MAC", "Изменение"],
+        totalRows: 2,
+        streamRows: async (accept) => {
+          await accept([
+            ["2026-07-27", "00:11:22:33:44:55", "Добавлено"],
+            ["2026-07-28", "00:11:22:33:44:55", "Изменена модель"],
+          ]);
+        },
+      },
+    ],
+  });
+  assert.equal(multiSheet.sheets.length, 2);
+  assert.equal(multiSheet.rows, 4);
+  assert.deepEqual(multiSheet.sheets.map((sheet) => sheet.rows), [2, 2]);
+  const multiBuffer = await multiSheet.blob.arrayBuffer();
+  const multiDirectory = readers.clientZipDirectory(multiBuffer);
+  assert.ok(multiDirectory.entries.has("xl/worksheets/sheet1.xml"));
+  assert.ok(multiDirectory.entries.has("xl/worksheets/sheet2.xml"));
+  const multiWorkbook = new TextDecoder().decode(
+    await readers.clientZipEntryBytes(multiDirectory, "xl/workbook.xml"),
+  );
+  assert.match(multiWorkbook, /name="Сводка аналитика"/);
+  assert.match(multiWorkbook, /name="Сводка аналитика 2"/);
+  const secondSheet = new TextDecoder().decode(
+    await readers.clientZipEntryBytes(multiDirectory, "xl/worksheets/sheet2.xml"),
+  );
+  assert.match(secondSheet, /Изменена модель/);
+  assert.equal((secondSheet.match(/<row\b/g) || []).length, 3);
+
   console.log("frontend XLSX exporter test passed");
 })().catch((error) => {
   console.error(error);
