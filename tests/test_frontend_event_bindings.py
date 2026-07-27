@@ -99,7 +99,7 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert '<script src="frontend/memory-guard.js?v=20260722.9"></script>' in html
     assert '<script src="frontend/file-readers.js?v=20260722.8"></script>' in html
-    assert '<meta name="application-build" content="2026.07.27.1">' in html
+    assert '<meta name="application-build" content="2026.07.27.2">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -960,7 +960,8 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260727.1"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260727.2"></script>' in html
+    assert '<script src="frontend/xlsx-exporter.js?v=20260727.2"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
     assert 'async function storeLocalSnapshot(' in app
     assert 'devices:rows.slice(0,previewLimit)' in app
@@ -1121,7 +1122,13 @@ def test_browser_export_fallback_when_backend_is_unavailable():
         'localExportData("html")',
         'if(localExportData(type))finishProcess(processId,"Экспорт завершён в браузере: "+type,"warning")',
         'toast("Экспорт выполнен в браузере без backend.")',
-        'Backend недоступен: скачан Excel XML из браузера.',
+        'Потоковый XLSX:',
+        'BrowserSnapshots.streamSnapshot(state.resultBrowserSnapshotId',
+        'deliverDownload(`mac-analysis-${date}.xlsx`,result.blob)',
+        'document.body.appendChild(link);link.click()',
+        'setTimeout(()=>{URL.revokeObjectURL(url);link.remove();},15_000)',
+        'result.rows!==totalRows',
+        'XLSX полностью сформирован в браузере',
         'Backend недоступен: скачан HTML-отчёт для печати/PDF.',
         'filename=name+".csv"',
         'filename=name+".txt"',

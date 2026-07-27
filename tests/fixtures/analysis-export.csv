@@ -1,0 +1,4 @@
+MAC,Vendor,Model,IP,Address,Room,Switch IP,Switch Port
+00:11:22:33:44:55,Cisco Systems,Catalyst 2960,10.0.0.10,Ленина 1,101,10.0.0.1,Gi1/0/1
+AA:BB:CC:DD:EE:FF,Test Vendor,Test Model,10.0.0.11,Ленина 1,102,10.0.0.1,Gi1/0/2
+10:20:30:40:50:60,Another Vendor,Another Model,10.0.0.12,Ленина 2,201,10.0.0.2,Gi1/0/3

@@ -14,12 +14,14 @@
   const localFolderSavedAtKey = key+"-folder-saved-at";
   const StatePersistence = window.MacAnalyzerStatePersistence;
   const BrowserSnapshots = window.MacAnalyzerBrowserSnapshots;
+  const XlsxExporter = window.MacAnalyzerXlsxExporter;
   const MemoryGuard = window.MacAnalyzerMemoryGuard;
   const Guide = window.MacAnalyzerGuide;
   const PortableDatabase = window.MacAnalyzerPortableDatabase;
   const LocalFolderStore = window.MacAnalyzerLocalFolderStore;
   const WorkspaceFileLifecycle = window.MacAnalyzerWorkspaceFileLifecycle;
   if(!MemoryGuard)throw new Error("Модуль frontend/memory-guard.js не загружен");
+  if(!XlsxExporter)throw new Error("Модуль frontend/xlsx-exporter.js не загружен");
   if(!WorkspaceFileLifecycle)throw new Error("Модуль frontend/workspace-file-lifecycle.js не загружен");
   if(!Guide)throw new Error("Модуль frontend/guide.js не загружен");
   const $ = (s) => document.querySelector(s);
@@ -2296,7 +2298,12 @@
     save();renderMappings();renderResults();renderAnalytics();
     return learned;
   }
-  function deliverDownload(name,blob){if(localFolderStructure)LocalFolderStore?.writeExport?.(localFolderStructure,name,blob).catch((error)=>localFolderStatus("Не удалось сохранить экспорт: "+error.message,"error"));const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);}
+  function deliverDownload(name,blob){
+    if(localFolderStructure)LocalFolderStore?.writeExport?.(localFolderStructure,name,blob).catch((error)=>localFolderStatus("Не удалось сохранить экспорт: "+error.message,"error"));
+    const url=URL.createObjectURL(blob),link=document.createElement("a");
+    link.href=url;link.download=name;link.hidden=true;document.body.appendChild(link);link.click();
+    setTimeout(()=>{URL.revokeObjectURL(url);link.remove();},15_000);
+  }
   function download(name,text,type){deliverDownload(name,new Blob([text],{type:type+";charset=utf-8"}));}
   function downloadBase64(name,content,type){const bytes=Uint8Array.from(atob(content),(char)=>char.charCodeAt(0));deliverDownload(name,new Blob([bytes],{type}));}
   function clipboardSafeCell(value){return String(value??"").replace(/\t|\r?\n/g," ").trim();}
@@ -2369,11 +2376,39 @@
   function localSpreadsheetXml(table){const header='<Row>'+table.columns.map((column)=>`<Cell><Data ss:Type="String">${esc(column.title)}</Data></Cell>`).join("")+'</Row>',body=table.rows.map((row)=>'<Row>'+row.map((cell)=>`<Cell><Data ss:Type="String">${esc(cell)}</Data></Cell>`).join("")+'</Row>').join("");return'<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="MAC Analyzer"><Table>'+header+body+'</Table></Worksheet></Workbook>';}
   function localHtmlExport(table){const head=table.columns.map((column)=>`<th>${esc(column.title)}</th>`).join(""),body=table.rows.map((row)=>`<tr>${row.map((cell)=>`<td>${esc(cell)}</td>`).join("")}</tr>`).join("");return`<!doctype html><html><head><meta charset="utf-8"><title>MAC Analyzer Export</title><style>body{font:14px Arial;margin:32px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:7px;text-align:left}th{background:#eee}</style></head><body><h1>MAC Analyzer Export</h1><p>Created: ${new Date().toISOString()}</p><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></body></html>`;}
   function localExportData(type){if(!currentDeviceCount()){toast("Нет результатов для экспорта.");return false;}try{MemoryGuard.assertLocalExportCapacity(state.devices.length,state.devices.length*exportColumns().length);}catch(error){toast(error.message);return false;}const table=localExportTable(),date=new Date().toISOString().replace(/[:.]/g,"-").slice(0,19),name="mac-analysis-"+date;let filename=name+"."+type,mime="text/plain",content="";if(type==="csv"){filename=name+".csv";mime="text/csv";content="\uFEFF"+[table.columns.map((c)=>c.title),...table.rows].map((row)=>localCsvLine(row)).join("\n");}else if(type==="txt"){filename=name+".txt";content=[table.columns.map((c)=>c.title),...table.rows].map((row)=>row.map((value)=>String(value??"")).join("\t")).join("\n");}else if(type==="json"){filename=name+".json";mime="application/json";content=JSON.stringify({export_date:new Date().toISOString(),count:state.devices.length,devices:state.devices},null,2);}else if(type==="yaml"){filename=name+".yaml";content=["export_date: "+new Date().toISOString(),"count: "+state.devices.length,"devices:",...state.devices.map((device)=>"  - "+exportColumns().map((column)=>`${column.key}: ${localYamlScalar(exportCell(device,column.key,0))}`).join("\n    "))].join("\n");}else if(type==="html"){filename=name+".html";mime="text/html";content=localHtmlExport(table);}else if(type==="spreadsheetml"||type==="xls"||type==="xlsx"){filename=name+".xls";mime="application/vnd.ms-excel";content=localSpreadsheetXml(table);}else{return false;}download(filename,content,mime);toast("Экспорт выполнен в браузере без backend.");return true;}
+  async function streamCurrentXlsxRows(acceptRows){
+    if(state.resultBrowserSnapshotId){
+      if(!BrowserSnapshots?.streamSnapshot)throw new Error("Хранилище полного результата недоступно");
+      const metadata=await BrowserSnapshots.streamSnapshot(state.resultBrowserSnapshotId,async(kind,rows)=>{if(kind==="device")await acceptRows(rows);});
+      if(!metadata)throw new Error("Полный результат анализа не найден в локальной базе");
+      return;
+    }
+    await acceptRows(state.devices||[]);
+  }
+  async function exportLocalXlsx(processId){
+    const columns=exportColumns(),totalRows=currentDeviceCount(),date=new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
+    updateProcess(processId,15,`Потоковый XLSX: ${totalRows.toLocaleString("ru-RU")} строк`);
+    const result=await XlsxExporter.createWorkbook({
+      columns:columns.map((column)=>column.title),
+      totalRows,
+      sheetName:"MAC Analyzer",
+      streamRows:streamCurrentXlsxRows,
+      rowMapper:(device,index)=>columns.map((column)=>exportCell(device,column.key,index)),
+      onProgress:(percent,message)=>updateProcess(processId,Math.max(15,Math.min(95,percent)),message),
+    });
+    if(result.rows!==totalRows)throw new Error(`XLSX содержит ${result.rows.toLocaleString("ru-RU")} из ${totalRows.toLocaleString("ru-RU")} строк`);
+    deliverDownload(`mac-analysis-${date}.xlsx`,result.blob);
+    return result;
+  }
   async function exportManagedBinary(type){
     if(!currentDeviceCount()){toast("Нет результатов для экспорта.");return;}
-    const processId=beginProcess("Экспорт "+type.toUpperCase(),"Подготовка "+state.devices.length+" записей",10),columns=exportColumns(),ouiSettings={length:state.ouiLength,style:state.ouiStyle};
+    const processId=beginProcess("Экспорт "+type.toUpperCase(),"Подготовка "+currentDeviceCount()+" записей",10),columns=exportColumns(),ouiSettings={length:state.ouiLength,style:state.ouiStyle};
+    if(type==="xlsx"&&!state.resultSnapshotId){
+      try{const result=await exportLocalXlsx(processId);toast(`XLSX сохранён: ${result.rows.toLocaleString("ru-RU")} строк.`);finishProcess(processId,"XLSX полностью сформирован в браузере");return result;}
+      catch(error){failProcess(processId,error);throw error;}
+    }
     try{updateProcess(processId,35,"Формирование файла ExportManager");const result=await api("/export",{method:"POST",body:JSON.stringify(currentDevicePayload({format:type,columns,ouiSettings}))});if(!result.binary)throw new Error("Backend returned text export for "+type);updateProcess(processId,85,"Сохранение сформированного файла");downloadBase64(result.filename||("mac-analysis."+type),result.content,result.mimeType||"application/octet-stream");toast("Экспорт подготовлен ExportManager.");finishProcess(processId,"Экспорт "+type.toUpperCase()+" готов");}
-    catch(error){if(type==="xlsx"){updateProcess(processId,60,"Локальное формирование Excel");localExportData("spreadsheetml");toast("Backend недоступен: скачан Excel XML из браузера.");finishProcess(processId,"Excel подготовлен в браузере","warning");return;}if(type==="pdf"){updateProcess(processId,60,"Локальное формирование отчёта");localExportData("html");toast("Backend недоступен: скачан HTML-отчёт для печати/PDF.");finishProcess(processId,"HTML-отчёт подготовлен для печати/PDF","warning");return;}failProcess(processId,error);throw error;}
+    catch(error){if(type==="xlsx"){failProcess(processId,error);throw new Error("Полный backend-снимок временно недоступен для XLSX: "+error.message);}if(type==="pdf"){updateProcess(processId,60,"Локальное формирование отчёта");localExportData("html");toast("Backend недоступен: скачан HTML-отчёт для печати/PDF.");finishProcess(processId,"HTML-отчёт подготовлен для печати/PDF","warning");return;}failProcess(processId,error);throw error;}
   }
   async function exportData(type){
     if(!currentDeviceCount()){toast("Нет результатов для экспорта.");return;}

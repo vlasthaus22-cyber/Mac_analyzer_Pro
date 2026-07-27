@@ -47,6 +47,7 @@ def test_html_portable_builder_outputs_one_self_contained_html_file():
         assert '<script src=' not in html
         assert '<link rel="stylesheet"' not in html
         assert "window.MacAnalyzerPortableDatabase" in html
+        assert "window.MacAnalyzerXlsxExporter" in html
         assert "window.MacAnalyzerLocalFolderStore" in html
         assert "window.MacAnalyzerWorkspaceFileLifecycle" in html
         assert "window.MacAnalyzerAppBootstrapped = true;" in html

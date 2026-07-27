@@ -27,6 +27,7 @@ $scripts = @(
     "frontend/file-readers.js",
     "frontend/state-persistence.js",
     "frontend/browser-snapshot-store.js",
+    "frontend/xlsx-exporter.js",
     "frontend/portable-database.js",
     "frontend/local-folder-store.js",
     "frontend/workspace-file-lifecycle.js",
@@ -65,6 +66,7 @@ if ($built -match '<script\s+src=' -or $built -match '<link\s+rel="stylesheet"')
 foreach ($marker in @(
     "window.MacAnalyzerAppBootstrapped = true;",
     "window.MacAnalyzerPortableDatabase",
+    "window.MacAnalyzerXlsxExporter",
     "window.MacAnalyzerLocalFolderStore",
     "window.MacAnalyzerWorkspaceFileLifecycle",
     "xlsxWorksheetRows",
