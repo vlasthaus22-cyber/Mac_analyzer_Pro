@@ -6364,7 +6364,7 @@ class AppHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/device/analytics":
                 mac = normalize_mac(payload.get("mac"))
                 devices = resolve_payload_devices(payload)
-                snapshots = payload.get("snapshots", [])
+                snapshots = hydrate_snapshot_devices(payload.get("snapshots", []))
                 if not mac or not isinstance(devices, list) or not isinstance(snapshots, list):
                     self.error_response("mac, devices and snapshots are required")
                     return

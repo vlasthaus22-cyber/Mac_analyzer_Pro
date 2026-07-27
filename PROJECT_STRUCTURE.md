@@ -20,6 +20,7 @@ Mac_analyzer_Pro/
     memory-guard.js        ранние лимиты файла/ZIP/heap, суммы файлов обогащения, локального экспорта, paging и cooperative yield
     file-readers.js        XLSX ZIP-каталог и листы читаются срезами File.slice без полного ArrayBuffer книги
     browser-snapshot-store.js порционное IndexedDB-хранилище локальных снимков без полной копии при записи
+    mac-chronology.js      точечная загрузка, объединение и визуализация хронологии одного MAC
     xlsx-exporter.js       низкоуровневая потоковая запись однолистовых и многолистовых XLSX/ZIP
     full-xlsx-report.js    схема полного Excel-отчёта, аналитика и разбиение истории MAC по листам
     portable-database.js  потоковая файловая база MADB для переноса данных между браузерами и ПК

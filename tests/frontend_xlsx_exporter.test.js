@@ -46,10 +46,11 @@ const readers = global.MacAnalyzerFileReaders;
   assert.deepEqual(
     [...directory.entries.keys()].sort(),
     [
-      "[Content_Types].xml",
-      "_rels/.rels",
-      "xl/_rels/workbook.xml.rels",
-      "xl/workbook.xml",
+    "[Content_Types].xml",
+    "_rels/.rels",
+    "xl/_rels/workbook.xml.rels",
+    "xl/styles.xml",
+    "xl/workbook.xml",
       "xl/worksheets/sheet1.xml",
     ].sort(),
   );

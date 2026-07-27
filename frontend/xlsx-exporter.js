@@ -6,6 +6,7 @@
   const maximumColumns = 16_384;
   const maximumWorksheetBytes = 512 * 1024 * 1024;
   const maximumWorkbookBytes = 512 * 1024 * 1024;
+  const maximumStyledRows = 50_000;
   const maximumSheets = 255;
   const encoder = new TextEncoder();
   const crcTable = new Uint32Array(256);
@@ -166,6 +167,7 @@
         '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
         '<Default Extension="xml" ContentType="application/xml"/>',
         '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
+        '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>',
         ...contentOverrides,
         "</Types>",
       ]),
@@ -187,7 +189,20 @@
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">',
         ...worksheetRelationships,
+        `<Relationship Id="rId${worksheetEntries.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`,
         "</Relationships>",
+      ]),
+      buildEntry("xl/styles.xml", [
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+        '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
+        '<fonts count="2"><font><sz val="10"/><name val="Segoe UI"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="10"/><name val="Segoe UI"/></font></fonts>',
+        '<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF155E59"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE8F3F1"/><bgColor indexed="64"/></patternFill></fill></fills>',
+        '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFD8E2E1"/></left><right style="thin"><color rgb="FFD8E2E1"/></right><top style="thin"><color rgb="FFD8E2E1"/></top><bottom style="thin"><color rgb="FFD8E2E1"/></bottom><diagonal/></border></borders>',
+        '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>',
+        '<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top"/></xf><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs>',
+        '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>',
+        '<dxfs count="0"/><tableStyles count="0" defaultTableStyle="TableStyleMedium2" defaultPivotStyle="PivotStyleLight16"/>',
+        "</styleSheet>",
       ]),
       ...worksheetEntries,
     ];
@@ -211,11 +226,23 @@
     return new Blob(parts, { type: mimeType });
   }
 
-  function rowXml(values, rowNumber) {
+  function rowXml(values, rowNumber, styleId = 0, height = 0) {
+    const style = styleId ? ` s="${styleId}"` : "";
     const cells = Array.from(values || [], (value, columnIndex) => (
-      `<c r="${columnName(columnIndex)}${rowNumber}" t="inlineStr"><is><t xml:space="preserve">${xmlText(value)}</t></is></c>`
+      `<c r="${columnName(columnIndex)}${rowNumber}"${style} t="inlineStr"><is><t xml:space="preserve">${xmlText(value)}</t></is></c>`
     )).join("");
-    return `<row r="${rowNumber}">${cells}</row>`;
+    const rowHeight = height ? ` ht="${height}" customHeight="1"` : "";
+    return `<row r="${rowNumber}"${rowHeight}>${cells}</row>`;
+  }
+
+  function columnWidthsXml(columns, requestedWidths) {
+    const widths = Array.isArray(requestedWidths) ? requestedWidths : [];
+    const definitions = columns.map((title, index) => {
+      const fallback = Math.max(10, Math.min(32, String(title || "").length + 4));
+      const width = Math.max(6, Math.min(80, Number(widths[index]) || fallback));
+      return `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`;
+    });
+    return definitions.length ? `<cols>${definitions.join("")}</cols>` : "";
   }
 
   async function createWorksheet(sheet, sheetIndex, sheetCount, onProgress) {
@@ -252,15 +279,20 @@
 
     append('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>');
     append('<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">');
-    append('<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetData>');
-    append(rowXml(columns, 1));
+    if (sheet.tabColor) append(`<sheetPr><tabColor rgb="${xmlText(String(sheet.tabColor).replace(/[^0-9A-F]/gi, "").slice(-8).padStart(8, "F"))}"/></sheetPr>`);
+    append('<sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>');
+    append('<sheetFormatPr defaultRowHeight="18"/>');
+    append(columnWidthsXml(columns, sheet.columnWidths));
+    append("<sheetData>");
+    append(rowXml(columns, 1, 1, 28));
 
     await streamRows(async (sourceRows) => {
       for (const sourceRow of Array.isArray(sourceRows) ? sourceRows : []) {
         if (processedRows >= maximumRows) {
           throw new Error(`Лист «${sheetName}» содержит больше ${maximumRows.toLocaleString("ru-RU")} строк`);
         }
-        batch += rowXml(rowMapper(sourceRow, processedRows), processedRows + 2);
+        const styleId = sheet.stripedRows && totalRows <= maximumStyledRows ? (processedRows % 2 ? 3 : 2) : 0;
+        batch += rowXml(rowMapper(sourceRow, processedRows), processedRows + 2, styleId);
         processedRows += 1;
         if (batch.length >= 256 * 1024) flushBatch();
       }
@@ -271,7 +303,11 @@
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     flushBatch();
-    append("</sheetData></worksheet>");
+    append("</sheetData>");
+    if (sheet.autoFilter !== false) {
+      append(`<autoFilter ref="A1:${columnName(columns.length - 1)}${Math.max(1, processedRows + 1)}"/>`);
+    }
+    append("</worksheet>");
 
     const entryName = `xl/worksheets/sheet${sheetIndex + 1}.xml`;
     return {

@@ -27,6 +27,7 @@ $scripts = @(
     "frontend/file-readers.js",
     "frontend/state-persistence.js",
     "frontend/browser-snapshot-store.js",
+    "frontend/mac-chronology.js",
     "frontend/xlsx-exporter.js",
     "frontend/full-xlsx-report.js",
     "frontend/portable-database.js",

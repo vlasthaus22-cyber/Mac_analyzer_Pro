@@ -14,6 +14,7 @@
   const localFolderSavedAtKey = key+"-folder-saved-at";
   const StatePersistence = window.MacAnalyzerStatePersistence;
   const BrowserSnapshots = window.MacAnalyzerBrowserSnapshots;
+  const MacChronology = window.MacAnalyzerMacChronology;
   const XlsxExporter = window.MacAnalyzerXlsxExporter;
   const FullXlsxReport = window.MacAnalyzerFullXlsxReport;
   const MemoryGuard = window.MacAnalyzerMemoryGuard;
@@ -24,6 +25,7 @@
   if(!MemoryGuard)throw new Error("Модуль frontend/memory-guard.js не загружен");
   if(!XlsxExporter)throw new Error("Модуль frontend/xlsx-exporter.js не загружен");
   if(!FullXlsxReport)throw new Error("Модуль frontend/full-xlsx-report.js не загружен");
+  if(!MacChronology)throw new Error("Модуль frontend/mac-chronology.js не загружен");
   if(!WorkspaceFileLifecycle)throw new Error("Модуль frontend/workspace-file-lifecycle.js не загружен");
   if(!Guide)throw new Error("Модуль frontend/guide.js не загружен");
   const $ = (s) => document.querySelector(s);
@@ -1496,58 +1498,93 @@
       $("#metricInvalid").textContent=summary.invalid??state.resultInvalidCount??(state.invalid||[]).length??0;
     }
   }
-  async function showDevice(mac){
-    try{
-      const analytics=await api("/device/analytics",{method:"POST",body:JSON.stringify(currentDevicePayload({mac,snapshots:state.snapshots}))});
-      const device=analytics.current||{};
-      $("#deviceDialogTitle").textContent=analytics.macFormatted||formatMac(analytics.mac||mac);
-      $("#deviceDialog").dataset.mac=analytics.mac||mac;
-      $("#deviceDialogSubtitle").textContent=(device.vendor||"Unknown")+(device.model?" · "+device.model:"");
-      $("#deviceMetrics").innerHTML=analytics.metricsHtml||"";
-      $("#deviceFields").innerHTML=analytics.fieldsHtml||"";
-      $("#deviceDetailedReport").textContent=analytics.detailedReportText||localDeviceDetailedReport(device,analytics.mac||mac);
-      $("#deviceChronologySummary").innerHTML=analytics.chronologySummaryHtml||"";
-      $("#deviceChronologyBody").innerHTML=analytics.chronologyRowsHtml||analytics.emptyChronologyRowsHtml||'<tr><td colspan="6" class="empty-state">Хронология MAC-адреса пока пуста.</td></tr>';
-      $("#macHistoryStats").innerHTML=analytics.macHistoryStatsHtml||"";
-      $("#deviceHistoryRecordsBody").innerHTML=analytics.historyRecordsRowsHtml||analytics.emptyHistoryRecordsRowsHtml||'<tr><td colspan="7" class="empty-state">История появлений MAC пока пуста.</td></tr>';
-      $("#deviceHistoryBody").innerHTML=analytics.movementRowsHtml||analytics.emptyMovementRowsHtml||'<tr><td colspan="5" class="empty-state">Изменения параметров MAC пока отсутствуют.</td></tr>';
-      $("#deviceDialog").showModal();
-    }catch(error){showLocalDevice(mac);}
+  async function collectLocalMacContext(mac){
+    const normalized=normalize(mac),snapshots=state.snapshots||[];
+    let current=(state.devices||[]).find((item)=>normalize(item.mac||item.macFormatted)===normalized)||null;
+    if(!current&&state.resultBrowserSnapshotId&&BrowserSnapshots?.findDevice){
+      current=await BrowserSnapshots.findDevice(state.resultBrowserSnapshotId,normalized).catch(()=>null);
+    }
+    const appearances=await MacChronology.collectAppearances({
+      mac:normalized,
+      snapshots,
+      findSnapshotDevice:async(snapshot,targetMac)=>{
+        if(snapshot.browserStored&&BrowserSnapshots?.findDevice)return BrowserSnapshots.findDevice(snapshot.id,targetMac).catch(()=>null);
+        return null;
+      },
+    });
+    const movements=(state.movementHistory||[]).filter((item)=>normalize(item.mac||item.macFormatted)===normalized);
+    return{mac:normalized,current:current||appearances.at(-1)?.device||{},appearances,movements};
   }
-  function showLocalDevice(mac){
-    const normalized=normalize(mac)||normalize((state.devices.find((item)=>item.mac===mac||item.macFormatted===mac)||{}).macFormatted),device=state.devices.find((item)=>normalize(item.mac||item.macFormatted)===normalized)||{};
-    if(!normalized&&!device.mac){toast("MAC не найден.");return;}
-    const title=device.macFormatted||formatMac(normalized)||mac;
+  function renderDeviceDialog(analytics,local,requestedMac){
+    const normalized=normalize(analytics?.mac||local?.mac||requestedMac),device=Object.keys(analytics?.current||{}).length?analytics.current:(local?.current||{});
+    const appearances=MacChronology.mergeAppearances(analytics?.appearances||[],local?.appearances||[]);
+    const history=analytics?.history||[],movements=[...(analytics?.movements||[]),...(local?.movements||[])];
+    const events=MacChronology.buildEvents({appearances,history,movements});
+    const dialog=$("#deviceDialog"),title=analytics?.macFormatted||device.macFormatted||formatMac(normalized)||requestedMac;
     $("#deviceDialogTitle").textContent=title;
-    $("#deviceDialog").dataset.mac=normalized||device.mac||mac;
+    dialog.dataset.mac=normalized||requestedMac;
     $("#deviceDialogSubtitle").textContent=(device.vendor||"Unknown")+(device.model?" · "+device.model:"");
-    const fields=["vendor","model","ip","address","room","switchIp","switchPort","source"].map((field)=>`<div class="summary-line"><strong>${esc(labels[field]||field)}</strong><span>${esc(device[field]||"")}</span></div>`).join("");
-    $("#deviceMetrics").innerHTML=`<div class="bar-item"><div class="bar-label"><span>Локальная история</span><strong>${localMacHistoryRows(normalized).count}</strong></div></div>`;
-    $("#deviceFields").innerHTML=fields||'<p class="muted">Нет локальных полей устройства.</p>';
-    $("#deviceDetailedReport").textContent=localDeviceDetailedReport(device,normalized||mac);
-    $("#deviceChronologySummary").innerHTML=localMacChronology(normalized).summaryHtml;
-    $("#deviceChronologyBody").innerHTML=localMacChronology(normalized).html;
-    const localHistory=localMacHistoryRows(normalized),localMovements=localMacMovementRows(normalized);
+    const localFields=["vendor","model","ip","address","room","switchIp","switchPort","source"].map((field)=>`<div class="device-field"><span>${esc(labels[field]||field)}</span><strong>${esc(device[field]||"—")}</strong></div>`).join("");
+    $("#deviceMetrics").innerHTML=analytics?.metricsHtml||`<div class="metric"><span>Появлений в выгрузках</span><strong>${appearances.length}</strong></div><div class="metric"><span>Событий хронологии</span><strong>${events.length}</strong></div>`;
+    $("#deviceFields").innerHTML=analytics?.fieldsHtml||localFields||'<p class="muted">Нет локальных полей устройства.</p>';
+    $("#deviceDetailedReport").textContent=analytics?.detailedReportText||localDeviceDetailedReport(device,normalized||requestedMac);
+    $("#deviceChronologySummary").innerHTML=MacChronology.renderSummary(events,appearances);
+    $("#deviceChronologyBody").innerHTML=MacChronology.renderTimeline(events,{formatDate:formatDisplayDateTime});
+    const localHistory=localMacHistoryRows(normalized,appearances,movements),localMovements=localMacMovementRows(normalized,movements);
     $("#macHistoryStats").innerHTML=localHistory.statsHtml;
-    $("#deviceHistoryRecordsBody").innerHTML=localHistory.html;
-    $("#deviceHistoryBody").innerHTML=localMovements.html;
-    $("#deviceDialog").showModal();
+    $("#deviceHistoryRecordsBody").innerHTML=appearances.length?MacChronology.appearancesRowsHtml(appearances,{formatDate:formatDisplayDateTime}):(analytics?.historyRecordsRowsHtml||localHistory.html);
+    $("#deviceHistoryBody").innerHTML=analytics?.movementRowsHtml||localMovements.html;
+  }
+  function showDeviceLoading(mac){
+    const dialog=$("#deviceDialog"),formatted=formatMac(normalize(mac))||mac;
+    $("#deviceDialogTitle").textContent=formatted;
+    $("#deviceDialogSubtitle").textContent="Загрузка полной хронологии из сохранённых выгрузок…";
+    $("#deviceMetrics").innerHTML="";
+    $("#deviceFields").innerHTML='<p class="muted">Поиск устройства в локальной базе…</p>';
+    $("#deviceDetailedReport").textContent="Подготавливается подробная информация.";
+    $("#deviceChronologySummary").innerHTML="";
+    $("#deviceChronologyBody").innerHTML='<div class="mac-timeline-empty"><strong>Загрузка хронологии</strong><span>Проверяются сохранённые выгрузки без загрузки всей базы в память.</span></div>';
+    $("#macHistoryStats").innerHTML="";
+    $("#deviceHistoryRecordsBody").innerHTML='<tr><td colspan="7" class="empty-state">Загрузка появлений MAC…</td></tr>';
+    $("#deviceHistoryBody").innerHTML='<tr><td colspan="5" class="empty-state">Загрузка изменений…</td></tr>';
+    if(!dialog.open)dialog.showModal();
+  }
+  async function showDevice(mac){
+    const normalized=normalize(mac);
+    if(!normalized){toast("MAC не найден.");return;}
+    showDeviceLoading(normalized);
+    const [backendResult,localResult]=await Promise.allSettled([
+      api("/device/analytics",{method:"POST",body:JSON.stringify(currentDevicePayload({mac:normalized,snapshots:state.snapshots}))}),
+      collectLocalMacContext(normalized),
+    ]);
+    const analytics=backendResult.status==="fulfilled"?backendResult.value:null;
+    const local=localResult.status==="fulfilled"?localResult.value:{mac:normalized,current:{},appearances:[],movements:[]};
+    renderDeviceDialog(analytics,local,normalized);
+    if(!analytics&&!local.appearances.length&&!Object.keys(local.current||{}).length)toast("Для этого MAC не найдены сохранённые данные.");
+  }
+  async function showLocalDevice(mac){
+    const normalized=normalize(mac);
+    if(!normalized){toast("MAC не найден.");return;}
+    showDeviceLoading(normalized);
+    const local=await collectLocalMacContext(normalized);
+    renderDeviceDialog(null,local,normalized);
   }
   function localDeviceDetailedReport(device={},mac=""){const value=(fallback,...keys)=>{for(const key of keys){if(Object.prototype.hasOwnProperty.call(device,key)){const result=String(device[key]??"").trim();return result||fallback;}}return fallback;};return["=== ДЕТАЛЬНАЯ ИНФОРМАЦИЯ ОБ УСТРОЙСТВЕ ===","",`MAC-адрес: ${value(formatMac(mac),"macFormatted","mac_formatted","mac")}`,`Производитель: ${value("Unknown","vendor")}`,`Модель: ${value("Не указана","model")}`,`IP-адрес: ${value("Не указан","ip")}`,`Физический адрес: ${value("Не указан","address")}`,`Помещение: ${value("Не указано","room")}`,`Коммутатор: ${value("Не указан","switchIp","switch_ip")}`,`Порт: ${value("Не указан","switchPort","switch_port")}`,"","Источники данных:",`  Производитель: ${value("Неизвестен","vendorSource","vendor_source")}`,`  Модель: ${value("Неизвестен","modelSource","model_source")}`,"",`Примечания: ${value("Нет","matchDetails","match_details")}`].join("\n");}
-  function localMacHistoryRows(mac){
-    const normalized=normalize(mac),rows=(state.snapshots||[]).flatMap((snapshot)=>(snapshot.devices||[]).filter((device)=>normalize(device.mac||device.macFormatted)===normalized).map((device)=>({snapshot,device})));
-    const dates=rows.map(({snapshot})=>snapshot.createdAt||"").filter(Boolean).sort(),sources=new Set(rows.map(({snapshot,device})=>snapshot.source||device.source||snapshot.name).filter(Boolean)),movements=(state.movementHistory||[]).filter((item)=>normalize(item.mac||item.macFormatted)===normalized);
+  function localMacHistoryRows(mac,loadedAppearances=null,loadedMovements=null){
+    const normalized=normalize(mac),rows=loadedAppearances||((state.snapshots||[]).flatMap((snapshot)=>(snapshot.devices||[]).filter((device)=>normalize(device.mac||device.macFormatted)===normalized).map((device)=>({snapshotId:snapshot.id,snapshotName:snapshot.name,source:snapshot.source||device.source,createdAt:snapshot.createdAt,device}))));
+    const dates=rows.map((item)=>item.createdAt||"").filter(Boolean).sort(),sources=new Set(rows.map((item)=>item.source||item.device?.source||item.snapshotName).filter(Boolean)),movements=loadedMovements||(state.movementHistory||[]).filter((item)=>normalize(item.mac||item.macFormatted)===normalized);
     const statsHtml=`<div class="bar-label"><span>Всего появлений</span><strong>${rows.length}</strong></div><div class="bar-label"><span>Первое появление</span><strong>${esc(dates[0]?formatDisplayDateTime(dates[0]):"-")}</strong></div><div class="bar-label"><span>Последнее появление</span><strong>${esc(dates.length?formatDisplayDateTime(dates[dates.length-1]):"-")}</strong></div><div class="bar-label"><span>Файлов</span><strong>${sources.size}</strong></div><div class="bar-label"><span>Изменений</span><strong>${movements.length}</strong></div>`;
-    return{count:rows.length,statsHtml,html:rows.length?rows.sort((a,b)=>String(b.snapshot.createdAt||"").localeCompare(String(a.snapshot.createdAt||""))).map(({snapshot,device})=>`<tr><td>${esc(formatDisplayDateTime(snapshot.createdAt||""))}</td><td>${esc(snapshot.source||device.source||snapshot.name||"snapshot")}</td><td>${esc(device.vendor||"-")}</td><td>${esc(device.model||"-")}</td><td>${esc(device.ip||"-")}</td><td>${esc(device.address||"-")}</td><td>${esc(device.room||"-")}</td></tr>`).join(""):'<tr><td colspan="7" class="empty-state">Локальная история появлений MAC пока пуста.</td></tr>'};
+    return{count:rows.length,statsHtml,html:MacChronology.appearancesRowsHtml(rows,{formatDate:formatDisplayDateTime})};
   }
-  function localMacMovementRows(mac){const normalized=normalize(mac),rows=(state.movementHistory||[]).filter((item)=>normalize(item.mac||item.macFormatted)===normalized).sort((a,b)=>String(b.changedAt||b.changed_at||"").localeCompare(String(a.changedAt||a.changed_at||"")));return{count:rows.length,html:rows.length?rows.map((item)=>`<tr><td>${esc(formatDisplayDateTime(item.changedAt||item.changed_at||""))}</td><td>${esc(item.field||item.field_name||"-")}</td><td>${esc(item.before??item.from_value??"-")}</td><td>${esc(item.after??item.to_value??"-")}</td><td>${esc(item.source||"-")}</td></tr>`).join(""):'<tr><td colspan="5" class="empty-state">Локальные изменения параметров MAC отсутствуют.</td></tr>'};}
+  function localMacMovementRows(mac,loadedRows=null){const normalized=normalize(mac),rows=(loadedRows||(state.movementHistory||[]).filter((item)=>normalize(item.mac||item.macFormatted)===normalized)).slice().sort((a,b)=>String(b.changedAt||b.changed_at||"").localeCompare(String(a.changedAt||a.changed_at||"")));return{count:rows.length,html:rows.length?rows.map((item)=>`<tr><td>${esc(formatDisplayDateTime(item.changedAt||item.changed_at||""))}</td><td>${esc(item.field||item.field_name||"-")}</td><td>${esc(item.before??item.from_value??"-")}</td><td>${esc(item.after??item.to_value??"-")}</td><td>${esc(item.source||"-")}</td></tr>`).join(""):'<tr><td colspan="5" class="empty-state">Локальные изменения параметров MAC отсутствуют.</td></tr>'};}
   function localMacChronology(mac){
     const normalized=normalize(mac),events=[];
     (state.snapshots||[]).forEach((snapshot)=>(snapshot.devices||[]).forEach((device)=>{if(normalize(device.mac||device.macFormatted)===normalized)events.push({date:snapshot.createdAt||"",event:"Появление в снимке",field:"snapshot",before:"",after:[device.vendor,device.model,device.ip,device.address].filter(Boolean).join(" / "),source:snapshot.name||snapshot.source||device.source||"snapshot"});}));
     (state.movementHistory||[]).forEach((item)=>{if(normalize(item.mac||item.macFormatted)===normalized)events.push({date:item.changedAt||item.changed_at||"",event:item.type||"Изменение поля",field:item.field||item.field_name||"",before:item.before??item.from_value??"",after:item.after??item.to_value??"",source:item.source||""});});
     events.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
-    const summaryHtml=`<div class="bar-label"><span>Chronology events</span><strong>${events.length}</strong></div><div class="bar-label"><span>Snapshot appearances</span><strong>${events.filter((item)=>item.field==="snapshot").length}</strong></div><div class="bar-label"><span>Field changes</span><strong>${events.filter((item)=>item.field!=="snapshot").length}</strong></div>`;
-    const html=events.length?events.slice(0,500).map((item)=>`<tr><td>${esc(formatDisplayDateTime(item.date))}</td><td>${esc(item.event)}</td><td>${esc(item.field)}</td><td>${esc(item.before||"-")}</td><td>${esc(item.after||"-")}</td><td>${esc(item.source||"-")}</td></tr>`).join(""):'<tr><td colspan="6" class="empty-state">Хронология MAC-адреса пока пуста.</td></tr>';
+    const richEvents=MacChronology.buildEvents({events}),appearances=events.filter((item)=>item.field==="snapshot");
+    const summaryHtml=MacChronology.renderSummary(richEvents,appearances);
+    const html=MacChronology.renderTimeline(richEvents,{formatDate:formatDisplayDateTime});
     return{events,summaryHtml,html};
   }
   async function exportDeviceAnalytics(){

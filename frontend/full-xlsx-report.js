@@ -99,13 +99,26 @@
       uniqueOui4: "Уникальных OUI 4 байта",
       uniqueOui5: "Уникальных OUI 5 байт",
     };
+    const contents = [
+      ["Сводка", "Главные показатели и содержание книги"],
+      ["Устройства", "Полный состав последней выгрузки"],
+      ["Аналитика", "Распределения по производителям, моделям, помещениям, коммутаторам и OUI"],
+      ["Выгрузки", "Реестр сохранённых точек истории"],
+      ["История MAC", "Каждое появление каждого MAC во всех доступных выгрузках"],
+      ["Изменения", "Изменения полей устройств между выгрузками"],
+      ["Ошибки", "Строки, которые не удалось обработать"],
+      ["Исходные файлы", "Метаданные загруженных файлов"],
+      ["Справочники", "Локальные правила производителей, моделей и IP коммутаторов"],
+      ["Настройки", "Конфигурация, с которой сформирован отчёт"],
+    ];
     return [
-      ["Отчёт", "Полный отчёт MAC Analyzer Pro", ""],
-      ["Дата экспорта", new Date().toISOString(), ""],
-      ["Выгрузок", snapshots.length, "Все сохранённые точки истории"],
-      ["Строк в хронологии MAC", historyRowCount, "Появления устройств во всех доступных выгрузках"],
-      ["Записей изменений", (state.movementHistory || []).length, "Сохранённая расширенная история"],
-      ...Object.entries(metricLabels).map(([key, label]) => [label, metrics[key] ?? 0, key === "knownPercent" ? "Процент" : ""]),
+      ["Отчёт", "Название", "Полный отчёт MAC Analyzer Pro", "Единая книга для анализа, аудита и истории"],
+      ["Отчёт", "Дата экспорта", new Date().toISOString(), "UTC"],
+      ["История", "Выгрузок", snapshots.length, "Все сохранённые точки истории"],
+      ["История", "Строк в хронологии MAC", historyRowCount, "Появления устройств во всех доступных выгрузках"],
+      ["История", "Записей изменений", (state.movementHistory || []).length, "Сохранённая расширенная история"],
+      ...Object.entries(metricLabels).map(([key, label]) => ["Последняя выгрузка", label, metrics[key] ?? 0, key === "knownPercent" ? "Процент" : ""]),
+      ...contents.map(([sheet, description]) => ["Содержание книги", sheet, "", description]),
     ];
   }
 
@@ -194,6 +207,29 @@
     ];
   }
 
+  function presentationForSheet(sheet) {
+    const name = String(sheet.sheetName || "");
+    const widths = {
+      "Сводка": [22, 38, 24, 60],
+      "Устройства": [8, 20, 16, 16, 18, 26, 28, 18, 32, 18, 19, 15, 28, 26, 20, 22, 24, 20, 22, 15],
+      "Аналитика": [24, 38, 16, 22],
+      "Выгрузки": [38, 34, 22, 22, 30, 18, 14, 14, 22],
+      "Изменения": [22, 20, 16, 24, 30, 30, 24, 26, 18, 30, 18, 20, 14, 30],
+      "Ошибки": [12, 30, 36, 60],
+      "Исходные файлы": [38, 34, 18, 20, 14, 18, 22, 16],
+      "Справочники": [22, 24, 38, 30],
+      "Настройки": [34, 70],
+    };
+    const historyWidths = [22, 30, 30, 20, 16, 16, 18, 26, 28, 18, 32, 18, 19, 15, 28, 26, 20, 22, 24, 20, 22, 15];
+    return {
+      ...sheet,
+      columnWidths: name.startsWith("История MAC") ? historyWidths : (widths[name] || []),
+      stripedRows: !["Устройства"].includes(name) && !name.startsWith("История MAC"),
+      tabColor: name === "Сводка" ? "FF155E59" : name.startsWith("История MAC") ? "FF2563EB" : name === "Изменения" ? "FFD97706" : "FF6B8F8B",
+      autoFilter: name !== "Сводка",
+    };
+  }
+
   async function buildReport(options = {}) {
     const state = options.state || {};
     const helpers = {
@@ -215,7 +251,7 @@
     const analytics = await options.analyticsPayload();
     const columns = deviceColumns;
     const sheets = [
-      { sheetName: "Сводка", columns: ["Показатель", "Значение", "Примечание"], rows: summaryRows(analytics, state, snapshots, historyRowCount) },
+      { sheetName: "Сводка", columns: ["Раздел", "Показатель", "Значение", "Примечание"], rows: summaryRows(analytics, state, snapshots, historyRowCount) },
       {
         sheetName: "Устройства",
         columns: columns.map((column) => column.title),
@@ -277,7 +313,7 @@
       });
     });
 
-    return { sheets, snapshots, historyRowCount, analytics };
+    return { sheets: sheets.map(presentationForSheet), snapshots, historyRowCount, analytics };
   }
 
   window.MacAnalyzerFullXlsxReport = Object.freeze({
@@ -286,6 +322,7 @@
     snapshotDate,
     availableSnapshotRows,
     historyGroups,
+    presentationForSheet,
   });
   if (typeof document !== "undefined") document.documentElement.dataset.fullXlsxReport = "ready";
 })();

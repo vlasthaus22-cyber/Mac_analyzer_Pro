@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
-  <meta name="application-build" content="2026.07.27.4">
-  <link rel="stylesheet" href="styles.css?v=20260727.4">
+  <meta name="application-build" content="2026.07.27.5">
+  <link rel="stylesheet" href="styles.css?v=20260727.5">
 </head>
 <body>
   <div class="app-shell">
@@ -655,9 +655,9 @@
     <h3>Детальная информация об устройстве</h3>
     <pre class="analytics-report-preview device-detailed-report" id="deviceDetailedReport">Нет данных</pre>
     <h3>История и изменения</h3>
-    <div class="bar-list compact" id="deviceChronologySummary"></div>
+    <div class="mac-chronology-summary" id="deviceChronologySummary"></div>
     <h3>Хронология MAC-адреса</h3>
-    <div class="table-wrap"><table><thead><tr><th>Дата</th><th>Событие</th><th>Поле</th><th>Было</th><th>Стало</th><th>Источник</th></tr></thead><tbody id="deviceChronologyBody"></tbody></table></div>
+    <div class="mac-timeline" id="deviceChronologyBody" aria-live="polite"></div>
     <h3>История появлений</h3>
     <div class="bar-list compact" id="macHistoryStats"></div>
     <div class="table-wrap"><table><thead><tr><th>Дата</th><th>Файл</th><th>Производитель</th><th>Модель</th><th>IP</th><th>Адрес</th><th>Помещение</th></tr></thead><tbody id="deviceHistoryRecordsBody"></tbody></table></div>
@@ -757,14 +757,15 @@
   <script src="frontend/memory-guard.js?v=20260722.9"></script>
   <script src="frontend/file-readers.js?v=20260722.8"></script>
   <script src="frontend/state-persistence.js?v=20260722.7"></script>
-  <script src="frontend/browser-snapshot-store.js?v=20260727.4"></script>
-  <script src="frontend/xlsx-exporter.js?v=20260727.4"></script>
-  <script src="frontend/full-xlsx-report.js?v=20260727.4"></script>
+  <script src="frontend/browser-snapshot-store.js?v=20260727.5"></script>
+  <script src="frontend/mac-chronology.js?v=20260727.5"></script>
+  <script src="frontend/xlsx-exporter.js?v=20260727.5"></script>
+  <script src="frontend/full-xlsx-report.js?v=20260727.5"></script>
   <script src="frontend/portable-database.js?v=20260722.7"></script>
   <script src="frontend/local-folder-store.js?v=20260722.7"></script>
   <script src="frontend/workspace-file-lifecycle.js?v=20260722.7"></script>
   <script src="frontend/guide.js?v=20260722.7"></script>
-  <script src="app.js?v=20260727.4"></script>
+  <script src="app.js?v=20260727.5"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;

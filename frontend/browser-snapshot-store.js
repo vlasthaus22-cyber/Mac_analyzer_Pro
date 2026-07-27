@@ -213,6 +213,35 @@
     return metadata ? { ...metadata, devices, invalid } : null;
   }
 
+  function normalizedMac(value) {
+    return String(value || "").toUpperCase().replace(/[^0-9A-F]/g, "").slice(0, 12);
+  }
+
+  async function findDevice(id, mac) {
+    const snapshotId = String(id || "");
+    const targetMac = normalizedMac(mac);
+    if (!snapshotId || !targetMac) return null;
+    const metadata = await loadSnapshotMetadata(snapshotId);
+    if (!metadata) return null;
+    if (!metadata.chunked) {
+      return (metadata.devices || []).find((device) => (
+        normalizedMac(device?.mac || device?.macFormatted || device?.mac_formatted) === targetMac
+      )) || null;
+    }
+    if (!metadata.complete) throw new Error("Локальный снимок записан не полностью");
+    for (let index = 0; index < Number(metadata.deviceChunks || 0); index += 1) {
+      const key = `${snapshotId}:device:${String(index).padStart(8, "0")}`;
+      const record = await loadSnapshotChunkRecord(key);
+      if (!record) throw new Error(`Отсутствует часть локального снимка: ${key}`);
+      const match = (record.rows || []).find((device) => (
+        normalizedMac(device?.mac || device?.macFormatted || device?.mac_formatted) === targetMac
+      ));
+      if (match) return match;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return null;
+  }
+
   async function clearEnrichment(jobId) {
     const id = String(jobId || "");
     if (!id) return false;
@@ -883,6 +912,7 @@
     removeSnapshot,
     chunkRows,
     streamSnapshot,
+    findDevice,
     page,
     aggregate,
     aggregateSeries,

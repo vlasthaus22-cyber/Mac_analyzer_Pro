@@ -99,7 +99,7 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert '<script src="frontend/memory-guard.js?v=20260722.9"></script>' in html
     assert '<script src="frontend/file-readers.js?v=20260722.8"></script>' in html
-    assert '<meta name="application-build" content="2026.07.27.4">' in html
+    assert '<meta name="application-build" content="2026.07.27.5">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -202,7 +202,7 @@ def test_full_xlsx_export_includes_analytics_changes_and_mac_history():
 
     assert 'id="exportFullXlsxButton"' in html
     assert "Скачать всё XLSX" in html
-    assert '<script src="frontend/full-xlsx-report.js?v=20260727.4"></script>' in html
+    assert '<script src="frontend/full-xlsx-report.js?v=20260727.5"></script>' in html
     assert "async function exportFullWorkbook()" in app
     assert "const FullXlsxReport = window.MacAnalyzerFullXlsxReport;" in app
     assert "FullXlsxReport.buildReport({" in app
@@ -275,7 +275,7 @@ def test_backend_export_paths_are_still_wired():
         'api("/mapping/summary",{method:"POST",body:JSON.stringify({headers:file.headers.map((h)=>h.name),mapping:file.mapping||{},fields})})',
         'api("/quality/reports?limit=5")',
         'api("/quality/panel",{method:"POST",body:JSON.stringify(state.resultSnapshotId?currentDevicePayload({invalid:state.invalid,source:"current-browser-dataset",save:true}):{devices:dashboardDevices(),invalid:state.invalid,source:"current-browser-dataset",save:true})})',
-        'api("/device/analytics",{method:"POST",body:JSON.stringify(currentDevicePayload({mac,snapshots:state.snapshots}))})',
+        'api("/device/analytics",{method:"POST",body:JSON.stringify(currentDevicePayload({mac:normalized,snapshots:state.snapshots}))})',
         'api("/model/analytics",{method:"POST",body:JSON.stringify(currentDevicePayload({model}))})',
         'api("/analytics/panel",{method:"POST",body:JSON.stringify(state.resultSnapshotId?currentDevicePayload({snapshots:state.snapshots}):{devices,snapshots:state.snapshots})})',
         'api("/topology",{method:"POST",body:JSON.stringify(state.resultSnapshotId?currentDevicePayload():{devices})})',
@@ -833,6 +833,7 @@ def test_autosave_delete_is_exposed_in_web_ui():
 def test_device_dialog_shows_mac_chronology():
     app = read_app_js()
     html = read_index_html()
+    chronology = Path("frontend/mac-chronology.js").read_text(encoding="utf-8")
 
     for marker in (
         'id="deviceChronologySummary"',
@@ -842,14 +843,16 @@ def test_device_dialog_shows_mac_chronology():
         assert marker in html
 
     for marker in (
-        'analytics.chronologySummaryHtml',
-        'analytics.chronologyRowsHtml',
-        'analytics.emptyChronologyRowsHtml',
+        'async function collectLocalMacContext(mac)',
+        'MacChronology.collectAppearances',
+        'BrowserSnapshots.findDevice(snapshot.id,targetMac)',
+        'MacChronology.renderSummary(events,appearances)',
+        'MacChronology.renderTimeline(events,{formatDate:formatDisplayDateTime})',
         'function localMacChronology(mac)',
-        '$("#deviceChronologySummary").innerHTML=localMacChronology(normalized).summaryHtml;',
-        '$("#deviceChronologyBody").innerHTML=localMacChronology(normalized).html;',
     ):
         assert marker in app
+    for marker in ("function buildEvents(options = {})", "function renderTimeline(events, options = {})", "mac-timeline-item"):
+        assert marker in chronology
 
 
 def test_backup_export_restore_use_backend_service():
@@ -984,9 +987,9 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260727.4"></script>' in html
-    assert '<script src="frontend/xlsx-exporter.js?v=20260727.4"></script>' in html
-    assert '<script src="frontend/full-xlsx-report.js?v=20260727.4"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260727.5"></script>' in html
+    assert '<script src="frontend/xlsx-exporter.js?v=20260727.5"></script>' in html
+    assert '<script src="frontend/full-xlsx-report.js?v=20260727.5"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
     assert 'async function storeLocalSnapshot(' in app
     assert 'devices:rows.slice(0,previewLimit)' in app
@@ -1342,26 +1345,27 @@ def test_device_dialog_uses_backend_analytics():
     app = read_app_js()
 
     assert 'async function showDevice(mac)' in app
-    assert 'api("/device/analytics",{method:"POST",body:JSON.stringify(currentDevicePayload({mac,snapshots:state.snapshots}))})' in app
-    assert 'function showLocalDevice(mac)' in app
-    assert 'function localMacHistoryRows(mac)' in app
-    assert '}catch(error){showLocalDevice(mac);}' in app
+    assert 'api("/device/analytics",{method:"POST",body:JSON.stringify(currentDevicePayload({mac:normalized,snapshots:state.snapshots}))})' in app
+    assert 'async function showLocalDevice(mac)' in app
+    assert 'function localMacHistoryRows(mac,loadedAppearances=null,loadedMovements=null)' in app
+    assert 'Promise.allSettled([' in app
     assert 'Локальная история MAC удалена.' in app
-    assert 'const device=analytics.current||{};' in app
-    assert '$("#deviceDialogTitle").textContent=analytics.macFormatted||formatMac(analytics.mac||mac);' in app
-    assert '$("#deviceMetrics").innerHTML=analytics.metricsHtml||"";' in app
-    assert '$("#deviceFields").innerHTML=analytics.fieldsHtml||"";' in app
+    assert 'const appearances=MacChronology.mergeAppearances(analytics?.appearances||[],local?.appearances||[]);' in app
+    assert 'const events=MacChronology.buildEvents({appearances,history,movements});' in app
+    assert 'dialog.dataset.mac=normalized||requestedMac;' in app
+    assert '$("#deviceMetrics").innerHTML=analytics?.metricsHtml||' in app
+    assert '$("#deviceFields").innerHTML=analytics?.fieldsHtml||localFields' in app
     assert 'analytics.metrics.historyRecords' not in app
     assert 'fields.map((field)=>' not in app
     assert 'analytics.modelPrefixes?.length' not in app
-    assert '$("#deviceHistoryRecordsBody").innerHTML=analytics.historyRecordsRowsHtml||analytics.emptyHistoryRecordsRowsHtml||' in app
-    assert '$("#deviceHistoryBody").innerHTML=analytics.movementRowsHtml||analytics.emptyMovementRowsHtml||' in app
+    assert 'MacChronology.appearancesRowsHtml(appearances,{formatDate:formatDisplayDateTime})' in app
+    assert '$("#deviceHistoryBody").innerHTML=analytics?.movementRowsHtml||localMovements.html;' in app
     assert 'await api("/history?mac="+encodeURIComponent(mac),{method:"DELETE"});await showDevice(mac);' in app
     assert "'<tr><td colspan=\"5\" class=\"empty-state\">История удалена.</td></tr>'" not in app
     assert 'const rows=analytics.timelineRows||[];' not in app
     assert 'new Date(item.date).toLocaleString("ru-RU")' not in app
-    assert 'analytics.appearances||[]' not in app
-    assert 'analytics.movements||[]' not in app
+    assert 'analytics?.appearances||[]' in app
+    assert 'analytics?.movements||[]' in app
     assert 'const movementRows=' not in app
     assert 'const historyRows=' not in app
     assert 'const appearanceRows=' not in app
@@ -1993,11 +1997,11 @@ def test_pyqt_mac_history_dialog_keeps_separate_history_and_movement_tables():
         assert marker in html
 
     for marker in (
-        'analytics.macHistoryStatsHtml',
-        'analytics.historyRecordsRowsHtml||analytics.emptyHistoryRecordsRowsHtml',
-        'analytics.movementRowsHtml||analytics.emptyMovementRowsHtml',
-        'function localMacMovementRows(mac)',
-        'colspan="7" class="empty-state">Локальная история появлений MAC пока пуста.',
+        'MacChronology.renderSummary(events,appearances)',
+        'analytics?.historyRecordsRowsHtml||localHistory.html',
+        'analytics?.movementRowsHtml||localMovements.html',
+        'function localMacMovementRows(mac,loadedRows=null)',
+        'MacChronology.appearancesRowsHtml(rows,{formatDate:formatDisplayDateTime})',
         'await showDevice(mac);renderHistory();toast("История MAC удалена.")',
     ):
         assert marker in app
@@ -2037,7 +2041,7 @@ def test_pyqt_single_device_analytics_text_report_is_rendered_locally_and_from_a
 
     assert 'id="deviceDetailedReport"' in html
     assert '<h3>Детальная информация об устройстве</h3>' in html
-    assert 'analytics.detailedReportText||localDeviceDetailedReport' in app
+    assert 'analytics?.detailedReportText||localDeviceDetailedReport' in app
     assert 'function localDeviceDetailedReport(device={},mac="")' in app
     for marker in (
         "=== ДЕТАЛЬНАЯ ИНФОРМАЦИЯ ОБ УСТРОЙСТВЕ ===",

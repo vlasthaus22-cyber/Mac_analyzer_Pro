@@ -101,6 +101,26 @@ const readers = global.MacAnalyzerFileReaders;
   const buffer = await workbook.blob.arrayBuffer();
   const directory = readers.clientZipDirectory(buffer);
   assert.ok(directory.entries.has("xl/worksheets/sheet10.xml"));
+  assert.ok(directory.entries.has("xl/styles.xml"));
+
+  const summarySheet = new TextDecoder().decode(
+    await readers.clientZipEntryBytes(directory, "xl/worksheets/sheet1.xml"),
+  );
+  assert.match(summarySheet, /Раздел/);
+  assert.match(summarySheet, /Содержание книги/);
+  assert.match(summarySheet, /showGridLines="0"/);
+  assert.match(summarySheet, /customWidth="1"/);
+
+  const analyticsSheet = new TextDecoder().decode(
+    await readers.clientZipEntryBytes(directory, "xl/worksheets/sheet3.xml"),
+  );
+  assert.match(analyticsSheet, /autoFilter ref=/);
+
+  const stylesSheet = new TextDecoder().decode(
+    await readers.clientZipEntryBytes(directory, "xl/styles.xml"),
+  );
+  assert.match(stylesSheet, /FF155E59/);
+  assert.match(stylesSheet, /wrapText="1"/);
 
   const historySheet = new TextDecoder().decode(
     await readers.clientZipEntryBytes(directory, "xl/worksheets/sheet5.xml"),

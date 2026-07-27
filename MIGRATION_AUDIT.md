@@ -54,6 +54,8 @@ SQLite persistence. The machine-checkable source of truth is
   history partitioning and row mapping are isolated in
   `frontend/full-xlsx-report.js`; ZIP/XML writing remains in
   `frontend/xlsx-exporter.js`.
+- `frontend/mac-chronology.js` owns point lookup, merging and presentation of a
+  single MAC timeline across browser and backend history.
 - Complete snapshots and per-MAC history are streamed through
   `frontend/browser-snapshot-store.js`. Neither report module hydrates all
   saved snapshots into a second device collection.
@@ -67,7 +69,7 @@ SQLite persistence. The machine-checkable source of truth is
 
 ## Latest Verification
 
-- Full automated suite: 84/84 Python test files, 264/264 test functions, plus
+- Full automated suite: 85/85 Python test files, 265/265 test functions, plus
   all frontend Node regression and syntax checks.
 - The complete browser Excel report is verified as a real ten-sheet XLSX with
   current devices, analytics, snapshots, every available MAC appearance,
