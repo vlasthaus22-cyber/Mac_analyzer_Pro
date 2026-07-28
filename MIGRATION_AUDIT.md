@@ -90,6 +90,11 @@ SQLite persistence. The machine-checkable source of truth is
   compact previous-result index. The standalone HTML applies the same bounded
   snapshot/DOM policy. Room occupancy analytics is available in local and REST
   reports with assigned, unassigned, percentage, average and per-room counts.
+- Cross-browser folder restore now discovers `database/mac-analyzer-data.madb`
+  from a selected directory even without the File System Access API. Snapshot
+  rows stream directly into chunked IndexedDB while only a 250-row preview is
+  retained in the live workspace, so restoring a large shared database does not
+  create a second full JavaScript copy.
 - Repeated two-file stress verification: four consecutive enrichments of
   50,000 primary plus 50,000 enrichment rows completed in 3.08-3.13 seconds
   per round; traced live allocations returned to 0.0 MB after every round and

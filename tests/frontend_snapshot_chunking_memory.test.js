@@ -9,6 +9,9 @@ require("../frontend/browser-snapshot-store.js");
 const snapshots = global.MacAnalyzerBrowserSnapshots;
 assert.ok(snapshots);
 assert.equal(snapshots.snapshotChunkRows, 1_000);
+assert.equal(typeof snapshots.beginStreamedSnapshot, "function");
+assert.equal(typeof snapshots.appendStreamedSnapshotChunk, "function");
+assert.equal(typeof snapshots.finishStreamedSnapshot, "function");
 
 const devices = Array.from({ length: 120_000 }, (_, index) => ({
   mac: `A1B2C3${index.toString(16).padStart(6, "0").toUpperCase()}`,

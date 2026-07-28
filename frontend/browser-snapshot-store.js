@@ -153,6 +153,59 @@
     }
   }
 
+  async function beginStreamedSnapshot(snapshot) {
+    if (!snapshot?.id) throw new Error("Снимок не содержит id");
+    const metadata = {
+      ...snapshot,
+      id: String(snapshot.id),
+      devices: [],
+      invalid: [],
+      chunked: true,
+      complete: false,
+      chunkSize: snapshotChunkRows,
+      deviceChunks: 0,
+      invalidChunks: 0,
+      deviceCount: 0,
+      invalidCount: 0,
+      browserStored: true,
+      backendStored: false,
+    };
+    await removeSnapshot(metadata.id);
+    await transaction(snapshotStore, "readwrite", (store) => store.put(metadata));
+    return metadata;
+  }
+
+  async function appendStreamedSnapshotChunk(id, kind, index, rows) {
+    const snapshotId = String(id || "");
+    const rowKind = kind === "invalid" ? "invalid" : "device";
+    const values = Array.isArray(rows) ? rows : [];
+    if (!snapshotId || !values.length) return false;
+    await transaction(snapshotChunkStore, "readwrite", (store) => store.put({
+      key: `${snapshotId}:${rowKind}:${String(Math.max(0, Number(index) || 0)).padStart(8, "0")}`,
+      snapshotId,
+      kind: rowKind,
+      index: Math.max(0, Number(index) || 0),
+      rows: values,
+    }));
+    return true;
+  }
+
+  async function finishStreamedSnapshot(id, counts = {}) {
+    const snapshotId = String(id || "");
+    const metadata = await loadSnapshotMetadata(snapshotId);
+    if (!metadata) throw new Error("Потоковый снимок не найден");
+    const complete = {
+      ...metadata,
+      complete: true,
+      deviceChunks: Math.max(0, Number(counts.deviceChunks || 0)),
+      invalidChunks: Math.max(0, Number(counts.invalidChunks || 0)),
+      deviceCount: Math.max(0, Number(counts.deviceCount || 0)),
+      invalidCount: Math.max(0, Number(counts.invalidCount || 0)),
+    };
+    await transaction(snapshotStore, "readwrite", (store) => store.put(complete));
+    return complete;
+  }
+
   async function loadSnapshotMetadata(id) {
     const database = await openDatabase();
     return new Promise((resolve, reject) => {
@@ -907,6 +960,9 @@
 
   window.MacAnalyzerBrowserSnapshots = Object.freeze({
     save,
+    beginStreamedSnapshot,
+    appendStreamedSnapshotChunk,
+    finishStreamedSnapshot,
     load,
     prune,
     removeSnapshot,

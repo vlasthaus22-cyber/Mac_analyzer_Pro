@@ -80,6 +80,28 @@ class MemoryDirectoryHandle {
 
   await store.writeLog(structure, "test-complete", { devices: 42 });
   assert.equal(structure.directories.logs.files.size, 1);
+
+  const unrelated = new Blob(["not-a-database"]);
+  Object.defineProperties(unrelated, {
+    name: { value: "notes.txt" },
+    webkitRelativePath: { value: "Shared MAC Data/settings/notes.txt" },
+  });
+  const preferred = new Blob(["portable-database"]);
+  Object.defineProperties(preferred, {
+    name: { value: "mac-analyzer-data.madb" },
+    webkitRelativePath: { value: "Shared MAC Data/database/mac-analyzer-data.madb" },
+  });
+  const secondary = new Blob(["secondary"]);
+  Object.defineProperties(secondary, {
+    name: { value: "backup.madb" },
+    webkitRelativePath: { value: "Shared MAC Data/backups/backup.madb" },
+  });
+  const inspected = store.inspectFolderFiles([unrelated, secondary, preferred]);
+  assert.equal(inspected.database.file, preferred, "database/mac-analyzer-data.madb must win over backup files");
+  assert.equal(inspected.database.path, "Shared MAC Data/database/mac-analyzer-data.madb");
+  assert.equal(inspected.rootName, "Shared MAC Data");
+  assert.equal(inspected.fileCount, 3);
+  assert.equal(store.findDatabaseFile([unrelated]), null);
   console.log("local folder store test passed");
 })().catch((error) => {
   console.error(error);

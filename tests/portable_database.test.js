@@ -110,6 +110,28 @@ class MemoryFileHandle {
   assert.equal(streamedRestored.invalid.length, 1);
   assert.ok(streamedHandle.maximumChunkBytes < 512 * 1024, "current result streamer must keep writes bounded");
 
+  const restoredChunks = [];
+  const restoredStarts = [];
+  const restoredEnds = [];
+  const boundedRestore = await database.readFile(streamedHandle.blob, () => {}, {
+    retainRows: false,
+    previewLimit: 250,
+    batchRows: 500,
+    onSnapshotStart: async (metadata) => restoredStarts.push(metadata.id),
+    onSnapshotChunk: async (metadata, kind, rows, index) => {
+      restoredChunks.push({ id: metadata.id, kind, index, count: rows.length });
+      assert.ok(rows.length <= 500);
+    },
+    onSnapshotEnd: async (metadata, counts) => restoredEnds.push({ id: metadata.id, counts }),
+  });
+  assert.equal(boundedRestore.deviceCount, 60_000);
+  assert.equal(boundedRestore.devices.length, 250, "cross-browser restore must retain only one preview page");
+  assert.equal(boundedRestore.invalidCount, 1);
+  assert.equal(restoredStarts.length, 1);
+  assert.equal(restoredEnds[0].counts.deviceCount, 60_000);
+  assert.equal(restoredEnds[0].counts.deviceChunks, 120);
+  assert.equal(restoredChunks.filter((item) => item.kind === "device").length, 120);
+
   console.log("portable database streaming stress test passed");
 })().catch((error) => {
   console.error(error);

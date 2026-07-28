@@ -99,7 +99,7 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert '<script src="frontend/memory-guard.js?v=20260722.9"></script>' in html
     assert '<script src="frontend/file-readers.js?v=20260722.8"></script>' in html
-    assert '<meta name="application-build" content="2026.07.27.5">' in html
+    assert '<meta name="application-build" content="2026.07.28.1">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -987,7 +987,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260727.5"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260728.1"></script>' in html
     assert '<script src="frontend/xlsx-exporter.js?v=20260727.5"></script>' in html
     assert '<script src="frontend/full-xlsx-report.js?v=20260727.5"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
@@ -2258,7 +2258,8 @@ def test_autonomous_file_database_is_streamed_and_connected_to_workspace_saves()
         'id="openPortableDatabaseButton"',
         'id="createPortableDatabaseButton"',
         'id="portableDatabaseInput"',
-        '<script src="frontend/portable-database.js?v=20260722.7"></script>',
+        'id="portableFolderInput"',
+        '<script src="frontend/portable-database.js?v=20260728.1"></script>',
     ):
         assert marker in html
     assert 'if(theme){saveThemePreference(theme);$("#themeDialog").close();}' in app
@@ -2276,6 +2277,8 @@ def test_autonomous_file_database_is_streamed_and_connected_to_workspace_saves()
         "file.stream().getReader()",
         'type: "snapshot-current"',
         "maximumDatabaseBytes = 1024 * 1024 * 1024",
+        'const retainRows = options.retainRows !== false;',
+        'await options.onSnapshotChunk(context.metadata, kind, rows, context[indexKey]);',
     ):
         assert marker in database
     assert "JSON.stringify(payload)" not in database
@@ -2287,9 +2290,10 @@ def test_browser_only_mode_uses_a_structured_local_folder():
     folder_store = Path("frontend/local-folder-store.js").read_text(encoding="utf-8")
     for marker in (
         'id="chooseLocalFolderButton"',
+        'id="importPortableFolderButton"',
         'id="localFolderStatus"',
-        '<script src="frontend/local-folder-store.js?v=20260722.7"></script>',
-        "Выбрать локальную папку",
+        '<script src="frontend/local-folder-store.js?v=20260728.1"></script>',
+        "Подключить папку данных",
     ):
         assert marker in html
     for marker in (
@@ -2301,7 +2305,9 @@ def test_browser_only_mode_uses_a_structured_local_folder():
         'setBackendStatus(false,"Локальная файловая база подключена · backend не используется")',
         'const localFolderSavedAtKey = key+"-folder-saved-at";',
         'const header=await PortableDatabase.readHeader(structure.databaseHandle);',
-        'if(preferBrowserState&&knownSavedAt>=fileSavedAt)',
+        'if(preferBrowserState&&browserHasRestorableData&&knownSavedAt>=fileSavedAt)',
+        "async function importPortableFolderFiles(files)",
+        "portableDatabaseRestoreOptions(importedSnapshotIds)",
     ):
         assert marker in app
     assert 'setInterval(()=>{if(browserOnlyMode){if(portableDatabaseHandle)schedulePortableDatabaseSave(0);}' not in app
@@ -2309,6 +2315,8 @@ def test_browser_only_mode_uses_a_structured_local_folder():
         'const folderNames = Object.freeze(["database", "imports", "exports", "settings", "logs", "backups"]);',
         'const databaseFileName = "mac-analyzer-data.madb";',
         "showDirectoryPicker",
+        "function findDatabaseFile(files = [])",
+        "function inspectFolderFiles(files = [])",
         "async function copyImport(",
     ):
         assert marker in folder_store

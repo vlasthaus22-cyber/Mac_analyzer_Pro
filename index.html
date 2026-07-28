@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
-  <meta name="application-build" content="2026.07.27.5">
-  <link rel="stylesheet" href="styles.css?v=20260727.5">
+  <meta name="application-build" content="2026.07.28.1">
+  <link rel="stylesheet" href="styles.css?v=20260728.1">
 </head>
 <body>
   <div class="app-shell">
@@ -737,15 +737,18 @@
   <dialog class="device-dialog" id="portableDatabaseDialog">
     <div class="dialog-head"><div><h2>Локальная папка программы</h2><p class="muted">Данные, история, настройки и исходные файлы сохраняются локально без EXE, CMD и backend.</p></div><button class="icon-button" id="closePortableDatabaseDialog" aria-label="Закрыть">×</button></div>
     <div class="portable-database-actions">
-      <button class="button primary" id="chooseLocalFolderButton" type="button">Выбрать локальную папку</button>
+      <button class="button primary" id="chooseLocalFolderButton" type="button">Подключить папку данных</button>
+      <button class="button secondary" id="importPortableFolderButton" type="button">Прочитать папку в браузере</button>
       <button class="button secondary" id="openPortableDatabaseButton" type="button">Открыть файл MADB</button>
       <button class="button secondary" id="createPortableDatabaseButton" type="button">Сохранить MADB отдельно</button>
       <button class="button secondary" id="savePortableDatabaseButton" type="button">Сохранить сейчас</button>
       <input id="portableDatabaseInput" type="file" accept=".madb,application/x-mac-analyzer-db" hidden>
+      <input id="portableFolderInput" type="file" accept=".madb,application/x-mac-analyzer-db" webkitdirectory directory multiple hidden>
     </div>
     <div class="portable-database-status" id="localFolderStatus" role="status" aria-live="polite">Выберите папку. Программа создаст database, imports, exports, settings, logs и backups.</div>
     <div class="portable-database-status" id="portableDatabaseStatus" role="status" aria-live="polite">До выбора папки используется IndexedDB текущего браузера.</div>
-    <p class="muted">Браузер требует один раз выбрать папку вручную. После разрешения программа автоматически читает database/mac-analyzer-data.madb и сохраняет туда изменения.</p>
+    <div class="portable-database-help"><strong>Перенос между компьютерами и браузерами</strong><span>Выберите одну и ту же папку программы. Будет прочитан <code>database/mac-analyzer-data.madb</code>, а полная история восстановится в локальное хранилище нового браузера.</span></div>
+    <p class="muted">Chrome и Edge могут читать и обновлять папку после разрешения. В остальных браузерах кнопка «Прочитать папку в браузере» импортирует MADB только для чтения; после изменений сохраните новый MADB вручную. SQLite-файлы из data/databases браузер напрямую не открывает.</p>
   </dialog>
   <dialog class="device-dialog" id="helpDialog">
     <div class="dialog-head"><div><h2>Справка</h2><p class="muted">MAC Analyzer Pro Web: режимы, сценарии и горячие клавиши.</p></div><button class="icon-button" id="closeHelpDialog" aria-label="Закрыть">×</button></div>
@@ -757,15 +760,15 @@
   <script src="frontend/memory-guard.js?v=20260722.9"></script>
   <script src="frontend/file-readers.js?v=20260722.8"></script>
   <script src="frontend/state-persistence.js?v=20260722.7"></script>
-  <script src="frontend/browser-snapshot-store.js?v=20260727.5"></script>
+  <script src="frontend/browser-snapshot-store.js?v=20260728.1"></script>
   <script src="frontend/mac-chronology.js?v=20260727.5"></script>
   <script src="frontend/xlsx-exporter.js?v=20260727.5"></script>
   <script src="frontend/full-xlsx-report.js?v=20260727.5"></script>
-  <script src="frontend/portable-database.js?v=20260722.7"></script>
-  <script src="frontend/local-folder-store.js?v=20260722.7"></script>
+  <script src="frontend/portable-database.js?v=20260728.1"></script>
+  <script src="frontend/local-folder-store.js?v=20260728.1"></script>
   <script src="frontend/workspace-file-lifecycle.js?v=20260722.7"></script>
   <script src="frontend/guide.js?v=20260722.7"></script>
-  <script src="app.js?v=20260727.5"></script>
+  <script src="app.js?v=20260728.1"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;

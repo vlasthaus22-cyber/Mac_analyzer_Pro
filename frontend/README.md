@@ -5,6 +5,7 @@
 - `memory-guard.js` bounds autonomous datasets and provides copy-free paging, signatures and cooperative processing.
 - `state-persistence.js` prevents large server-backed XLSX rows and result pages from being cloned into browser storage.
 - `browser-snapshot-store.js` keeps complete browser-only snapshots in a dedicated IndexedDB store; the live workspace keeps only metadata and a 500-row preview.
+- `local-folder-store.js` locates `database/mac-analyzer-data.madb` in a user-selected directory, including read-only directory uploads in browsers without the File System Access API. Portable restore streams snapshot chunks directly into IndexedDB and keeps only one preview page in JavaScript memory.
 - `mac-chronology.js` loads one requested MAC from compact snapshot metadata and IndexedDB chunks, merges browser and backend appearances, history and movements, and renders the device timeline without hydrating full snapshots.
 - `xlsx-exporter.js` creates styled single- or multi-sheet XLSX workbooks in the browser with frozen headers, filters, column widths and bounded-memory streaming. The full report streams devices and every saved MAC appearance from IndexedDB into one workbook with analytics, snapshots, changes, errors, source-file metadata, references, and settings without hydrating the full device collection.
 - `full-xlsx-report.js` owns the report schema, history-sheet partitioning and row mapping. `app.js` only supplies state/streams and coordinates progress plus download.

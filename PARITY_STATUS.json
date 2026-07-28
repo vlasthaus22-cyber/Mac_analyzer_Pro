@@ -203,52 +203,52 @@
         "text": "Защита больших анализов от Out of Memory: результаты выводятся страницами по 25-1000 строк,"
       },
       {
-        "line": 178,
+        "line": 184,
         "checked": true,
         "text": "Светлая/тёмная тема: отдельный ThemeSelectionDialog, немедленное применение,"
       },
       {
-        "line": 180,
+        "line": 186,
         "checked": true,
         "text": "Инженерный/пользовательский режим как в PyQt: пользователь видит только безопасные"
       },
       {
-        "line": 185,
+        "line": 191,
         "checked": true,
         "text": "Контекстные действия таблиц: выбор строки, копирование MAC/строки/таблицы,"
       },
       {
-        "line": 187,
+        "line": 193,
         "checked": true,
         "text": "Полная справка и горячие клавиши PyQt: Ctrl+O/S/E/A/H/F,"
       },
       {
-        "line": 192,
+        "line": 198,
         "checked": true,
         "text": "Самодиагностика web-системы: read-only проверка файлов frontend/backend,"
       },
       {
-        "line": 196,
+        "line": 202,
         "checked": true,
         "text": "Переносимый Windows-backend: автономная PyInstaller-сборка с frontend,"
       },
       {
-        "line": 205,
+        "line": 211,
         "checked": true,
         "text": "Все пункты выше реализованы."
       },
       {
-        "line": 206,
+        "line": 212,
         "checked": true,
         "text": "Импортированы текущие SQLite-данные Python-версии."
       },
       {
-        "line": 207,
+        "line": 213,
         "checked": true,
         "text": "Все операции проверены через UI и REST API."
       },
       {
-        "line": 208,
+        "line": 214,
         "checked": true,
         "text": "Не осталось функций PyQt, для которых нет web-эквивалента."
       }

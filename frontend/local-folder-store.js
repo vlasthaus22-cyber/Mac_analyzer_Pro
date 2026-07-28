@@ -88,6 +88,48 @@
     return (hash >>> 0).toString(16).padStart(8, "0");
   }
 
+  function normalizedRelativePath(file) {
+    return String(file?.webkitRelativePath || file?.relativePath || file?.name || "")
+      .replace(/\\/g, "/")
+      .replace(/^\/+/, "");
+  }
+
+  function findDatabaseFile(files = []) {
+    const candidates = Array.from(files || [])
+      .filter((file) => file instanceof Blob && /\.madb$/i.test(String(file.name || "")))
+      .map((file) => {
+        const path = normalizedRelativePath(file);
+        const normalized = path.toLowerCase();
+        let priority = 4;
+        if (normalized.endsWith(`/database/${databaseFileName}`)) priority = 0;
+        else if (normalized === databaseFileName || normalized.endsWith(`/${databaseFileName}`)) priority = 1;
+        else if (normalized.includes("/database/")) priority = 2;
+        else priority = 3;
+        return { file, path, priority };
+      })
+      .sort((left, right) => left.priority - right.priority || right.file.size - left.file.size || left.path.localeCompare(right.path));
+    if (!candidates.length) return null;
+    const selected = candidates[0];
+    const firstSegment = selected.path.split("/").filter(Boolean)[0] || "";
+    return {
+      file: selected.file,
+      path: selected.path || selected.file.name,
+      rootName: selected.path.includes("/") ? firstSegment : "",
+      candidateCount: candidates.length,
+    };
+  }
+
+  function inspectFolderFiles(files = []) {
+    const list = Array.from(files || []).filter((file) => file instanceof Blob);
+    const database = findDatabaseFile(list);
+    return {
+      fileCount: list.length,
+      totalBytes: list.reduce((total, file) => total + Math.max(0, Number(file.size || 0)), 0),
+      database,
+      rootName: database?.rootName || normalizedRelativePath(list[0]).split("/").filter(Boolean)[0] || "",
+    };
+  }
+
   async function writeFile(handle, content) {
     const writable = await handle.createWritable({ keepExistingData: false });
     try {
@@ -159,6 +201,9 @@
     requestPermission,
     chooseDirectoryHandle,
     ensureStructure,
+    normalizedRelativePath,
+    findDatabaseFile,
+    inspectFolderFiles,
     writeManifest,
     copyImport,
     writeExport,

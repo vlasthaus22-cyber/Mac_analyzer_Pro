@@ -234,8 +234,88 @@
     const invalid = [];
     const movements = [];
     const snapshots = [];
-    const currentSnapshots = [];
+    const retainRows = options.retainRows !== false;
+    const previewLimit = retainRows ? Number.POSITIVE_INFINITY : Math.max(0, Number(options.previewLimit ?? 250));
+    const streamSnapshots = typeof options.onSnapshotStart === "function" && typeof options.onSnapshotChunk === "function" && typeof options.onSnapshotEnd === "function";
+    const restoreBatchRows = Math.max(100, Math.min(2000, Number(options.batchRows || 500)));
+    let deviceCount = 0;
+    let invalidCount = 0;
     let activeSnapshot = null;
+    let currentSnapshot = null;
+
+    async function beginSnapshot(value, currentReference = false) {
+      const metadata = {
+        ...(value || {}),
+        devices: [],
+        invalid: [],
+        browserStored: true,
+        backendStored: false,
+        currentReference,
+      };
+      const context = {
+        metadata,
+        devices: [],
+        invalid: [],
+        deviceBatch: [],
+        invalidBatch: [],
+        deviceCount: 0,
+        invalidCount: 0,
+        deviceChunks: 0,
+        invalidChunks: 0,
+      };
+      if (streamSnapshots) await options.onSnapshotStart(metadata);
+      return context;
+    }
+
+    async function flushSnapshotBatch(context, kind) {
+      const batch = kind === "invalid" ? context.invalidBatch : context.deviceBatch;
+      if (!streamSnapshots || !batch.length) return;
+      const indexKey = kind === "invalid" ? "invalidChunks" : "deviceChunks";
+      const rows = batch.splice(0, batch.length);
+      await options.onSnapshotChunk(context.metadata, kind, rows, context[indexKey]);
+      context[indexKey] += 1;
+    }
+
+    async function appendSnapshotRow(context, kind, value) {
+      if (!context) return;
+      if (kind === "invalid") context.invalidCount += 1;
+      else context.deviceCount += 1;
+      if (streamSnapshots) {
+        const batch = kind === "invalid" ? context.invalidBatch : context.deviceBatch;
+        batch.push(value);
+        if (batch.length >= restoreBatchRows) await flushSnapshotBatch(context, kind);
+      } else {
+        (kind === "invalid" ? context.invalid : context.devices).push(value);
+      }
+    }
+
+    async function finishSnapshot(context) {
+      if (!context) return null;
+      if (streamSnapshots) {
+        await flushSnapshotBatch(context, "device");
+        await flushSnapshotBatch(context, "invalid");
+      }
+      const metadata = {
+        ...context.metadata,
+        devices: [],
+        invalid: [],
+        deviceCount: context.deviceCount,
+        invalidCount: context.invalidCount,
+      };
+      if (streamSnapshots) {
+        await options.onSnapshotEnd(metadata, {
+          deviceCount: context.deviceCount,
+          invalidCount: context.invalidCount,
+          deviceChunks: context.deviceChunks,
+          invalidChunks: context.invalidChunks,
+        });
+      } else if (typeof options.onSnapshot === "function") {
+        await options.onSnapshot({ ...context.metadata, devices: context.devices, invalid: context.invalid });
+      }
+      snapshots.push(metadata);
+      return metadata;
+    }
+
     await readLines(file, async (line) => {
       const record = JSON.parse(line);
       if (!header) {
@@ -245,34 +325,35 @@
       }
       if (record.type === "state") state = record.value;
       else if (record.type === "snapshot-current") {
-        const metadata = { ...(record.value || {}), devices: [], invalid: [], browserStored: true, backendStored: false, currentReference: true };
-        currentSnapshots.push(metadata);
-        snapshots.push(metadata);
+        currentSnapshot = await beginSnapshot(record.value, true);
       }
-      else if (record.type === "snapshot-start") activeSnapshot = { ...(record.value || {}), devices: [], invalid: [] };
-      else if (record.type === "snapshot-device" && activeSnapshot) activeSnapshot.devices.push(record.value);
-      else if (record.type === "snapshot-invalid" && activeSnapshot) activeSnapshot.invalid.push(record.value);
+      else if (record.type === "snapshot-start") activeSnapshot = await beginSnapshot(record.value, false);
+      else if (record.type === "snapshot-device" && activeSnapshot) await appendSnapshotRow(activeSnapshot, "device", record.value);
+      else if (record.type === "snapshot-invalid" && activeSnapshot) await appendSnapshotRow(activeSnapshot, "invalid", record.value);
       else if (record.type === "snapshot-end" && activeSnapshot) {
-        const metadata = { ...activeSnapshot, devices: [], invalid: [], deviceCount: Number(activeSnapshot.deviceCount || activeSnapshot.devices.length), invalidCount: activeSnapshot.invalid.length, browserStored: true, backendStored: false };
-        if (typeof options.onSnapshot === "function") await options.onSnapshot(activeSnapshot);
-        snapshots.push(metadata);
+        await finishSnapshot(activeSnapshot);
         activeSnapshot = null;
       }
-      else if (record.type === "device") devices.push(record.value);
-      else if (record.type === "invalid") invalid.push(record.value);
+      else if (record.type === "device") {
+        deviceCount += 1;
+        if (devices.length < previewLimit) devices.push(record.value);
+        if (currentSnapshot) await appendSnapshotRow(currentSnapshot, "device", record.value);
+      }
+      else if (record.type === "invalid") {
+        invalidCount += 1;
+        if (invalid.length < previewLimit) invalid.push(record.value);
+        if (currentSnapshot) await appendSnapshotRow(currentSnapshot, "invalid", record.value);
+      }
       else if (record.type === "movement") movements.push(record.value);
     }, onProgress);
     if (!header || !state) throw new Error("Файл базы повреждён: отсутствует заголовок или состояние");
+    if (activeSnapshot) throw new Error("Файл базы повреждён: снимок не завершён");
+    if (currentSnapshot) await finishSnapshot(currentSnapshot);
     const counts = header.counts || {};
-    if (Number(counts.devices || 0) !== devices.length) throw new Error("Файл базы повреждён: количество устройств не совпадает");
+    if (Number(counts.devices || 0) !== deviceCount) throw new Error("Файл базы повреждён: количество устройств не совпадает");
     if (Number(counts.snapshots || 0) !== snapshots.length) throw new Error("Файл базы повреждён: количество снимков не совпадает");
-    if (typeof options.onSnapshot === "function") {
-      for (const metadata of currentSnapshots) {
-        await options.onSnapshot({ ...metadata, devices, invalid });
-      }
-    }
-    onProgress(100, `Восстановлено устройств: ${devices.length.toLocaleString("ru-RU")}`);
-    return { header, state, devices, invalid, movements, snapshots };
+    onProgress(100, `Восстановлено устройств: ${deviceCount.toLocaleString("ru-RU")}`);
+    return { header, state, devices, invalid, movements, snapshots, deviceCount, invalidCount };
   }
 
   async function read(handle, onProgress = () => {}, options = {}) {

@@ -185,8 +185,8 @@
     state.resultSnapshotId="";
     state.resultBrowserSnapshotId=currentReference?.id||"";
     state.resultBrowserSnapshotDirty=false;
-    state.resultDeviceCount=state.devices.length;
-    state.resultInvalidCount=state.invalid.length;
+    state.resultDeviceCount=Math.max(0,Number(data.deviceCount??data.header?.counts?.devices??state.devices.length)||0);
+    state.resultInvalidCount=Math.max(0,Number(data.invalidCount??data.header?.counts?.invalid??state.invalid.length)||0);
     state.lastAnalysis=data.header?.savedAt||state.lastAnalysis||new Date().toISOString();
     try{localStorage.setItem(localFolderSavedAtKey,data.header?.savedAt||"");}catch{}
     save({immediate:true,portable:false});
@@ -195,24 +195,74 @@
     applyVendorDetectorSettings(state.vendorDetectorSettings||{});
     applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});
     renderEngineeringState();renderAll();renderColumnPreferences();
-    portableDatabaseStatus(`Подключено: ${sourceName} · ${state.devices.length.toLocaleString("ru-RU")} устройств · ${new Date(data.header?.savedAt||Date.now()).toLocaleString("ru-RU")}`);
+    portableDatabaseStatus(`Подключено: ${sourceName} · ${state.resultDeviceCount.toLocaleString("ru-RU")} устройств · ${new Date(data.header?.savedAt||Date.now()).toLocaleString("ru-RU")}`);
+    return true;
+  }
+
+  function portableDatabaseRestoreOptions(importedSnapshotIds){
+    return{
+      retainRows:false,
+      previewLimit:resultPageSize,
+      batchRows:500,
+      onSnapshotStart:async(metadata)=>{
+        if(!BrowserSnapshots||!metadata?.id)return;
+        await BrowserSnapshots.beginStreamedSnapshot(metadata);
+        importedSnapshotIds.push(String(metadata.id));
+      },
+      onSnapshotChunk:async(metadata,kind,rows,index)=>{
+        if(BrowserSnapshots&&metadata?.id)await BrowserSnapshots.appendStreamedSnapshotChunk(metadata.id,kind,index,rows);
+      },
+      onSnapshotEnd:async(metadata,counts)=>{
+        if(BrowserSnapshots&&metadata?.id)await BrowserSnapshots.finishStreamedSnapshot(metadata.id,counts);
+      },
+    };
+  }
+
+  async function importPortableDatabaseFile(file,sourceName=file?.name||"mac-analyzer-data.madb"){
+    if(!(file instanceof Blob))throw new Error("Файл базы не выбран");
+    const processId=beginProcess("Файловая база","Потоковое восстановление MADB",5),importedSnapshotIds=[];
+    try{
+      const data=await PortableDatabase.readFile(file,(value,detail)=>portableDatabaseProgress(processId,value,detail),portableDatabaseRestoreOptions(importedSnapshotIds));
+      if(BrowserSnapshots)await BrowserSnapshots.prune(importedSnapshotIds).catch(()=>{});
+      portableDatabaseHandle=null;
+      await applyPortableDatabase(data,sourceName);
+      finishProcess(processId,"Файловая база импортирована");
+      return data;
+    }catch(error){
+      for(const id of importedSnapshotIds)await BrowserSnapshots?.removeSnapshot?.(id).catch(()=>{});
+      failProcess(processId,error);
+      portableDatabaseStatus(error.message,"error");
+      throw error;
+    }
+  }
+
+  async function importPortableFolderFiles(files){
+    if(!LocalFolderStore||!PortableDatabase)throw new Error("Модуль локальной папки не загружен");
+    const inspection=LocalFolderStore.inspectFolderFiles(files);
+    if(!inspection.database)throw new Error("В выбранной папке не найден database/mac-analyzer-data.madb. Сначала подключите папку в исходном браузере и нажмите «Сохранить сейчас».");
+    localFolderHandle=null;
+    localFolderStructure=null;
+    const source=inspection.database.path||inspection.database.file.name;
+    const data=await importPortableDatabaseFile(inspection.database.file,source);
+    localFolderStatus(`Папка прочитана: ${inspection.rootName||"выбранная папка"} · ${inspection.fileCount.toLocaleString("ru-RU")} файлов · база ${source}`,"warning");
+    portableDatabaseStatus(`Данные восстановлены только для чтения: ${data.deviceCount.toLocaleString("ru-RU")} устройств. Изменения сохраняются в IndexedDB этого браузера; для переноса сохраните новый MADB.`,"warning");
+    setBackendStatus(false,"Файловая база импортирована · локальный кэш нового браузера заполнен");
     return true;
   }
   async function readPortableDatabaseHandle(handle,{request=false}={}){
     if(!handle||!PortableDatabase)return false;
     if(request&&!(await PortableDatabase.requestPermission(handle,"readwrite")))throw new Error("Доступ к файловой базе не разрешён");
-    const processId=beginProcess("Файловая база","Потоковое чтение MADB",5);
+    const processId=beginProcess("Файловая база","Потоковое чтение MADB",5),importedSnapshotIds=[];
     try{
-      const importedSnapshotIds=[];
-      const data=await PortableDatabase.read(handle,(value,detail)=>portableDatabaseProgress(processId,value,detail),{onSnapshot:async(snapshot)=>{if(BrowserSnapshots&&snapshot?.id){await BrowserSnapshots.save(snapshot);importedSnapshotIds.push(snapshot.id);}}});
-      if(BrowserSnapshots&&importedSnapshotIds.length)await BrowserSnapshots.prune(importedSnapshotIds).catch(()=>{});
+      const data=await PortableDatabase.read(handle,(value,detail)=>portableDatabaseProgress(processId,value,detail),portableDatabaseRestoreOptions(importedSnapshotIds));
+      if(BrowserSnapshots)await BrowserSnapshots.prune(importedSnapshotIds).catch(()=>{});
       portableDatabaseHandle=handle;
       await PortableDatabase.saveHandle(handle).catch(()=>false);
       await applyPortableDatabase(data,handle.name||"mac-analyzer-data.madb");
       portableDatabaseSaveRevision=portableDatabasePersistedRevision=0;
       finishProcess(processId,"Файловая база подключена");
       return true;
-    }catch(error){failProcess(processId,error);portableDatabaseStatus(error.message,"error");throw error;}
+    }catch(error){for(const id of importedSnapshotIds)await BrowserSnapshots?.removeSnapshot?.(id).catch(()=>{});failProcess(processId,error);portableDatabaseStatus(error.message,"error");throw error;}
   }
   async function connectPortableDatabase(){
     if(!PortableDatabase)return toast("Модуль файловой базы не загружен.");
@@ -275,7 +325,8 @@
     if(databaseFile.size>0){
       const header=await PortableDatabase.readHeader(structure.databaseHandle);
       const fileSavedAt=Date.parse(header?.savedAt||"")||0,knownSavedAt=Date.parse(localStorage.getItem(localFolderSavedAtKey)||"")||0;
-      if(preferBrowserState&&knownSavedAt>=fileSavedAt){
+      const browserHasRestorableData=currentDeviceCount()>0||Boolean(state.resultBrowserSnapshotId)||(state.snapshots||[]).some((item)=>item?.browserStored);
+      if(preferBrowserState&&browserHasRestorableData&&knownSavedAt>=fileSavedAt){
         portableDatabaseSaveRevision=portableDatabaseQueuedRevision=portableDatabasePersistedRevision=0;
         portableDatabaseStatus(`Файловая база уже синхронизирована · устройств ${Number(header?.counts?.devices||currentDeviceCount()).toLocaleString("ru-RU")}`);
       }else{
@@ -294,8 +345,9 @@
   }
   async function connectLocalFolder(){
     if(!LocalFolderStore?.supportsDirectoryPicker?.()){
-      localFolderStatus("Этот браузер не разрешает прямую запись в папку. Используйте Chrome или Edge и файловую базу MADB.","warning");
-      return createPortableDatabase();
+      localFolderStatus("Прямая запись в папку недоступна. Выберите папку для восстановления MADB только для чтения.","warning");
+      $("#portableFolderInput")?.click();
+      return false;
     }
     try{
       const handle=await LocalFolderStore.chooseDirectoryHandle();
@@ -2924,14 +2976,19 @@
   $("#portableDatabaseButton")?.addEventListener("click",()=>$("#portableDatabaseDialog")?.showModal());
   $("#closePortableDatabaseDialog")?.addEventListener("click",()=>$("#portableDatabaseDialog")?.close());
   $("#chooseLocalFolderButton")?.addEventListener("click",connectLocalFolder);
+  $("#importPortableFolderButton")?.addEventListener("click",()=>$("#portableFolderInput")?.click());
   $("#openPortableDatabaseButton")?.addEventListener("click",connectPortableDatabase);
   $("#createPortableDatabaseButton")?.addEventListener("click",createPortableDatabase);
   $("#savePortableDatabaseButton")?.addEventListener("click",savePortableDatabaseNow);
   $("#portableDatabaseInput")?.addEventListener("change",async(event)=>{
     const file=event.target.files?.[0];event.target.value="";if(!file)return;
-    const processId=beginProcess("Файловая база","Чтение выбранного MADB",5);
-    try{const importedSnapshotIds=[];const data=await PortableDatabase.readFile(file,(value,detail)=>portableDatabaseProgress(processId,value,detail),{onSnapshot:async(snapshot)=>{if(BrowserSnapshots&&snapshot?.id){await BrowserSnapshots.save(snapshot);importedSnapshotIds.push(snapshot.id);}}});if(BrowserSnapshots&&importedSnapshotIds.length)await BrowserSnapshots.prune(importedSnapshotIds).catch(()=>{});portableDatabaseHandle=null;await applyPortableDatabase(data,file.name);finishProcess(processId,"Файловая база импортирована");}
-    catch(error){failProcess(processId,error);portableDatabaseStatus(error.message,"error");toast(error.message);}
+    try{await importPortableDatabaseFile(file,file.name);}
+    catch(error){toast(error.message);}
+  });
+  $("#portableFolderInput")?.addEventListener("change",async(event)=>{
+    const files=Array.from(event.target.files||[]);event.target.value="";if(!files.length)return;
+    try{await importPortableFolderFiles(files);toast("Данные из папки восстановлены в этом браузере.");}
+    catch(error){localFolderStatus(error.message,"error");toast(error.message);}
   });
   $("#openGuideFromHelpButton")?.addEventListener("click",()=>{$("#helpDialog").close();view("guide");});
   $("#guideView")?.addEventListener("click",(event)=>{
