@@ -99,7 +99,7 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert '<script src="frontend/memory-guard.js?v=20260722.9"></script>' in html
     assert '<script src="frontend/file-readers.js?v=20260722.8"></script>' in html
-    assert '<meta name="application-build" content="2026.07.29.1">' in html
+    assert '<meta name="application-build" content="2026.07.29.2">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -1400,23 +1400,31 @@ def test_model_prefix_dialog_uses_backend_analytics():
     assert 'function showFallbackModelPrefixes(model)' in html
 
 
-def test_clusters_and_topology_have_no_local_fallbacks():
+def test_clusters_topology_statistics_and_exports_have_local_fallbacks():
     app = read_app_js()
+    html = read_index_html()
+    local_analytics = Path("frontend/local-analytics.js").read_text(encoding="utf-8")
 
     assert 'async function renderBackendClusters(devices=state.devices)' in app
     assert 'async function renderBackendTopology(devices=state.devices)' in app
     assert 'root.innerHTML=data.clusterRowsHtml||data.emptyClusterRowsHtml' in app
     assert 'root.innerHTML=data.topologyHtml||data.emptyTopologyHtml' in app
-    assert 'clusters.map((cluster)=>' not in app
-    assert 'nodes.map((node)=>' not in app
-    assert '(node.ports||[]).map((port)=>' not in app
-    assert 'Cluster backend unavailable:' in app
-    assert 'Topology backend unavailable:' in app
-    assert 'function renderClusters(' not in app
-    assert 'function renderTopology(' not in app
-    assert 'renderClusters(devices)' not in app
-    assert 'renderTopology(devices)' not in app
-    assert 'const switches={}' not in app
+    assert '<script src="frontend/local-analytics.js?v=20260729.2"></script>' in html
+    assert 'const LocalAnalytics = window.MacAnalyzerLocalAnalytics;' in app
+    assert 'async function collectLocalAnalytics(' in app
+    assert 'LocalAnalytics.renderClusters(await collectLocalAnalytics(devices))' in app
+    assert 'LocalAnalytics.renderTopology(await collectLocalAnalytics(devices))' in app
+    assert 'LocalAnalytics.renderStatistics(finalDashboardSnapshots()' in app
+    assert 'LocalAnalytics.renderTemporal(finalDashboardSnapshots())' in app
+    assert 'LocalAnalytics.clustersCsv(payload)' in app
+    assert 'LocalAnalytics.topologyDocument(payload)' in app
+    assert 'LocalAnalytics.chartsSvg(payload)' in app
+    assert 'Cluster backend unavailable:' not in app
+    assert 'Topology backend unavailable:' not in app
+    assert 'SQLite statistics unavailable:' not in app
+    assert 'Temporal statistics unavailable:' not in app
+    assert 'function createCollector(options = {})' in local_analytics
+    assert 'window.MacAnalyzerLocalAnalytics = Object.freeze({' in local_analytics
 
 
 def test_primary_analytics_charts_use_backend_payload():
@@ -2405,7 +2413,7 @@ if __name__ == "__main__":
     test_quality_reports_are_backend_first()
     test_device_dialog_uses_backend_analytics()
     test_model_prefix_dialog_uses_backend_analytics()
-    test_clusters_and_topology_have_no_local_fallbacks()
+    test_clusters_topology_statistics_and_exports_have_local_fallbacks()
     test_primary_analytics_charts_use_backend_payload()
     test_dashboard_metrics_use_backend_payload()
     test_history_screen_uses_backend_statistics()

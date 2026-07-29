@@ -18,6 +18,7 @@
   const XlsxExporter = window.MacAnalyzerXlsxExporter;
   const FullXlsxReport = window.MacAnalyzerFullXlsxReport;
   const FullJsonReport = window.MacAnalyzerFullJsonReport;
+  const LocalAnalytics = window.MacAnalyzerLocalAnalytics;
   const MemoryGuard = window.MacAnalyzerMemoryGuard;
   const Guide = window.MacAnalyzerGuide;
   const PortableDatabase = window.MacAnalyzerPortableDatabase;
@@ -27,6 +28,7 @@
   if(!XlsxExporter)throw new Error("Модуль frontend/xlsx-exporter.js не загружен");
   if(!FullXlsxReport)throw new Error("Модуль frontend/full-xlsx-report.js не загружен");
   if(!FullJsonReport)throw new Error("Модуль frontend/full-json-report.js не загружен");
+  if(!LocalAnalytics)throw new Error("Модуль frontend/local-analytics.js не загружен");
   if(!MacChronology)throw new Error("Модуль frontend/mac-chronology.js не загружен");
   if(!WorkspaceFileLifecycle)throw new Error("Модуль frontend/workspace-file-lifecycle.js не загружен");
   if(!Guide)throw new Error("Модуль frontend/guide.js не загружен");
@@ -469,6 +471,7 @@
   let dashboardChangeAnalysis = {summary:{total:0,critical:0,added:0,removed:0,modified:0},changes:[],snapshotOptions:[]};
   let dashboardChangeTypeFilter = "all";
   let browserDashboardCache = null;
+  let localAnalyticsCache = null;
   let analysisDashboardCache = null;
   let analysisDashboardPromise = null;
   let analysisDashboardPromiseKey = "";
@@ -488,6 +491,7 @@
   function releaseTransientAnalysisMemory(){
     dashboardFilteredDevices=null;
     browserDashboardCache=null;
+    localAnalyticsCache=null;
     dashboardChangeAnalysis={summary:{total:0,critical:0,added:0,removed:0,modified:0},changes:[],snapshotOptions:[]};
     historyPanelPromise=null;
     analyticsPanelPromise=null;
@@ -1371,7 +1375,7 @@
   }
   function currentDeviceCount(){return state.resultSnapshotId||state.resultBrowserSnapshotId?Number(state.resultDeviceCount||0):(state.devices||[]).length;}
   function currentDevicePayload(extra={}){return state.resultSnapshotId?{...extra,snapshotId:state.resultSnapshotId,devices:[]}:{...extra,devices:state.devices||[]};}
-  function clearResultReference(){state.resultSnapshotId="";state.resultBrowserSnapshotId="";state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=0;state.resultInvalidCount=0;state.resultSummary=null;}
+  function clearResultReference(){state.resultSnapshotId="";state.resultBrowserSnapshotId="";state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=0;state.resultInvalidCount=0;state.resultSummary=null;browserDashboardCache=null;localAnalyticsCache=null;}
   function applyRefreshedFileTokens(fileTokens=[]){
     (Array.isArray(fileTokens)?fileTokens:[]).forEach((item)=>{const file=state.files.find((entry)=>entry.id===item.id);if(file&&item.fileToken)file.fileToken=item.fileToken;});
   }
@@ -1704,13 +1708,28 @@
     if(count>1)$("#comparisonSelect").selectedIndex=0;
     if(count>1)$("#baselineSelect").selectedIndex=count-1;
   }
+  function localAnalyticsKey(devices=[]){
+    return [state.resultBrowserSnapshotId||"",state.resultSnapshotId||"",currentDeviceCount(),state.resultInvalidCount||state.invalid.length,state.lastAnalysis||"",Array.isArray(devices)?devices.length:0].join("|");
+  }
+  async function collectLocalAnalytics(devices=dashboardDevices(),force=false){
+    const key=localAnalyticsKey(devices);
+    if(!force&&localAnalyticsCache?.key===key)return localAnalyticsCache.payload;
+    const collector=LocalAnalytics.createCollector({invalidCount:Math.max(Number(state.resultInvalidCount||0),Number(state.invalid.length||0))});
+    if(state.resultBrowserSnapshotId&&BrowserSnapshots?.streamSnapshot){
+      const metadata=await BrowserSnapshots.streamSnapshot(state.resultBrowserSnapshotId,async(kind,rows)=>{if(kind==="device")collector.accept(rows);});
+      if(!metadata)collector.accept(devices);
+    }else collector.accept(devices);
+    const payload=collector.finish();
+    localAnalyticsCache={key,payload};
+    return payload;
+  }
   async function renderBackendStatistics(){
     const root=$("#backendStatisticsChart"); if(!root)return;
     try{
       const data=await api("/statistics/panel");
       root.innerHTML=data.statisticsHtml||'<p class="muted">SQLite statistics are empty.</p>';
     }catch(error){
-      root.innerHTML='<p class="muted">SQLite statistics unavailable: '+esc(error.message)+'</p>';
+      root.innerHTML=LocalAnalytics.renderStatistics(finalDashboardSnapshots(),currentDeviceCount(),state.movementHistory.length);
     }
   }
   async function renderTemporalStatistics(){
@@ -1719,7 +1738,7 @@
       const data=await api("/statistics/panel");
       root.innerHTML=data.temporalHtml||'<p class="muted">Нет SQLite-снимков для временной статистики.</p>';
     }catch(error){
-      root.innerHTML='<p class="muted">Temporal statistics unavailable: '+esc(error.message)+'</p>';
+      root.innerHTML=LocalAnalytics.renderTemporal(finalDashboardSnapshots());
     }
   }
   async function renderBackendCharts(){
@@ -1728,7 +1747,7 @@
       const data=await(analyticsPanelPromise||loadAnalyticsPanel());
       root.innerHTML=data.backendChartsHtml||'<p class="muted">Backend не вернул диаграммы.</p>';
     }catch(error){
-      root.innerHTML='<p class="muted">Backend charts unavailable: '+esc(error.message)+'</p>';
+      root.innerHTML=LocalAnalytics.renderOverview(await collectLocalAnalytics());
     }
   }
   function localTally(items,key,limit=8){const counts={};items.forEach((item)=>{const value=String(item[key]||"Unknown").trim()||"Unknown";counts[value]=(counts[value]||0)+1;});return Object.entries(counts).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,limit);}
@@ -1809,7 +1828,9 @@
       download(data.export.filename||"mac-charts.svg",data.export.content,data.export.mimeType||"image/svg+xml");
       toast("SVG-диаграммы экспортированы.");
     }catch(error){
-      toast(error.message);
+      const payload=await collectLocalAnalytics();
+      download("mac-charts.svg",LocalAnalytics.chartsSvg(payload),"image/svg+xml");
+      toast("SVG-диаграммы экспортированы локально.");
     }
   }
   function normalizeDashboardSettings(settings={}){
@@ -2152,7 +2173,7 @@
       const data=await(analyticsPanelPromise||loadAnalyticsPanel(devices));
       root.innerHTML=data.clusterRowsHtml||data.emptyClusterRowsHtml||'<p class="muted">Backend не нашёл кластеров.</p>';
     }catch(error){
-      root.innerHTML='<p class="muted">Cluster backend unavailable: '+esc(error.message)+'</p>';
+      root.innerHTML=LocalAnalytics.renderClusters(await collectLocalAnalytics(devices));
     }
   }
   async function exportClusters(){
@@ -2162,7 +2183,9 @@
       download(data.export.filename||"mac-clusters.csv","\uFEFF"+data.export.content,data.export.mimeType||"text/csv");
       toast("Кластеры экспортированы backend-сервисом.");
     }catch(error){
-      toast(error.message);
+      const payload=await collectLocalAnalytics(dashboardDevices(),true);
+      download("mac-clusters.csv",LocalAnalytics.clustersCsv(payload),"text/csv");
+      toast("Кластеры экспортированы локально.");
     }
   }
   async function renderBackendTopology(devices=state.devices){
@@ -2171,7 +2194,7 @@
       const data=await api("/topology",{method:"POST",body:JSON.stringify(state.resultSnapshotId?currentDevicePayload():{devices})});
       root.innerHTML=data.topologyHtml||data.emptyTopologyHtml||'<p class="muted">Backend не нашёл связей топологии.</p>';
     }catch(error){
-      root.innerHTML='<p class="muted">Topology backend unavailable: '+esc(error.message)+'</p>';
+      root.innerHTML=LocalAnalytics.renderTopology(await collectLocalAnalytics(devices));
     }
   }
   async function exportTopology(){
@@ -2181,7 +2204,9 @@
       download(data.export.filename||"mac-topology.html",data.export.content,data.export.mimeType||"text/html");
       toast("Топология экспортирована backend-сервисом.");
     }catch(error){
-      toast(error.message);
+      const payload=await collectLocalAnalytics(dashboardDevices(),true);
+      download("mac-topology.html",LocalAnalytics.topologyDocument(payload),"text/html");
+      toast("Топология экспортирована локально.");
     }
   }
   function renderQualityReport(panel){
@@ -2193,7 +2218,7 @@
       const data=await api("/quality/reports?limit=5");
       root.innerHTML=data.reportsHtml||data.emptyReportsHtml||'<p class="muted">Saved quality reports are empty.</p>';
     }catch(error){
-      root.innerHTML='<p class="muted">Quality reports unavailable: '+esc(error.message)+'</p>';
+      root.innerHTML='<p class="muted">Локальный анализ качества доступен по кнопке «Проверить».</p>';
     }
   }
   function analyzeLocalQuality(){const devices=dashboardDevices(),missingMac=devices.filter((device)=>!normalize(device.mac||device.macFormatted)).length,unknown=devices.filter((device)=>!device.vendor||device.vendor==="Unknown").length,missingIp=devices.filter((device)=>!device.ip).length;$("#qualityInsights").innerHTML=localChartHtml([["Ошибки MAC",missingMac+state.invalid.length],["Unknown vendor",unknown],["Нет IP",missingIp]].filter((item)=>item[1]>0),"Проблем качества не найдено.");toast("Локальный анализ качества данных завершён.");}
@@ -2291,7 +2316,7 @@
     for(const id of selected)await BrowserSnapshots?.removeSnapshot?.(id).catch(()=>false);
     state.snapshots=(state.snapshots||[]).filter((snapshot)=>!selected.has(String(snapshot.id)));
     if(selected.has(String(state.resultBrowserSnapshotId||""))||selected.has(String(state.resultSnapshotId||""))){clearResultReference();state.devices=[];state.invalid=[];}
-    browserDashboardCache=null;save();renderHistory();renderSnapshots();toast(`Удалено выгрузок: ${ids.length}`);
+    browserDashboardCache=null;localAnalyticsCache=null;save();renderHistory();renderSnapshots();toast(`Удалено выгрузок: ${ids.length}`);
   }
   function localFlatHistory(query="", from="", to=""){
     return localHistoryItems(query,from,to).flatMap((snapshot)=>(snapshot.devices||[]).map((device)=>({...device,_snapshot:snapshot})));
