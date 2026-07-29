@@ -12,6 +12,8 @@ assert.equal(snapshots.snapshotChunkRows, 1_000);
 assert.equal(typeof snapshots.beginStreamedSnapshot, "function");
 assert.equal(typeof snapshots.appendStreamedSnapshotChunk, "function");
 assert.equal(typeof snapshots.finishStreamedSnapshot, "function");
+assert.equal(typeof snapshots.copySnapshotWithTransform, "function");
+assert.equal(typeof snapshots.transformChunkRows, "function");
 assert.equal(typeof snapshots.matchesDashboardFilter, "function");
 assert.equal(snapshots.matchesDashboardFilter({ vendor: "Cisco", room: "101" }, { room: "101" }), true);
 assert.equal(snapshots.matchesDashboardFilter({ vendor: "Cisco", room: "101" }, { room: "202" }), false);
@@ -48,4 +50,18 @@ assert.equal(page.summary.devices, 120_000);
 assert.equal(page.summary.vendors, 1);
 assert.ok(page.items.length < devices.length / 100);
 
-console.log("frontend snapshot chunking memory test passed");
+(async () => {
+  const chunk = devices.slice(0, 1_000);
+  const changed = await snapshots.transformChunkRows(chunk, (device) => {
+    if (device.room !== "100") return false;
+    device.address = "Корпус 1";
+    return true;
+  });
+  assert.equal(changed, 2);
+  assert.equal(chunk.filter((device) => device.address === "Корпус 1").length, 2);
+  assert.ok(chunk.length <= snapshots.snapshotChunkRows);
+  console.log("frontend snapshot chunking memory test passed");
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

@@ -256,6 +256,70 @@
     return { ...metadata, devices: [], invalid: [] };
   }
 
+  async function transformChunkRows(rows, transform, context = {}) {
+    let changed = 0;
+    const source = Array.isArray(rows) ? rows : [];
+    const rowContext = { ...context, rowIndex: 0 };
+    for (let index = 0; index < source.length; index += 1) {
+      rowContext.rowIndex = index;
+      if (await transform(source[index], rowContext)) changed += 1;
+    }
+    return changed;
+  }
+
+  async function copySnapshotWithTransform(sourceId, targetSnapshot, transform, onProgress = () => {}) {
+    const sourceSnapshotId = String(sourceId || "");
+    const targetSnapshotId = String(targetSnapshot?.id || "");
+    if (!sourceSnapshotId || !targetSnapshotId) throw new Error("Для производного снимка нужны исходный и новый id");
+    if (sourceSnapshotId === targetSnapshotId) throw new Error("Производный снимок должен иметь новый id");
+    if (typeof transform !== "function") throw new Error("Преобразование снимка не задано");
+    const source = await loadSnapshotMetadata(sourceSnapshotId);
+    if (!source) throw new Error("Исходный локальный снимок не найден");
+    if (source.chunked && !source.complete) throw new Error("Исходный локальный снимок записан не полностью");
+    const totalChunks = Math.max(1, Number(source.deviceChunks || 0) + Number(source.invalidChunks || 0));
+    await beginStreamedSnapshot({
+      ...source,
+      ...targetSnapshot,
+      id: targetSnapshotId,
+      signature: targetSnapshot.signature || "",
+      derivedFrom: sourceSnapshotId,
+      devices: [],
+      invalid: [],
+    });
+    let changed = 0;
+    let processed = 0;
+    let deviceChunks = 0;
+    let invalidChunks = 0;
+    let deviceCount = 0;
+    let invalidCount = 0;
+    try {
+      await streamSnapshot(sourceSnapshotId, async (kind, rows, index) => {
+        if (kind === "device") {
+          changed += await transformChunkRows(rows, transform, { kind, chunkIndex: index });
+          deviceCount += rows.length;
+          deviceChunks += 1;
+        } else {
+          invalidCount += rows.length;
+          invalidChunks += 1;
+        }
+        await appendStreamedSnapshotChunk(targetSnapshotId, kind, index, rows);
+        processed += 1;
+        onProgress(Math.min(99, Math.round(processed / totalChunks * 100)), processed, totalChunks);
+      });
+      const metadata = await finishStreamedSnapshot(targetSnapshotId, {
+        deviceChunks,
+        invalidChunks,
+        deviceCount,
+        invalidCount,
+      });
+      onProgress(100, totalChunks, totalChunks);
+      return { metadata, changed, processed: deviceCount };
+    } catch (error) {
+      await removeSnapshot(targetSnapshotId).catch(() => false);
+      throw error;
+    }
+  }
+
   async function load(id) {
     const devices = [];
     const invalid = [];
@@ -981,6 +1045,8 @@
     removeSnapshot,
     chunkRows,
     streamSnapshot,
+    transformChunkRows,
+    copySnapshotWithTransform,
     findDevice,
     page,
     aggregate,

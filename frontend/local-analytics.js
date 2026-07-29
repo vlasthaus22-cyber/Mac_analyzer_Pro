@@ -76,6 +76,9 @@
     const clusterLimit = Math.max(100, Math.min(50_000, Number(options.clusterLimit || 20_000)));
     const switchLimit = Math.max(100, Math.min(50_000, Number(options.switchLimit || 20_000)));
     const portLimit = Math.max(32, Math.min(4_096, Number(options.portLimit || 2_048)));
+    const vendorFilter = text(options.vendor);
+    const roomFilter = text(options.room);
+    const showUnknown = options.showUnknown !== false;
     let devices = 0;
     let knownVendors = 0;
     let withIp = 0;
@@ -92,6 +95,9 @@
         const vendor = deviceValue(device, "vendor");
         const model = text(device.model);
         const room = text(device.room);
+        if (vendorFilter && vendor !== vendorFilter) continue;
+        if (roomFilter && room !== roomFilter) continue;
+        if (!showUnknown && unknownVendors.has(vendor.toLowerCase())) continue;
         const smartroomId = text(device.smartroomId || device.smartroom_id);
         const switchIp = text(device.switchIp || device.switch_ip);
         const switchPort = text(device.switchPort || device.switch_port, "Не указан");

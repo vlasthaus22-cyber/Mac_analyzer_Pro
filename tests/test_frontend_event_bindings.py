@@ -99,7 +99,7 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert '<script src="frontend/memory-guard.js?v=20260722.9"></script>' in html
     assert '<script src="frontend/file-readers.js?v=20260722.8"></script>' in html
-    assert '<meta name="application-build" content="2026.07.29.2">' in html
+    assert '<meta name="application-build" content="2026.07.29.3">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -987,7 +987,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260729.1"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260729.3"></script>' in html
     assert '<script src="frontend/xlsx-exporter.js?v=20260727.5"></script>' in html
     assert '<script src="frontend/full-xlsx-report.js?v=20260729.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
@@ -1198,7 +1198,11 @@ def test_ip_mapping_import_uses_backend_base64_payload():
     assert 'api("/ip-mappings/import",{method:"POST",body:JSON.stringify({filename:file.name,contentBase64:await fileToBase64(file)})})' in app
     assert 'async function importLocalIpMappings(file)' in app
     assert 'const result=await importLocalIpMappings(file);' in app
-    assert 'function applyLocalIpMappings()' in app
+    assert 'async function applyLocalIpMappings()' in app
+    assert 'async function deriveCurrentBrowserSnapshot(' in app
+    assert 'BrowserSnapshots.copySnapshotWithTransform(sourceId' in app
+    assert 'await deriveCurrentBrowserSnapshot("Обогащение: IP-маппинг"' in app
+    assert 'const result=await applyLocalIpMappings();' in app
     assert 'function exportLocalIpMappings()' in app
     assert 'function autodetectLocalIpMappings()' in app
     assert 'function inferSwitchAddressMappings(devices=state.devices, source="analysis")' in app
@@ -1409,9 +1413,10 @@ def test_clusters_topology_statistics_and_exports_have_local_fallbacks():
     assert 'async function renderBackendTopology(devices=state.devices)' in app
     assert 'root.innerHTML=data.clusterRowsHtml||data.emptyClusterRowsHtml' in app
     assert 'root.innerHTML=data.topologyHtml||data.emptyTopologyHtml' in app
-    assert '<script src="frontend/local-analytics.js?v=20260729.2"></script>' in html
+    assert '<script src="frontend/local-analytics.js?v=20260729.3"></script>' in html
     assert 'const LocalAnalytics = window.MacAnalyzerLocalAnalytics;' in app
     assert 'async function collectLocalAnalytics(' in app
+    assert 'vendor:settings.vendor||"",room:settings.room||"",showUnknown:settings.showUnknown!==false' in app
     assert 'LocalAnalytics.renderClusters(await collectLocalAnalytics(devices))' in app
     assert 'LocalAnalytics.renderTopology(await collectLocalAnalytics(devices))' in app
     assert 'LocalAnalytics.renderStatistics(finalDashboardSnapshots()' in app
@@ -1425,6 +1430,11 @@ def test_clusters_topology_statistics_and_exports_have_local_fallbacks():
     assert 'Temporal statistics unavailable:' not in app
     assert 'function createCollector(options = {})' in local_analytics
     assert 'window.MacAnalyzerLocalAnalytics = Object.freeze({' in local_analytics
+    assert 'if (vendorFilter && vendor !== vendorFilter) continue;' in local_analytics
+    assert 'if (roomFilter && room !== roomFilter) continue;' in local_analytics
+    assert 'if (!showUnknown && unknownVendors.has(vendor.toLowerCase())) continue;' in local_analytics
+    assert '$("#clusterChart").innerHTML=LocalAnalytics.renderClusters(details);' in app
+    assert '$("#topologyGraph").innerHTML=LocalAnalytics.renderTopology(details);' in app
 
 
 def test_primary_analytics_charts_use_backend_payload():
@@ -1586,7 +1596,13 @@ def test_services_panel_uses_backend_aggregator():
     assert 'function renderLocalTimeStats()' in app
     assert 'Local snapshots' in app
     assert 'upsertLocalIpMapping(switchIp,address,"manual")' in app
-    assert 'const result=applyLocalIpMappings();toast("Локальный IP-маппинг применён: "+result.matched+" совпадений, заполнено "+result.filled);' in app
+    assert 'const result=await applyLocalIpMappings();' in app
+    assert 'applyLocalVendorModelMappingsToCurrentResult' in app
+    assert 'let snapshotMutationPromise=Promise.resolve();' in app
+    assert 'const operation=snapshotMutationPromise.then(()=>applyLocalIpMappingsNow());' in app
+    assert 'await snapshotMutationPromise;' in app
+    assert 'await BrowserSnapshots?.prune?.([]).catch(()=>0);' in app
+    assert 'state.snapshots=[];state.movementHistory=[];state.devices=[];state.invalid=[];clearResultReference();' in app
     assert 'ipData=serviceData.ip||{}' not in app
     assert 'legacyData=serviceData.legacy||{}' not in app
     assert 'ipData.mappings.map' not in app
@@ -2241,6 +2257,7 @@ def test_oui_reference_import_and_safe_autodetection_are_wired_end_to_end():
     app = read_app_js()
     server = Path("server.py").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
+    snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
 
     for marker in (
         'id="ouiReferenceFileInput"',
@@ -2275,6 +2292,9 @@ def test_oui_reference_import_and_safe_autodetection_are_wired_end_to_end():
     assert "function assertHeapHeadroom(size, memoryInfo" in memory_guard
     assert "resultBrowserSnapshotId" in app
     assert "MemoryGuard.assertStreamingEnrichmentCapacity(state.files,strategy);" in app
+    assert "async function copySnapshotWithTransform(" in snapshot_store
+    assert "async function transformChunkRows(" in snapshot_store
+    assert "copySnapshotWithTransform," in snapshot_store
     assert "window.MacAnalyzerMemoryGuard?.assertEnrichmentCapacity(fallbackState.files);" in html
 
 

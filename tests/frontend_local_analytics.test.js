@@ -45,6 +45,15 @@ assert.equal(payload.topology.summary.unassignedDevices, 1);
 assert.equal(payload.topology.nodes[0].switchIp, "10.0.0.1");
 assert.equal(payload.topology.nodes[0].ports.length, 2);
 
+const filtered = analytics.build(devices, { vendor: "Cisco", room: "101" });
+assert.equal(filtered.summary.devices, 2);
+assert.equal(filtered.summary.uniqueVendors, 1);
+assert.equal(filtered.summary.uniqueRooms, 1);
+assert.equal(filtered.topology.summary.linkedDevices, 2);
+const withoutUnknown = analytics.build(devices, { showUnknown: false });
+assert.equal(withoutUnknown.summary.devices, 3);
+assert.equal(withoutUnknown.summary.unknownVendors, 0);
+
 assert.match(analytics.renderOverview(payload), /Smartroom ID/);
 assert.match(analytics.renderClusters(payload), /Cisco · 101 · 10\.0\.0\.1/);
 assert.match(analytics.renderTopology(payload), /Gi1\/0\/1/);
