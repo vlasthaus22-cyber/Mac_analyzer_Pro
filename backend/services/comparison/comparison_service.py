@@ -7,13 +7,14 @@ from datetime import datetime
 from typing import Any
 
 
-DEFAULT_FIELDS = ["vendor", "model", "ip", "address", "room", "switchIp", "switchPort"]
+DEFAULT_FIELDS = ["vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort"]
 FIELD_TITLES = {
     "vendor": "Производитель",
     "model": "Модель",
     "ip": "IP",
     "address": "Адрес",
     "room": "Помещение",
+    "smartroomId": "Smartroom ID",
     "switchIp": "Коммутатор",
     "switchPort": "Порт",
     "source": "Источник",

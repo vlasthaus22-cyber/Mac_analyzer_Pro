@@ -36,7 +36,7 @@ def normalize_dashboard_settings(settings: dict[str, Any] | None = None) -> dict
         "showUnknown": bool(settings.get("showUnknown", True)),
         "visibleCards": {
             key: bool(card_settings.get(key, True))
-            for key in ("total", "changed", "missing", "unchanged", "vendors", "rooms")
+            for key in ("total", "changed", "missing", "unchanged", "vendors", "rooms", "changedRooms")
         },
         "visibleCharts": {
             key: bool(chart_settings.get(key, True))
@@ -52,10 +52,10 @@ def normalize_dashboard_settings(settings: dict[str, Any] | None = None) -> dict
     }
 
 
-CHANGE_FIELDS = ("vendor", "model", "ip", "address", "room", "switchIp", "switchPort")
+CHANGE_FIELDS = ("vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort")
 CHANGE_FIELD_LABELS = {
     "vendor": "Производитель", "model": "Модель", "ip": "IP-адрес", "address": "Адрес",
-    "room": "Помещение", "switchIp": "Коммутатор", "switchPort": "Порт", "device": "Устройство",
+    "room": "Помещение", "smartroomId": "Smartroom ID", "switchIp": "Коммутатор", "switchPort": "Порт", "device": "Устройство",
 }
 
 
@@ -84,7 +84,7 @@ def dashboard_snapshot_options(snapshots: list[dict[str, Any]]) -> list[dict[str
         if not isinstance(snapshot, dict):
             continue
         snapshot_id = _snapshot_id(snapshot, index)
-        date = _text(snapshot.get("fileCreatedAt") or snapshot.get("createdAt") or snapshot.get("created_at"))
+        date = _text(snapshot.get("fileCreatedAt") or snapshot.get("createdAt") or snapshot.get("created_at") or snapshot.get("savedAt"))
         options.append({
             "id": snapshot_id,
             "name": _text(snapshot.get("name") or snapshot_id),
@@ -143,7 +143,7 @@ def _change_severity(
             return "critical"
     if field in {"ip", "address", "room"}:
         return "high"
-    if field in {"vendor", "model", "switchIp", "switchPort"}:
+    if field in {"vendor", "model", "smartroomId", "switchIp", "switchPort"}:
         return "medium"
     if change_type == "removed":
         return "high"
@@ -160,6 +160,7 @@ def _device_context(device: dict[str, Any] | None) -> dict[str, str] | None:
         "ip": _text(device.get("ip")),
         "address": _text(device.get("address")),
         "room": _text(device.get("room")),
+        "smartroomId": _text(device.get("smartroomId") or device.get("smartroom_id")),
         "switchIp": _text(device.get("switchIp") or device.get("switch_ip")),
         "switchPort": _text(device.get("switchPort") or device.get("switch_port")),
     }
@@ -265,6 +266,13 @@ def analyze_dashboard_changes(
     }
     summary["critical"] = len({item["mac"] for item in changes if item["severity"] == "critical"})
     summary["total"] = len({item["mac"] for item in changes})
+    changed_rooms = {
+        _text((item.get("afterDevice") or item.get("beforeDevice") or {}).get("room"))
+        for item in changes
+        if _text((item.get("afterDevice") or item.get("beforeDevice") or {}).get("room"))
+    }
+    summary["changedRooms"] = len(changed_rooms)
+    summary["changedRoomValues"] = sorted(changed_rooms)
     field_counts = Counter(item["fieldLabel"] for item in changes)
     return {
         "mode": normalized["changeMode"], "dateFrom": selected_from, "dateTo": selected_to,

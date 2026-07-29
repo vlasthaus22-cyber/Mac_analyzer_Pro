@@ -13,6 +13,7 @@
     { key: "ip", title: "IP устройства" },
     { key: "address", title: "Адрес помещения" },
     { key: "room", title: "Помещение" },
+    { key: "smartroomId", title: "Smartroom ID" },
     { key: "switchIp", title: "IP коммутатора" },
     { key: "switchPort", title: "Порт" },
     { key: "source", title: "Источник" },
@@ -152,6 +153,7 @@
       ip: String(device.ip || ""),
       address: String(device.address || ""),
       room: String(device.room || ""),
+      smartroomId: String(device.smartroomId || device.smartroom_id || ""),
       switchIp: String(device.switchIp || device.switch_ip || ""),
       switchPort: String(device.switchPort || device.switch_port || ""),
     };
@@ -177,6 +179,7 @@
       device.ip || "",
       device.address || "",
       device.room || "",
+      device.smartroomId || "",
       device.switchIp || "",
       device.switchPort || "",
       item.source || item.file_name || "",
@@ -211,16 +214,16 @@
     const name = String(sheet.sheetName || "");
     const widths = {
       "Сводка": [22, 38, 24, 60],
-      "Устройства": [8, 20, 16, 16, 18, 26, 28, 18, 32, 18, 19, 15, 28, 26, 20, 22, 24, 20, 22, 15],
+      "Устройства": [8, 20, 16, 16, 18, 26, 28, 18, 32, 18, 18, 19, 15, 28, 26, 20, 22, 24, 20, 22, 15],
       "Аналитика": [24, 38, 16, 22],
       "Выгрузки": [38, 34, 22, 22, 30, 18, 14, 14, 22],
-      "Изменения": [22, 20, 16, 24, 30, 30, 24, 26, 18, 30, 18, 20, 14, 30],
+      "Изменения": [22, 20, 16, 24, 30, 30, 24, 26, 18, 30, 18, 18, 20, 14, 30],
       "Ошибки": [12, 30, 36, 60],
       "Исходные файлы": [38, 34, 18, 20, 14, 18, 22, 16],
       "Справочники": [22, 24, 38, 30],
       "Настройки": [34, 70],
     };
-    const historyWidths = [22, 30, 30, 20, 16, 16, 18, 26, 28, 18, 32, 18, 19, 15, 28, 26, 20, 22, 24, 20, 22, 15];
+    const historyWidths = [22, 30, 30, 20, 16, 16, 18, 26, 28, 18, 32, 18, 18, 19, 15, 28, 26, 20, 22, 24, 20, 22, 15];
     return {
       ...sheet,
       columnWidths: name.startsWith("История MAC") ? historyWidths : (widths[name] || []),
@@ -271,7 +274,7 @@
       },
       {
         sheetName: "Изменения",
-        columns: ["Дата", "MAC-адрес", "Тип", "Поле", "Было", "Стало", "Производитель", "Модель", "IP устройства", "Адрес помещения", "Помещение", "IP коммутатора", "Порт", "Источник"],
+        columns: ["Дата", "MAC-адрес", "Тип", "Поле", "Было", "Стало", "Производитель", "Модель", "IP устройства", "Адрес помещения", "Помещение", "Smartroom ID", "IP коммутатора", "Порт", "Источник"],
         rows: state.movementHistory || [],
         rowMapper: (item) => movementRow(item, helpers),
       },

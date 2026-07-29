@@ -62,8 +62,9 @@ const chronology = global.MacAnalyzerMacChronology;
       afterDevice: stored.get("new"),
     }],
   });
-  assert.equal(events.length, 3);
+  assert.equal(events.length, 4, "chronology must derive sequential snapshot changes without relying on movement history");
   assert.equal(events.find((item) => item.field === "room").fieldLabel, "Помещение");
+  assert.ok(events.some((item) => item.field === "model" && item.before === "C2960" && item.after === "C3560"));
 
   const timeline = chronology.renderTimeline(events, { formatDate: (value) => value.slice(0, 10) });
   assert.match(timeline, /mac-timeline-item/);

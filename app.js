@@ -1,11 +1,11 @@
 ﻿(() => {
   "use strict";
   window.MacAnalyzerAppBootstrapped = true;
-  const fieldList = [["mac","MAC-адрес"],["vendor","Производитель"],["model","Модель"],["ip","IP"],["address","Адрес"],["room","Помещение"],["switchIp","IP коммутатора"],["switchPort","Порт"]];
-  const labels = {...Object.fromEntries(fieldList),macFormatted:"MAC",oui:"OUI",switchIp:"IP коммутатора",switchPort:"Порт",source:"Источник",vendorSource:"Источник вендора",vendorConfidence:"Уверенность вендора",vendorMatchedPrefix:"Префикс вендора",modelSource:"Источник модели",modelConfidence:"Уверенность модели",modelMatchedPrefix:"Префикс модели"};
+  const fieldList = [["mac","MAC-адрес"],["vendor","Производитель"],["model","Модель"],["ip","IP"],["address","Адрес"],["room","Помещение"],["smartroomId","Smartroom ID"],["switchIp","IP коммутатора"],["switchPort","Порт"]];
+  const labels = {...Object.fromEntries(fieldList),macFormatted:"MAC",oui:"OUI",smartroomId:"Smartroom ID",switchIp:"IP коммутатора",switchPort:"Порт",source:"Источник",vendorSource:"Источник вендора",vendorConfidence:"Уверенность вендора",vendorMatchedPrefix:"Префикс вендора",modelSource:"Источник модели",modelConfidence:"Уверенность модели",modelMatchedPrefix:"Префикс модели"};
   const builtinVendorMappings={"00037F":"Apple Inc.","001A11":"Apple Inc.","18FE34":"Apple Inc.","001B44":"Intel Corporation","00A0C9":"Intel Corporation","ACDE48":"Samsung Electronics","002590":"Samsung Electronics","001122":"Cisco Systems","00055D":"Cisco Systems","0050B6":"Dell Inc.","00155F":"Hewlett Packard","0050C2":"Microsoft Corp.","005A39":"Google LLC","0025D3":"Huawei Technologies","002128":"Xiaomi Corporation","0022B0":"TP-Link Technologies","001E52":"Netgear Inc.","F832E4":"ASUSTeK Computer","B827EB":"Raspberry Pi Foundation","002314":"Lenovo Group","0022BD":"Acer Inc.","0024B2":"LG Electronics","001E58":"Sony Corporation","000E58":"Cisco-Linksys","001E13":"Nintendo","000C29":"VMware","0050F2":"Microsoft","00107B":"Dell","001EC9":"Huawei","0017C8":"Apple","00236C":"Xiaomi","001AA9":"Samsung"};
   const builtinModelMappings={"00112233":"Cisco Catalyst 2960","00112244":"Cisco Catalyst 3560","00112255":"Cisco Catalyst 3750","00112266":"Cisco Catalyst 4500","00112277":"Cisco Catalyst 6500","00112288":"Cisco ASR 1000","00112299":"Cisco ISR 4000","005055AA":"Cisco Nexus 3000","005055BB":"Cisco Nexus 5000","005055CC":"Cisco Nexus 7000","0010B5AA":"Dell PowerEdge R740","0010B5BB":"Dell PowerEdge R640","0010B5CC":"Dell PowerEdge T340","0010B5DD":"Dell OptiPlex 7070","0010B5EE":"Dell Latitude 5400","0010B5FF":"Dell XPS 15","00215AAB":"HP ProLiant DL380","00215ACC":"HP ProLiant DL360","00215ADD":"HP EliteBook 840","00215AEE":"HP ZBook 15","00215AFF":"HP LaserJet Pro","00215A11":"HP OfficeJet Pro","001A1101":"iPhone 13","001A1102":"iPhone 14","001A1103":"iPhone 15","001A1120":"iPad Pro","001A1121":"iPad Air","001A1130":"MacBook Pro","001A1131":"MacBook Air","001A1140":"iMac 24\"","001A1150":"Mac Studio","00259001":"Samsung Galaxy S23","00259002":"Samsung Galaxy S22","00259010":"Samsung Galaxy Tab","00259020":"Samsung SSD 980 Pro","00259030":"Samsung Smart Monitor","00259040":"Samsung M7","001EC901":"Huawei Mate 50","001EC902":"Huawei P60","001EC910":"Huawei MateBook X","001EC920":"Huawei Watch GT","00236C01":"Xiaomi Mi 11","00236C02":"Xiaomi 12T","00236C10":"Xiaomi Mi Band","00236C20":"Xiaomi Robot Vacuum","0022B001":"TP-Link Archer AX73","0022B002":"TP-Link Deco X60","0022B010":"TP-Link Tapo C200","0022B020":"TP-Link Kasa KP115","001E5201":"Netgear Nighthawk RAX200","001E5202":"Netgear Orbi RBK852","001E5210":"Netgear GS308","001E5220":"Netgear ReadyNAS","F832E401":"ASUS ROG Zephyrus","F832E402":"ASUS TUF Gaming","F832E410":"ASUS RT-AX88U","F832E420":"ASUS ZenBook","00231401":"Lenovo ThinkPad X1","00231402":"Lenovo ThinkPad T14","00231410":"Lenovo Legion 5","00231420":"Lenovo Yoga 9i"};
-  const defaultColumnWidths = {macFormatted:180,oui:110,vendor:150,model:150,ip:130,address:200,room:120,switchIp:150,switchPort:100,source:150};
+  const defaultColumnWidths = {macFormatted:180,oui:110,vendor:150,model:150,ip:130,address:200,room:120,smartroomId:140,switchIp:150,switchPort:100,source:150};
   const key = "mac-analyzer-web-state-v1";
   const browserStateDbName = "mac-analyzer-browser-storage-v1";
   const browserStateStoreName = "workspaces";
@@ -17,6 +17,7 @@
   const MacChronology = window.MacAnalyzerMacChronology;
   const XlsxExporter = window.MacAnalyzerXlsxExporter;
   const FullXlsxReport = window.MacAnalyzerFullXlsxReport;
+  const FullJsonReport = window.MacAnalyzerFullJsonReport;
   const MemoryGuard = window.MacAnalyzerMemoryGuard;
   const Guide = window.MacAnalyzerGuide;
   const PortableDatabase = window.MacAnalyzerPortableDatabase;
@@ -25,6 +26,7 @@
   if(!MemoryGuard)throw new Error("Модуль frontend/memory-guard.js не загружен");
   if(!XlsxExporter)throw new Error("Модуль frontend/xlsx-exporter.js не загружен");
   if(!FullXlsxReport)throw new Error("Модуль frontend/full-xlsx-report.js не загружен");
+  if(!FullJsonReport)throw new Error("Модуль frontend/full-json-report.js не загружен");
   if(!MacChronology)throw new Error("Модуль frontend/mac-chronology.js не загружен");
   if(!WorkspaceFileLifecycle)throw new Error("Модуль frontend/workspace-file-lifecycle.js не загружен");
   if(!Guide)throw new Error("Модуль frontend/guide.js не загружен");
@@ -41,7 +43,7 @@
   const engineeringPermissionList=["delete:history","delete:snapshots","delete:mappings","delete:tasks","delete:ip-mappings","delete:api-cache","write:settings","write:migration"];
   const engineeringPermissionLabels={"delete:history":"Удаление истории","delete:snapshots":"Удаление снимков","delete:mappings":"Удаление справочников","delete:tasks":"Управление задачами","delete:ip-mappings":"Удаление IP-маппинга","delete:api-cache":"Очистка API-кэша","write:settings":"Изменение настроек","write:migration":"Миграция Python/SQLite"};
   const engineeringOnlyViews=new Set(["workspace","single","compare","data","automation","settings"]);
-  const empty = () => ({files:[],devices:[],invalid:[],snapshots:[],movementHistory:[],importErrors:[],ipMappings:[],localVendorMappings:{},localModelMappings:{},dashboardFleetCache:null,activeMappingFileId:"",mappingDisplayMode:"name",theme:"light",engineeringMode:false,engineeringToken:"",engineeringExpiresAt:"",engineeringPermissions:[],ouiLength:3,ouiStyle:"plain",vendorDetectorSettings:{enabled:true,useOui3:true,useMac5:true,useText:true,useInference:true,confidenceThreshold:0.6},historyEnrichmentSettings:{enabled:true,priorityHistory:true,useOuiMatch:true,useMac5Match:true},externalApiSettings:{enabled:false,provider:"macvendors",endpoint:"",rateLimit:25,cacheTtlDays:30,onlyUnknown:true},dashboardSettings:{vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true},autoRefresh:true,refreshInterval:60,changeMode:"snapshots",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},customColumns:[],customColumnMappings:{},columnWidths:{...defaultColumnWidths},visibleColumns:["macFormatted","oui","vendor","model","ip","address","room","switchIp","switchPort","source"],columnOrder:["macFormatted","oui","vendor","model","ip","address","room","switchIp","switchPort","source"],resultSnapshotId:"",resultBrowserSnapshotId:"",resultBrowserSnapshotDirty:false,resultDeviceCount:0,resultInvalidCount:0,resultSummary:null,lastAnalysis:null});
+  const empty = () => ({files:[],devices:[],invalid:[],snapshots:[],movementHistory:[],importErrors:[],ipMappings:[],localVendorMappings:{},localModelMappings:{},dashboardFleetCache:null,activeMappingFileId:"",mappingDisplayMode:"name",theme:"light",engineeringMode:false,engineeringToken:"",engineeringExpiresAt:"",engineeringPermissions:[],ouiLength:3,ouiStyle:"plain",vendorDetectorSettings:{enabled:true,useOui3:true,useMac5:true,useText:true,useInference:true,confidenceThreshold:0.6},historyEnrichmentSettings:{enabled:true,priorityHistory:true,useOuiMatch:true,useMac5Match:true},externalApiSettings:{enabled:false,provider:"macvendors",endpoint:"",rateLimit:25,cacheTtlDays:30,onlyUnknown:true},dashboardSettings:{vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true,changedRooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true},autoRefresh:true,refreshInterval:60,changeMode:"snapshots",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},customColumns:[],customColumnMappings:{},columnWidths:{...defaultColumnWidths},visibleColumns:["macFormatted","oui","vendor","model","ip","address","room","smartroomId","switchIp","switchPort","source"],columnOrder:["macFormatted","oui","vendor","model","ip","address","room","smartroomId","switchIp","switchPort","source"],resultSnapshotId:"",resultBrowserSnapshotId:"",resultBrowserSnapshotDirty:false,resultDeviceCount:0,resultInvalidCount:0,resultSummary:null,lastAnalysis:null});
   let state;
   try { const old = JSON.parse(localStorage.getItem(key)); state = {...empty(),...old}; } catch { state = empty(); }
   state.importErrors=[];
@@ -61,6 +63,14 @@
   state.externalApiSettings=state.externalApiSettings&&typeof state.externalApiSettings==="object"?state.externalApiSettings:empty().externalApiSettings;
   state.dashboardSettings=normalizeDashboardSettings(state.dashboardSettings);
   state.columnWidths=normalizeColumnWidths(state.columnWidths);
+  for(const keyName of ["visibleColumns","columnOrder"]){
+    const columns=Array.isArray(state[keyName])?state[keyName]:[];
+    if(!columns.includes("smartroomId")){
+      const roomIndex=columns.indexOf("room");
+      columns.splice(roomIndex>=0?roomIndex+1:columns.length,0,"smartroomId");
+    }
+    state[keyName]=columns;
+  }
   BrowserSnapshots?.removeLegacyWorkspace?.().catch(()=>{});
   let browserStateSaveTimer=null,browserStateSaveRevision=0,browserStateQueuedRevision=0,browserStatePersistedRevision=0,browserStateSavePromise=Promise.resolve(),browserStatePendingSavedAt="";
   let portableDatabaseHandle=null,portableDatabaseSaveTimer=null,portableDatabaseSaveRevision=0,portableDatabaseQueuedRevision=0,portableDatabasePersistedRevision=0,portableDatabaseSavePromise=Promise.resolve();
@@ -750,7 +760,7 @@
   const fileReaders=window.MacAnalyzerFileReaders;
   if(!fileReaders)throw new Error("Модуль frontend/file-readers.js не загружен");
   const {readClientTextFile,clientDelimiter,clientTableRows,clientJsonTable,clientZipEntries,clientXlsxTable,clientReadTable}=fileReaders;
-  function localAutoMapping(headers){const find=(patterns)=>{const index=headers.findIndex(header=>patterns.some(pattern=>pattern.test(String(header).toLowerCase())));return index>=0?index:"";};return{mac:find([/mac/,/мак/]),vendor:find([/vendor/,/производ/,/вендор/]),model:find([/model/,/модель/]),ip:find([/^ip/,/ip address/,/адрес ip/]),address:find([/address/,/адрес/]),room:find([/room/,/помещ/,/кабин/]),switchIp:find([/switch.*ip/,/коммутатор.*ip/]),switchPort:find([/port/,/порт/])};}
+  function localAutoMapping(headers){const find=(patterns)=>{const index=headers.findIndex(header=>patterns.some(pattern=>pattern.test(String(header).toLowerCase())));return index>=0?index:"";};return{mac:find([/mac/,/мак/]),vendor:find([/vendor/,/производ/,/вендор/]),model:find([/model/,/модель/]),ip:find([/^ip/,/ip address/,/адрес ip/]),address:find([/address/,/адрес/]),room:find([/room/,/помещ/,/кабин/]),smartroomId:find([/smart.?room.*id/,/id.*smart.?room/,/ид.*smart.?room/]),switchIp:find([/switch.*ip/,/коммутатор.*ip/]),switchPort:find([/port/,/порт/])};}
   function localMappingSummary(file){const mapped=Object.entries(file.mapping||{}).filter(([,value])=>value!==""&&value!==undefined).length;file.mappingSummary={summaryHtml:`<div class="bar-item"><div class="bar-label"><span>Сопоставлено полей</span><strong>${mapped}</strong></div><div class="bar-track"><div class="bar-fill" style="width:${Math.min(100,mapped/fieldList.length*100)}%"></div></div></div>`};file.columnDetection={detectorHtml:'<p class="muted">Колонки определены в браузере, потому что backend недоступен.</p>'};renderColumnDetectionSummary(file);}
   function columnLetter(index){let n=Number(index)+1,letters="";while(n>0){const mod=(n-1)%26;letters=String.fromCharCode(65+mod)+letters;n=Math.floor((n-1)/26);}return letters||String(Number(index)+1);}
   function mappingOptionLabel(header,mode=state.mappingDisplayMode){const letter=columnLetter(header.index),name=header.name||headerName(header.index);return mode==="letter"?letter+" · "+name:name;}
@@ -792,7 +802,7 @@
     let changed=false;const previousContext=activeLocalDetectionContext;activeLocalDetectionContext=previousContext||createLocalDetectionContext();try{(devices||[]).forEach((device)=>{const mac=device.mac||device.macFormatted,vendor=localVendor(mac),model=localModel(mac);if((!device.vendor||device.vendor==="Unknown"||device.vendor==="Не определено")&&vendor!=="Unknown"){device.vendor=vendor;changed=true;}if(!device.model&&model){device.model=model;changed=true;}});}finally{activeLocalDetectionContext=previousContext;}if(changed&&devices===state.devices)state.resultBrowserSnapshotDirty=true;
   }
   function learnLocalRulesFromDevices(rows=[],minCount=2){const threshold=Math.max(1,Number(minCount||2)),vendorCounts=new Map(),modelCounts=new Map(),count=(map,prefix,value)=>{if(!prefix||!value)return;const key=prefix+"\u0000"+value;map.set(key,(map.get(key)||0)+1);};for(const device of rows||[]){const mac=normalize(device.mac||device.macFormatted),vendor=String(device.vendor||"").trim(),model=String(device.model||"").trim();if(!mac)continue;for(const length of [6,8,10])if(vendor&&vendor!=="Unknown"&&vendor!=="Не определено")count(vendorCounts,mac.slice(0,length),vendor);if(model)count(modelCounts,mac.slice(0,10),model);}const learn=(target,counts)=>{let learned=0;const best=new Map();counts.forEach((total,key)=>{const[prefix,value]=key.split("\u0000");if(total<threshold||target[prefix])return;const current=best.get(prefix);if(!current||total>current.total)best.set(prefix,{value,total});});best.forEach((item,prefix)=>{target[prefix]=item.value;learned++;});return learned;};return{vendors:learn(state.localVendorMappings,vendorCounts),models:learn(state.localModelMappings,modelCounts)};}
-  function localDeviceFromRow(file,row,rowIndex,fields){const pick=(field)=>{const index=file.mapping?.[field];return index===""||index===undefined?"":String(row[Number(index)]??"").trim();};const mac=normalize(pick("mac"));if(!mac)return{invalid:{row:rowIndex+2,source:file.name,raw:row.join(" | "),error:"Некорректный MAC"}};const model=fields.model?(pick("model")||localModel(mac)):"";const vendor=fields.vendor?(pick("vendor")||localVendorFromText(model,pick("name"),row.join(" "))||localVendor(mac)):"Не определено";return{device:{mac,macFormatted:formatMac(mac),oui:formatOuiValue(mac),vendor,model,ip:fields.ip?pick("ip"):"",address:fields.address?pick("address"):"",room:fields.room?pick("room"):"",switchIp:fields.switchIp?pick("switchIp"):"",switchPort:fields.switchPort?pick("switchPort"):"",source:file.name,row:rowIndex+2,valid:true}};}
+  function localDeviceFromRow(file,row,rowIndex,fields){const pick=(field)=>{const index=file.mapping?.[field];return index===""||index===undefined?"":String(row[Number(index)]??"").trim();};const mac=normalize(pick("mac"));if(!mac)return{invalid:{row:rowIndex+2,source:file.name,raw:row.join(" | "),error:"Некорректный MAC"}};const model=fields.model?(pick("model")||localModel(mac)):"";const vendor=fields.vendor?(pick("vendor")||localVendorFromText(model,pick("name"),row.join(" "))||localVendor(mac)):"Не определено";return{device:{mac,macFormatted:formatMac(mac),oui:formatOuiValue(mac),vendor,model,ip:fields.ip?pick("ip"):"",address:fields.address?pick("address"):"",room:fields.room?pick("room"):"",smartroomId:fields.smartroomId?pick("smartroomId"):"",switchIp:fields.switchIp?pick("switchIp"):"",switchPort:fields.switchPort?pick("switchPort"):"",source:file.name,row:rowIndex+2,valid:true}};}
   async function visitLocalRowsForAnalysis(file,fileIndex,fileCount,onProgress,onRow){
     const inlineRows=Array.isArray(file.rows)?file.rows:[];
     const expectedRows=Math.max(0,Number(file.rowCount||0));
@@ -914,7 +924,7 @@
   function updateResultPager(total=0,page=1,pages=1){const status=$("#resultPageStatus"),previous=$("#resultPreviousPageButton"),next=$("#resultNextPageButton"),size=$("#resultPageSizeSelect");if(status)status.textContent=`${page} / ${pages}`;if(previous)previous.disabled=page<=1;if(next)next.disabled=page>=pages;if(size)size.value=String(resultPageSize);resultPage=Math.max(1,Math.min(page,pages));}
   function localResultPageRows(items,columns){return(items||[]).length?(items||[]).map((item)=>item?.invalid||item?.valid===false?`<tr><td colspan="${Math.max(1,columns.length)}"><strong>Ошибка:</strong> строка ${esc(item.row||"")} в ${esc(item.source||"")}: ${esc(item.raw||"")}</td></tr>`:`<tr data-mac="${esc(item.mac||normalize(item.macFormatted)||"")}">${columns.map((column)=>`<td>${esc(column==="oui"?formatOuiValue(item.mac||item.macFormatted||item.oui):item[column]||"")}</td>`).join("")}</tr>`).join(""):'<tr><td colspan="'+Math.max(1,columns.length)+'" class="empty-state">Нет записей.</td></tr>';}
   function localResultsTable(){const columns=renderLocalResultsHeader(),query=$("#searchInput")?.value.trim().toLowerCase()||"",vendor=$("#vendorFilter")?.value||"",vendors=new Set();for(const item of state.devices||[]){if(item.vendor)vendors.add(item.vendor);}const pageData=MemoryGuard.collectPage(state.devices,item=>(!vendor||item.vendor===vendor)&&(!query||Object.values(item).join(" ").toLowerCase().includes(query)),resultPage,resultPageSize);resultPage=pageData.page;$("#vendorFilter").innerHTML='<option value="">Все вендоры</option>'+Array.from(vendors).sort().map(v=>`<option value="${esc(v)}" ${v===vendor?"selected":""}>${esc(v)}</option>`).join("");$("#resultCount").textContent=pageData.total+" записей";updateResultPager(pageData.total,pageData.page,pageData.pages);return pageData.items.length?pageData.items.map(item=>`<tr data-mac="${esc(item.mac||normalize(item.macFormatted)||"")}">${columns.map(column=>`<td>${esc(column==="oui"?formatOuiValue(item.mac||item.macFormatted||item.oui):item[column]||"")}</td>`).join("")}</tr>`).join(""):'<tr><td colspan="'+columns.length+'" class="empty-state">Нет записей.</td></tr>';}
-  function devicesSignature(devices=[]){return MemoryGuard.datasetSignature(devices,["vendor","model","ip","address","room","switchIp","switchPort"],normalize);}
+  function devicesSignature(devices=[]){return MemoryGuard.datasetSignature(devices,["vendor","model","ip","address","room","smartroomId","switchIp","switchPort"],normalize);}
   async function storeLocalSnapshot(name,source,devices,invalid=[],createdAt=new Date().toISOString(),kind="analysis"){
     const rows=Array.isArray(devices)?devices:[],snapshotId=crypto.randomUUID(),signature=devicesSignature(rows),savedAt=new Date().toISOString();
     const record={id:snapshotId,name,source,createdAt,savedAt,deviceCount:rows.length,devices:rows,invalid:Array.isArray(invalid)?invalid:[],signature,kind};
@@ -944,7 +954,7 @@
     if(snapshot.browserStored&&BrowserSnapshots){const stored=await BrowserSnapshots.load(snapshot.id);if(stored)return stored;}
     return snapshot;
   }
-  function createLocalComparisonIndex(devices=[]){const fields=["vendor","model","ip","address","room","switchIp","switchPort"],index=new Map();for(const device of devices||[]){const mac=normalize(device.mac||device.macFormatted);if(!mac)continue;const values=[];for(const field of fields)values.push(String(device[field]??""));index.set(mac,JSON.stringify(values));}return{fields,index};}
+  function createLocalComparisonIndex(devices=[]){const fields=["vendor","model","ip","address","room","smartroomId","switchIp","switchPort"],index=new Map();for(const device of devices||[]){const mac=normalize(device.mac||device.macFormatted);if(!mac)continue;const values=[];for(const field of fields)values.push(String(device[field]??""));index.set(mac,JSON.stringify(values));}return{fields,index};}
   function recordLocalMovementsFromIndex(previous,afterDevices=[],source="analysis",changedAt=new Date().toISOString()){
     if(!previous?.index)return recordLocalMovements([],afterDevices,source,changedAt);
     const entries=[],limit=MemoryGuard.limits.movementRows;
@@ -964,7 +974,7 @@
     await storeLocalSnapshot("До анализа: "+(source||"текущие данные"),source||"browser-before-analysis",state.devices,state.invalid,new Date().toISOString(),"before-analysis");
     return true;
   }
-  function localComparisonBetweenDevices(beforeDevices=[], afterDevices=[], fields=["vendor","model","ip","address","room","switchIp","switchPort"],limit=MemoryGuard.limits.movementRows){
+  function localComparisonBetweenDevices(beforeDevices=[], afterDevices=[], fields=["vendor","model","ip","address","room","smartroomId","switchIp","switchPort"],limit=MemoryGuard.limits.movementRows){
     const before=localDeviceMap(beforeDevices),after=localDeviceMap(afterDevices),items=[];
     for(const [mac,device] of after.entries()){if(items.length>=limit)break;if(!before.has(mac)){items.push({mac,type:"Добавлено",field:"-",before:"",after:device.macFormatted||formatMac(mac),beforeDevice:null,afterDevice:compactDashboardDevice(device)});continue;}const previous=before.get(mac);for(const field of fields){const oldValue=String(previous[field]??""),newValue=String(device[field]??"");if(oldValue!==newValue)items.push({mac,type:"Изменено",field:labels[field]||field,before:oldValue,after:newValue,beforeDevice:compactDashboardDevice(previous),afterDevice:compactDashboardDevice(device)});if(items.length>=limit)break;}}
     if(items.length<limit)for(const [mac,device] of before.entries()){if(items.length>=limit)break;if(!after.has(mac))items.push({mac,type:"Удалено",field:"-",before:device.macFormatted||formatMac(mac),after:"",beforeDevice:compactDashboardDevice(device),afterDevice:null});}
@@ -1226,7 +1236,7 @@
         await MemoryGuard.yieldToMainThread();
         const previousIndex=createLocalComparisonIndex(previousDevices);
         previousDevices=[];
-        const fields={vendor:true,model:true,ip:true,address:true,room:true,switchIp:true,switchPort:true,history:true};
+        const fields={vendor:true,model:true,ip:true,address:true,room:true,smartroomId:true,switchIp:true,switchPort:true,history:true};
         const local=await localAnalyzeFiles(fields,"primary",(value,detail)=>updateProcess(processId,35+processPercent(value)*0.5,detail));
         clearResultReference();
         state.devices=local.devices;
@@ -1414,7 +1424,7 @@
       if(!state.resultSnapshotId){
         if(!enrich.vendor)state.devices.forEach((item)=>{item.vendor="Не определено";});
         if(!enrich.model)state.devices.forEach((item)=>{item.model="";});
-        ["ip","address","room","switchIp","switchPort"].forEach((field)=>{if(!enrich[field])state.devices.forEach((item)=>{item[field]="";});});
+        ["ip","address","room","smartroomId","switchIp","switchPort"].forEach((field)=>{if(!enrich[field])state.devices.forEach((item)=>{item[field]="";});});
         inferSwitchAddressMappings(state.devices,source);
         applyLocalVendorModelMappings(state.devices);
       }
@@ -1551,7 +1561,7 @@
     }
   }
   async function collectLocalMacContext(mac){
-    const normalized=normalize(mac),snapshots=state.snapshots||[];
+    const normalized=normalize(mac),snapshots=finalDashboardSnapshots();
     let current=(state.devices||[]).find((item)=>normalize(item.mac||item.macFormatted)===normalized)||null;
     if(!current&&state.resultBrowserSnapshotId&&BrowserSnapshots?.findDevice){
       current=await BrowserSnapshots.findDevice(state.resultBrowserSnapshotId,normalized).catch(()=>null);
@@ -1576,7 +1586,7 @@
     $("#deviceDialogTitle").textContent=title;
     dialog.dataset.mac=normalized||requestedMac;
     $("#deviceDialogSubtitle").textContent=(device.vendor||"Unknown")+(device.model?" · "+device.model:"");
-    const localFields=["vendor","model","ip","address","room","switchIp","switchPort","source"].map((field)=>`<div class="device-field"><span>${esc(labels[field]||field)}</span><strong>${esc(device[field]||"—")}</strong></div>`).join("");
+    const localFields=["vendor","model","ip","address","room","smartroomId","switchIp","switchPort","source"].map((field)=>`<div class="device-field"><span>${esc(labels[field]||field)}</span><strong>${esc(device[field]||"—")}</strong></div>`).join("");
     $("#deviceMetrics").innerHTML=analytics?.metricsHtml||`<div class="metric"><span>Появлений в выгрузках</span><strong>${appearances.length}</strong></div><div class="metric"><span>Событий хронологии</span><strong>${events.length}</strong></div>`;
     $("#deviceFields").innerHTML=analytics?.fieldsHtml||localFields||'<p class="muted">Нет локальных полей устройства.</p>';
     $("#deviceDetailedReport").textContent=analytics?.detailedReportText||localDeviceDetailedReport(device,normalized||requestedMac);
@@ -1597,7 +1607,7 @@
     $("#deviceChronologySummary").innerHTML="";
     $("#deviceChronologyBody").innerHTML='<div class="mac-timeline-empty"><strong>Загрузка хронологии</strong><span>Проверяются сохранённые выгрузки без загрузки всей базы в память.</span></div>';
     $("#macHistoryStats").innerHTML="";
-    $("#deviceHistoryRecordsBody").innerHTML='<tr><td colspan="7" class="empty-state">Загрузка появлений MAC…</td></tr>';
+    $("#deviceHistoryRecordsBody").innerHTML='<tr><td colspan="8" class="empty-state">Загрузка появлений MAC…</td></tr>';
     $("#deviceHistoryBody").innerHTML='<tr><td colspan="5" class="empty-state">Загрузка изменений…</td></tr>';
     if(!dialog.open)dialog.showModal();
   }
@@ -1621,7 +1631,7 @@
     const local=await collectLocalMacContext(normalized);
     renderDeviceDialog(null,local,normalized);
   }
-  function localDeviceDetailedReport(device={},mac=""){const value=(fallback,...keys)=>{for(const key of keys){if(Object.prototype.hasOwnProperty.call(device,key)){const result=String(device[key]??"").trim();return result||fallback;}}return fallback;};return["=== ДЕТАЛЬНАЯ ИНФОРМАЦИЯ ОБ УСТРОЙСТВЕ ===","",`MAC-адрес: ${value(formatMac(mac),"macFormatted","mac_formatted","mac")}`,`Производитель: ${value("Unknown","vendor")}`,`Модель: ${value("Не указана","model")}`,`IP-адрес: ${value("Не указан","ip")}`,`Физический адрес: ${value("Не указан","address")}`,`Помещение: ${value("Не указано","room")}`,`Коммутатор: ${value("Не указан","switchIp","switch_ip")}`,`Порт: ${value("Не указан","switchPort","switch_port")}`,"","Источники данных:",`  Производитель: ${value("Неизвестен","vendorSource","vendor_source")}`,`  Модель: ${value("Неизвестен","modelSource","model_source")}`,"",`Примечания: ${value("Нет","matchDetails","match_details")}`].join("\n");}
+  function localDeviceDetailedReport(device={},mac=""){const value=(fallback,...keys)=>{for(const key of keys){if(Object.prototype.hasOwnProperty.call(device,key)){const result=String(device[key]??"").trim();return result||fallback;}}return fallback;};return["=== ДЕТАЛЬНАЯ ИНФОРМАЦИЯ ОБ УСТРОЙСТВЕ ===","",`MAC-адрес: ${value(formatMac(mac),"macFormatted","mac_formatted","mac")}`,`Производитель: ${value("Unknown","vendor")}`,`Модель: ${value("Не указана","model")}`,`IP-адрес: ${value("Не указан","ip")}`,`Физический адрес: ${value("Не указан","address")}`,`Помещение: ${value("Не указано","room")}`,`Smartroom ID: ${value("Не указан","smartroomId","smartroom_id")}`,`Коммутатор: ${value("Не указан","switchIp","switch_ip")}`,`Порт: ${value("Не указан","switchPort","switch_port")}`,"","Источники данных:",`  Производитель: ${value("Неизвестен","vendorSource","vendor_source")}`,`  Модель: ${value("Неизвестен","modelSource","model_source")}`,"",`Примечания: ${value("Нет","matchDetails","match_details")}`].join("\n");}
   function localMacHistoryRows(mac,loadedAppearances=null,loadedMovements=null){
     const normalized=normalize(mac),rows=loadedAppearances||((state.snapshots||[]).flatMap((snapshot)=>(snapshot.devices||[]).filter((device)=>normalize(device.mac||device.macFormatted)===normalized).map((device)=>({snapshotId:snapshot.id,snapshotName:snapshot.name,source:snapshot.source||device.source,createdAt:snapshot.createdAt,device}))));
     const dates=rows.map((item)=>item.createdAt||"").filter(Boolean).sort(),sources=new Set(rows.map((item)=>item.source||item.device?.source||item.snapshotName).filter(Boolean)),movements=loadedMovements||(state.movementHistory||[]).filter((item)=>normalize(item.mac||item.macFormatted)===normalized);
@@ -1803,7 +1813,7 @@
     }
   }
   function normalizeDashboardSettings(settings={}){
-    const defaults={vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true},autoRefresh:true,refreshInterval:60,changeMode:"snapshots",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},source=settings&&typeof settings==="object"?settings:{};
+    const defaults={vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true,changedRooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true},autoRefresh:true,refreshInterval:60,changeMode:"snapshots",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},source=settings&&typeof settings==="object"?settings:{};
     const changeMode=source.changeMode==="period"?"period":"snapshots";
     return{...defaults,...source,changeMode,visibleCards:{...defaults.visibleCards,...(source.visibleCards||{})},visibleCharts:{...defaults.visibleCharts,...(source.visibleCharts||{})},autoRefresh:source.autoRefresh!==false,refreshInterval:Math.max(10,Math.min(300,Number(source.refreshInterval||60)))};
   }
@@ -1818,7 +1828,7 @@
   }
   function applyDashboardSettings(settings){state.dashboardSettings=normalizeDashboardSettings({...state.dashboardSettings,...(settings||{})});const vendor=$("#dashboardVendorFilter"),room=$("#dashboardRoomFilter"),status=$("#dashboardStatusFilter");if(vendor)vendor.value=state.dashboardSettings.vendor||"";if(room)room.value=state.dashboardSettings.room||"";if(status)status.value=state.dashboardSettings.status||"all";syncDashboardChangeControls(state.dashboardSettings);applyDashboardVisibility(state.dashboardSettings);configureDashboardAutoRefresh(state.dashboardSettings);save();}
   async function loadDashboardSettings(){try{const result=await api("/dashboard/settings");applyDashboardSettings(result.settings||{});renderAnalytics();}catch{applyDashboardSettings(state.dashboardSettings);}}
-  function dashboardSettings(){const current=normalizeDashboardSettings(state.dashboardSettings);const vendor=$("#dashboardVendorFilter"),room=$("#dashboardRoomFilter"),status=$("#dashboardStatusFilter");if(vendor)current.vendor=vendor.value||current.vendor||"";if(room)current.room=room.value||current.room||"";if(status)current.status=status.value||"all";current.chartLimit=Number(current.chartLimit||8);current.showUnknown=current.showUnknown!==false;state.dashboardSettings=current;return current;}
+  function dashboardSettings(){const current=normalizeDashboardSettings(state.dashboardSettings);const vendor=$("#dashboardVendorFilter"),room=$("#dashboardRoomFilter"),status=$("#dashboardStatusFilter");if(vendor)current.vendor=vendor.value;if(room)current.room=room.value;if(status)current.status=status.value||"all";current.chartLimit=Number(current.chartLimit||8);current.showUnknown=current.showUnknown!==false;state.dashboardSettings=current;return current;}
   function selectDashboardSettingsTab(name="cards"){$$('[data-dashboard-settings-tab]').forEach((button)=>{const active=button.dataset.dashboardSettingsTab===name;button.classList.toggle("active-filter",active);button.setAttribute("aria-selected",String(active));});$$('[data-dashboard-settings-panel]').forEach((panel)=>{panel.hidden=panel.dataset.dashboardSettingsPanel!==name;});}
   function fillDashboardSettingsDialog(settings=dashboardSettings()){const normalized=normalizeDashboardSettings(settings);$$('[data-dashboard-card-toggle]').forEach((input)=>{input.checked=normalized.visibleCards[input.dataset.dashboardCardToggle]!==false;});$$('[data-dashboard-chart-toggle]').forEach((input)=>{input.checked=normalized.visibleCharts[input.dataset.dashboardChartToggle]!==false;});$("#dashboardAutoRefresh").checked=normalized.autoRefresh!==false;$("#dashboardRefreshInterval").value=normalized.refreshInterval;}
   function dashboardDialogSettings(){const current=normalizeDashboardSettings(dashboardSettings());$$('[data-dashboard-card-toggle]').forEach((input)=>{current.visibleCards[input.dataset.dashboardCardToggle]=input.checked;});$$('[data-dashboard-chart-toggle]').forEach((input)=>{current.visibleCharts[input.dataset.dashboardChartToggle]=input.checked;});current.autoRefresh=$("#dashboardAutoRefresh").checked;current.refreshInterval=Math.max(10,Math.min(300,Number($("#dashboardRefreshInterval").value||60)));return current;}
@@ -1828,7 +1838,7 @@
     const vendorChoice=settings.vendor||"",roomChoice=settings.room||"";
     $("#dashboardVendorFilter").innerHTML=filterOptionsHtml.vendors||'<option value="">Все производители</option>';
     $("#dashboardRoomFilter").innerHTML=filterOptionsHtml.rooms||'<option value="">Все помещения</option>';
-    applyDashboardSettings({...settings,vendor:$("#dashboardVendorFilter").value||vendorChoice,room:$("#dashboardRoomFilter").value||roomChoice});
+    applyDashboardSettings({...settings,vendor:$("#dashboardVendorFilter").value,room:$("#dashboardRoomFilter").value});
   }
   function renderLocalDashboardFilterOptions(settings=dashboardSettings()){const vendorOptions=['<option value="">Все производители</option>',...localTally(state.devices,"vendor",200).map(([value])=>`<option value="${esc(value)}" ${value===settings.vendor?"selected":""}>${esc(value)}</option>`)].join(""),roomOptions=['<option value="">Все помещения</option>',...localTally(state.devices,"room",200).map(([value])=>`<option value="${esc(value)}" ${value===settings.room?"selected":""}>${esc(value)}</option>`)].join("");$("#dashboardVendorFilter").innerHTML=vendorOptions;$("#dashboardRoomFilter").innerHTML=roomOptions;applyDashboardSettings(settings);}
   function dashboardStatusContext(){
@@ -1852,10 +1862,28 @@
   }
   function dashboardSnapshotId(snapshot,index){return String(snapshot?.id||snapshot?.snapshotId||snapshot?.name||`snapshot-${index+1}`);}
   function finalDashboardSnapshots(){
-    const all=(state.snapshots||[]).map((snapshot,index)=>({snapshot,index})),final=all.filter(({snapshot})=>snapshot?.kind==="analysis"||String(snapshot?.name||"").toLowerCase().startsWith("анализ:")),selected=final.length>=2?final:all;
+    const all=(state.snapshots||[]).map((snapshot,index)=>({snapshot,index})),final=all.filter(({snapshot})=>snapshot?.kind==="analysis"||String(snapshot?.name||"").toLowerCase().startsWith("анализ:")),selected=final.length?final:all;
     return selected.sort((left,right)=>{const order=(item)=>Number(item.snapshot?.snapshotOrder||0)||Date.parse(item.snapshot?.savedAt||"")||((state.snapshots||[]).length-item.index);return order(left)-order(right);}).map(({snapshot})=>snapshot);
   }
-  function dashboardSnapshotOptions(){return finalDashboardSnapshots().map((snapshot,index)=>({id:dashboardSnapshotId(snapshot,index),name:String(snapshot.name||dashboardSnapshotId(snapshot,index)),date:String(snapshot.fileCreatedAt||snapshot.createdAt||snapshot.created_at||""),savedAt:String(snapshot.savedAt||"")}));}
+  function dashboardSnapshotOptions(){return finalDashboardSnapshots().map((snapshot,index)=>({id:dashboardSnapshotId(snapshot,index),name:String(snapshot.name||dashboardSnapshotId(snapshot,index)),date:String(snapshot.fileCreatedAt||snapshot.createdAt||snapshot.created_at||snapshot.savedAt||""),savedAt:String(snapshot.savedAt||"")}));}
+  function dashboardSnapshotPair(settings=dashboardSettings(),options=dashboardSnapshotOptions()){
+    if(options.length<2)return{baselineId:options[0]?.id||"",comparisonId:options[0]?.id||"",dateFrom:settings.changeDateFrom||"",dateTo:settings.changeDateTo||""};
+    if(settings.changeMode!=="period"){
+      const comparisonId=options.some((item)=>item.id===settings.comparisonSnapshotId)?settings.comparisonSnapshotId:options.at(-1).id;
+      const comparisonIndex=Math.max(1,options.findIndex((item)=>item.id===comparisonId));
+      const baselineId=options.some((item)=>item.id===settings.baselineSnapshotId)&&settings.baselineSnapshotId!==comparisonId?settings.baselineSnapshotId:options[comparisonIndex-1].id;
+      return{baselineId,comparisonId,dateFrom:settings.changeDateFrom||"",dateTo:settings.changeDateTo||""};
+    }
+    const dated=options.map((item,index)=>({...item,index,time:Date.parse(item.date||item.savedAt||"")||0}));
+    const fromTime=settings.changeDateFrom?Date.parse(`${settings.changeDateFrom}T00:00:00`):-Infinity;
+    const toTime=settings.changeDateTo?Date.parse(`${settings.changeDateTo}T23:59:59`):Infinity;
+    let comparison=dated.filter((item)=>item.time<=toTime).at(-1)||dated.at(-1);
+    let baseline=dated.filter((item)=>item.time<fromTime&&item.index<comparison.index).at(-1);
+    if(!baseline)baseline=dated.filter((item)=>item.time>=fromTime&&item.time<=toTime&&item.index<comparison.index)[0];
+    if(!baseline)baseline=dated[Math.max(0,comparison.index-1)];
+    if(baseline.id===comparison.id){comparison=dated[Math.min(dated.length-1,baseline.index+1)]||comparison;}
+    return{baselineId:baseline.id,comparisonId:comparison.id,dateFrom:settings.changeDateFrom||new Date(baseline.time||Date.now()).toISOString().slice(0,10),dateTo:settings.changeDateTo||new Date(comparison.time||Date.now()).toISOString().slice(0,10)};
+  }
   function localDashboardFleet(){
     const unique=new Set(),series=[];
     for(const [index,snapshot] of finalDashboardSnapshots().entries()){
@@ -1868,18 +1896,19 @@
   function selectLatestDashboardPair(){const options=dashboardSnapshotOptions();if(options.length<2)return false;state.dashboardSettings=normalizeDashboardSettings({...state.dashboardSettings,changeMode:"snapshots",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:options.at(-2).id,comparisonSnapshotId:options.at(-1).id});return true;}
   function compactDashboardDevice(device){
     if(!device||typeof device!=="object")return null;
-    return{mac:normalize(device.mac||device.macFormatted),vendor:String(device.vendor||""),model:String(device.model||""),ip:String(device.ip||""),address:String(device.address||""),room:String(device.room||""),switchIp:String(device.switchIp||device.switch_ip||""),switchPort:String(device.switchPort||device.switch_port||"")};
+    return{mac:normalize(device.mac||device.macFormatted),vendor:String(device.vendor||""),model:String(device.model||""),ip:String(device.ip||""),address:String(device.address||""),room:String(device.room||""),smartroomId:String(device.smartroomId||device.smartroom_id||""),switchIp:String(device.switchIp||device.switch_ip||""),switchPort:String(device.switchPort||device.switch_port||"")};
   }
   function dashboardChangeSeverity(type,field,beforeDevice=null,afterDevice=null){
     const previous=compactDashboardDevice(beforeDevice),current=compactDashboardDevice(afterDevice);
     if(field==="switchIp"&&previous&&current&&previous.ip===current.ip&&previous.room===current.room)return"critical";
     if(["ip","address","room"].includes(field)||type==="removed")return"high";
-    if(["vendor","model","switchIp","switchPort","switch_ip","switch_port"].includes(field))return"medium";
+    if(["vendor","model","smartroomId","smartroom_id","switchIp","switchPort","switch_ip","switch_port"].includes(field))return"medium";
     return"low";
   }
   function summarizeDashboardChanges(changes=[]){
     const macs=(type)=>new Set(changes.filter((item)=>item.type===type).map((item)=>normalize(item.mac)).filter(Boolean));
-    return{added:macs("added").size,removed:macs("removed").size,modified:macs("modified").size,critical:new Set(changes.filter((item)=>item.severity==="critical").map((item)=>normalize(item.mac)).filter(Boolean)).size,total:new Set(changes.map((item)=>normalize(item.mac)).filter(Boolean)).size,fieldChanges:changes.length};
+    const changedRooms=new Set(changes.map((item)=>String(item.afterDevice?.room||item.beforeDevice?.room||"").trim()).filter(Boolean));
+    return{added:macs("added").size,removed:macs("removed").size,modified:macs("modified").size,critical:new Set(changes.filter((item)=>item.severity==="critical").map((item)=>normalize(item.mac)).filter(Boolean)).size,changedRooms:changedRooms.size,changedRoomValues:Array.from(changedRooms).sort(),total:new Set(changes.map((item)=>normalize(item.mac)).filter(Boolean)).size,fieldChanges:changes.length};
   }
   function groupDashboardChanges(changes=[]){
     const priority={critical:4,high:3,medium:2,low:1},groups=new Map();
@@ -1903,14 +1932,15 @@
     return Array.from(groups.values()).sort((a,b)=>String(b.date).localeCompare(String(a.date))||a.mac.localeCompare(b.mac));
   }
   function localDashboardChangeAnalysis(settings=dashboardSettings()){
-    const fieldLabels={vendor:"Производитель",model:"Модель",ip:"IP-адрес",address:"Адрес помещения",room:"Помещение",switchIp:"IP коммутатора",switchPort:"Порт",device:"Устройство"},typeLabels={added:"Добавлено",removed:"Отсутствует",modified:"Изменено"},snapshotRows=finalDashboardSnapshots(),options=dashboardSnapshotOptions(),changes=[];
+    const fieldLabels={vendor:"Производитель",model:"Модель",ip:"IP-адрес",address:"Адрес помещения",room:"Помещение",smartroomId:"Smartroom ID",switchIp:"IP коммутатора",switchPort:"Порт",device:"Устройство"},typeLabels={added:"Добавлено",removed:"Отсутствует",modified:"Изменено"},snapshotRows=finalDashboardSnapshots(),options=dashboardSnapshotOptions(),changes=[];
     const row=(mac,date,type,field="device",before="",after="",source="history",beforeDevice=null,afterDevice=null)=>{field=({switch_ip:"switchIp",switch_port:"switchPort"})[field]||field;changes.push({mac,macFormatted:formatMac(mac),date,type,typeLabel:typeLabels[type]||"Изменено",field,fieldLabel:fieldLabels[field]||field,before:String(before||"-"),after:String(after||"-"),source:String(source||"history"),beforeDevice:compactDashboardDevice(beforeDevice),afterDevice:compactDashboardDevice(afterDevice),severity:dashboardChangeSeverity(type,field,beforeDevice,afterDevice)});};
-    let baselineSnapshotId=settings.baselineSnapshotId||options.at(-2)?.id||"",comparisonSnapshotId=settings.comparisonSnapshotId||options.at(-1)?.id||"",dateFrom=settings.changeDateFrom||"",dateTo=settings.changeDateTo||"";
-    if(settings.changeMode==="snapshots"&&snapshotRows.length>=2){
+    const pair=dashboardSnapshotPair(settings,options);
+    let baselineSnapshotId=pair.baselineId,comparisonSnapshotId=pair.comparisonId,dateFrom=pair.dateFrom,dateTo=pair.dateTo;
+    if(snapshotRows.length>=2&&baselineSnapshotId&&comparisonSnapshotId&&baselineSnapshotId!==comparisonSnapshotId){
       const byId=new Map(snapshotRows.map((snapshot,index)=>[dashboardSnapshotId(snapshot,index),snapshot])),baseline=byId.get(baselineSnapshotId)||snapshotRows.at(-2),comparison=byId.get(comparisonSnapshotId)||snapshotRows.at(-1),beforeMap=new Map((baseline.devices||[]).map((device)=>[normalize(device.mac||device.macFormatted),device]).filter(([mac])=>mac)),afterMap=new Map((comparison.devices||[]).map((device)=>[normalize(device.mac||device.macFormatted),device]).filter(([mac])=>mac)),date=comparison.fileCreatedAt||comparison.createdAt||comparison.created_at||"";
       afterMap.forEach((device,mac)=>{if(!beforeMap.has(mac))row(mac,date,"added","device","",device.source||"Устройство","snapshot",null,device);});
       beforeMap.forEach((device,mac)=>{if(!afterMap.has(mac))row(mac,date,"removed","device",device.source||"Устройство","","snapshot",device,null);});
-      const fields=["vendor","model","ip","address","room","switchIp","switchPort"];
+      const fields=["vendor","model","ip","address","room","smartroomId","switchIp","switchPort"];
       afterMap.forEach((device,mac)=>{const before=beforeMap.get(mac);if(!before)return;fields.forEach((field)=>{if(String(before[field]||"")!==String(device[field]||""))row(mac,date,"modified",field,before[field],device[field],"snapshot",before,device);});});
     }else{
       const end=dateTo?new Date(`${dateTo}T23:59:59`):new Date(),start=dateFrom?new Date(`${dateFrom}T00:00:00`):new Date(end.getTime()-30*86400000);dateFrom=dateFrom||start.toISOString().slice(0,10);dateTo=dateTo||end.toISOString().slice(0,10);
@@ -1919,31 +1949,34 @@
     }
     const groups=groupDashboardChanges(changes);changes.sort((a,b)=>String(b.date).localeCompare(String(a.date)));return{mode:settings.changeMode,dateFrom,dateTo,baselineSnapshotId,comparisonSnapshotId,snapshotOptions:options,summary:summarizeDashboardChanges(changes),changes,groups};
   }
-  function browserSnapshotChangeAnalysis(comparison,options=[]){
+  function browserSnapshotChangeAnalysis(comparison,options=[],settings=dashboardSettings()){
     if(!comparison)return{mode:"snapshots",baselineSnapshotId:"",comparisonSnapshotId:"",snapshotOptions:options,summary:{added:0,removed:0,modified:0,critical:0,total:0},changes:[]};
-    const fieldLabels={vendor:"Производитель",model:"Модель",ip:"IP-адрес",address:"Адрес помещения",room:"Помещение",switchIp:"IP коммутатора",switchPort:"Порт",device:"Устройство"},typeLabels={added:"Добавлено",removed:"Отсутствует",modified:"Изменено"};
-    const changes=(comparison.changes||[]).map((item)=>{const field=item.field||"device",type=item.type||"modified";return{...item,date:item.changedAt||comparison.changedAt||"",macFormatted:formatMac(item.mac),typeLabel:typeLabels[type]||"Изменено",fieldLabel:fieldLabels[field]||field,before:String(item.before||"-"),after:String(item.after||"-"),severity:dashboardChangeSeverity(type,field,item.beforeDevice,item.afterDevice)};});
-    const raw=comparison.summary||{},summary={...summarizeDashboardChanges(changes),modifiedFields:Number(raw.modifiedFields||changes.filter((item)=>item.type==="modified").length),modifiedDevices:Number(raw.modifiedDevices||0),changedDevices:Number(raw.changedDevices||0),unchanged:Number(raw.unchanged||0)};
-    return{mode:"snapshots",baselineSnapshotId:comparison.baselineSnapshotId,comparisonSnapshotId:comparison.comparisonSnapshotId,snapshotOptions:options,summary,changes,groups:groupDashboardChanges(changes),fieldCounts:comparison.fieldCounts||[]};
+    const fieldLabels={vendor:"Производитель",model:"Модель",ip:"IP-адрес",address:"Адрес помещения",room:"Помещение",smartroomId:"Smartroom ID",switchIp:"IP коммутатора",switchPort:"Порт",device:"Устройство"},typeLabels={added:"Добавлено",removed:"Отсутствует",modified:"Изменено"};
+    const inScope=(item)=>{const devices=[item.afterDevice,item.beforeDevice].filter(Boolean);return(!settings.vendor||devices.some((device)=>String(device.vendor||"")===settings.vendor))&&(!settings.room||devices.some((device)=>String(device.room||"")===settings.room));};
+    const changes=(comparison.changes||[]).filter(inScope).map((item)=>{const field=item.field||"device",type=item.type||"modified";return{...item,date:item.changedAt||comparison.changedAt||"",macFormatted:formatMac(item.mac),typeLabel:typeLabels[type]||"Изменено",fieldLabel:fieldLabels[field]||field,before:String(item.before||"-"),after:String(item.after||"-"),severity:dashboardChangeSeverity(type,field,item.beforeDevice,item.afterDevice)};});
+    const raw=comparison.summary||{},derived=summarizeDashboardChanges(changes),filtered=Boolean(settings.vendor||settings.room),summary={...derived,modifiedFields:changes.filter((item)=>item.type==="modified").length,modifiedDevices:filtered?derived.modified:Number(raw.modifiedDevices??derived.modified),changedDevices:filtered?derived.total:Number(raw.changedDevices??derived.total),unchanged:filtered?0:Number(raw.unchanged||0)};
+    return{mode:settings.changeMode||"snapshots",dateFrom:settings.changeDateFrom||"",dateTo:settings.changeDateTo||"",baselineSnapshotId:comparison.baselineSnapshotId,comparisonSnapshotId:comparison.comparisonSnapshotId,snapshotOptions:options,summary,changes,groups:groupDashboardChanges(changes),fieldCounts:comparison.fieldCounts||[]};
   }
   async function loadBrowserDashboardCache(settings=dashboardSettings()){
     if(!state.resultBrowserSnapshotId||!BrowserSnapshots?.aggregate)return null;
-    const options=dashboardSnapshotOptions(),currentId=state.resultBrowserSnapshotId,currentIndex=options.findIndex((item)=>item.id===currentId),comparisonId=settings.comparisonSnapshotId&&options.some((item)=>item.id===settings.comparisonSnapshotId)?settings.comparisonSnapshotId:currentId,comparisonIndex=options.findIndex((item)=>item.id===comparisonId),baselineId=settings.baselineSnapshotId&&options.some((item)=>item.id===settings.baselineSnapshotId)?settings.baselineSnapshotId:options[Math.max(0,(comparisonIndex>=0?comparisonIndex:currentIndex)-1)]?.id||"";
-    const fleetCacheKey=JSON.stringify(options.map((item)=>[item.id,item.date,item.savedAt])),cacheKey=JSON.stringify({fleetCacheKey,currentId,baselineId,comparisonId});
-    if(browserDashboardCache?.cacheKey===cacheKey)return{...browserDashboardCache,settings:{...settings,changeMode:"snapshots",baselineSnapshotId:baselineId,comparisonSnapshotId:comparisonId}};
-    const aggregate=await BrowserSnapshots.aggregate(currentId,{limit:200});if(!aggregate)return null;
+    const options=dashboardSnapshotOptions(),currentId=state.resultBrowserSnapshotId,pair=dashboardSnapshotPair(settings,options),baselineId=pair.baselineId,comparisonId=pair.comparisonId;
+    const effectiveSettings={...settings,baselineSnapshotId:baselineId,comparisonSnapshotId:comparisonId,changeDateFrom:pair.dateFrom,changeDateTo:pair.dateTo};
+    const fleetCacheKey=JSON.stringify({snapshots:options.map((item)=>[item.id,item.date,item.savedAt]),vendor:settings.vendor,room:settings.room,showUnknown:settings.showUnknown}),cacheKey=JSON.stringify({fleetCacheKey,currentId,baselineId,comparisonId,mode:settings.changeMode,dateFrom:pair.dateFrom,dateTo:pair.dateTo});
+    if(browserDashboardCache?.cacheKey===cacheKey)return{...browserDashboardCache,settings:effectiveSettings};
+    const aggregate=await BrowserSnapshots.aggregate(currentId,{limit:200,vendor:settings.vendor,room:settings.room,showUnknown:settings.showUnknown});if(!aggregate)return null;
+    const filterAggregate=settings.vendor||settings.room||settings.showUnknown===false?await BrowserSnapshots.aggregate(currentId,{limit:200}):aggregate;
     let fleet=state.dashboardFleetCache?.key===fleetCacheKey?state.dashboardFleetCache.value:null;
-    if(!fleet){fleet=BrowserSnapshots.aggregateSeries?await BrowserSnapshots.aggregateSeries(options):{uniqueAcrossUploads:aggregate.uniqueMacs,latestCount:aggregate.devices,series:options.map((item)=>({id:item.id,name:item.name,date:item.date,count:Number(finalDashboardSnapshots().find((snapshot,index)=>dashboardSnapshotId(snapshot,index)===item.id)?.deviceCount||0)}))};state.dashboardFleetCache={key:fleetCacheKey,value:fleet};save();}
+    if(!fleet){fleet=BrowserSnapshots.aggregateSeries?await BrowserSnapshots.aggregateSeries(options,{vendor:settings.vendor,room:settings.room,showUnknown:settings.showUnknown}):{uniqueAcrossUploads:aggregate.uniqueMacs,latestCount:aggregate.devices,series:options.map((item)=>({id:item.id,name:item.name,date:item.date,count:Number(finalDashboardSnapshots().find((snapshot,index)=>dashboardSnapshotId(snapshot,index)===item.id)?.deviceCount||0)}))};state.dashboardFleetCache={key:fleetCacheKey,value:fleet};save();}
     const comparison=baselineId&&comparisonId&&baselineId!==comparisonId&&BrowserSnapshots.compareSnapshots?await BrowserSnapshots.compareSnapshots(baselineId,comparisonId,{limit:MemoryGuard.limits.movementRows||5000}):null;
-    const changeAnalysis=browserSnapshotChangeAnalysis(comparison,options),roomRows=(aggregate.rooms||[]).map((item)=>({label:item.label,count:item.value,percentOfAssigned:Number((item.value/Math.max(1,aggregate.withRoom)*100).toFixed(1)),percentOfAll:Number((item.value/Math.max(1,aggregate.devices)*100).toFixed(1))}));
+    const changeAnalysis=browserSnapshotChangeAnalysis(comparison,options,effectiveSettings),roomRows=(aggregate.rooms||[]).map((item)=>({label:item.label,count:item.value,percentOfAssigned:Number((item.value/Math.max(1,aggregate.withRoom)*100).toFixed(1)),percentOfAll:Number((item.value/Math.max(1,aggregate.devices)*100).toFixed(1))}));
     const report={total:aggregate.devices,vendors:(aggregate.vendors||[]).map((item)=>({label:item.label,count:item.value,percent:Number((item.value/Math.max(1,aggregate.devices)*100).toFixed(1))})),models:(aggregate.models||[]).map((item)=>({label:item.label,count:item.value,percent:Number((item.value/Math.max(1,aggregate.devices)*100).toFixed(1))})),rooms:roomRows,roomOccupancy:{assignedDevices:aggregate.withRoom,unassignedDevices:Math.max(0,aggregate.devices-aggregate.withRoom),assignedPercent:Number((aggregate.withRoom/Math.max(1,aggregate.devices)*100).toFixed(1)),uniqueRooms:aggregate.uniqueRooms,averageDevicesPerRoom:aggregate.uniqueRooms?Number((aggregate.withRoom/aggregate.uniqueRooms).toFixed(1)):0,mostOccupied:roomRows[0]||null,rooms:roomRows},coverage:{uniqueVendors:aggregate.uniqueVendors,uniqueModels:aggregate.uniqueModels,address:{count:aggregate.withAddress,percent:Number((aggregate.withAddress/Math.max(1,aggregate.devices)*100).toFixed(1))},room:{count:aggregate.withRoom,percent:Number((aggregate.withRoom/Math.max(1,aggregate.devices)*100).toFixed(1))},ip:{count:aggregate.withIp,percent:Number((aggregate.withIp/Math.max(1,aggregate.devices)*100).toFixed(1))},switch:{count:aggregate.withSwitch,percent:Number((aggregate.withSwitch/Math.max(1,aggregate.devices)*100).toFixed(1))}}};
     report.reportText=["=== АНАЛИТИКА ПО ФИНАЛЬНОМУ ОБОГАЩЁННОМУ ФАЙЛУ ===","",`Всего устройств: ${aggregate.devices}`,`Определено производителей: ${aggregate.known} (${aggregate.knownPercent}%)`,`Не определено: ${aggregate.unknown}`,`Уникальных производителей: ${aggregate.uniqueVendors}`,`Уникальных моделей: ${aggregate.uniqueModels}`,`Помещений: ${aggregate.uniqueRooms}`,`Коммутаторов: ${aggregate.uniqueSwitches}`,"",`С адресом: ${aggregate.withAddress}`,`С помещением: ${aggregate.withRoom}`,`С IP: ${aggregate.withIp}`,`С коммутатором: ${aggregate.withSwitch}`].join("\n");
-    return{cacheKey,aggregate,fleet,comparison,changeAnalysis,report,settings:{...settings,changeMode:"snapshots",baselineSnapshotId:baselineId,comparisonSnapshotId:comparisonId}};
+    return{cacheKey,aggregate,filterAggregate,fleet,comparison,changeAnalysis,report,settings:effectiveSettings};
   }
   function renderBrowserDashboardCache(cache){
-    if(!cache)return false;browserDashboardCache=cache;const {aggregate,comparison,changeAnalysis,report}=cache,fleet=cache.fleet||{uniqueAcrossUploads:aggregate.uniqueMacs,latestCount:aggregate.devices,series:[]},settings=cache.settings||dashboardSettings(),summary=changeAnalysis.summary||{},status=settings.status||"all",vendorRows=status==="changed"?(comparison?.changedVendors||[]):status==="missing"?(comparison?.missingVendors||[]):status==="unchanged"?(comparison?.unchangedVendors||[]):aggregate.vendors||[];
+    if(!cache)return false;browserDashboardCache=cache;const {aggregate,comparison,changeAnalysis,report}=cache,filterAggregate=cache.filterAggregate||aggregate,fleet=cache.fleet||{uniqueAcrossUploads:aggregate.uniqueMacs,latestCount:aggregate.devices,series:[]},settings=cache.settings||dashboardSettings(),summary=changeAnalysis.summary||{},status=settings.status||"all",vendorRows=status==="changed"?(comparison?.changedVendors||[]):status==="missing"?(comparison?.missingVendors||[]):status==="unchanged"?(comparison?.unchangedVendors||[]):aggregate.vendors||[];
     state.dashboardSettings=normalizeDashboardSettings({...state.dashboardSettings,...settings});dashboardFilteredDevices=state.devices;
-    const optionHtml=(emptyLabel,rows,selected)=>`<option value="">${emptyLabel}</option>`+(rows||[]).map((item)=>`<option value="${esc(item.label)}" ${item.label===selected?"selected":""}>${esc(item.label)}</option>`).join("");$("#dashboardVendorFilter").innerHTML=optionHtml("Все производители",aggregate.vendors,settings.vendor);$("#dashboardRoomFilter").innerHTML=optionHtml("Все помещения",aggregate.rooms,settings.room);
+    const optionHtml=(emptyLabel,rows,selected)=>`<option value="">${emptyLabel}</option>`+(rows||[]).map((item)=>`<option value="${esc(item.label)}" ${item.label===selected?"selected":""}>${esc(item.label)}</option>`).join("");$("#dashboardVendorFilter").innerHTML=optionHtml("Все производители",filterAggregate.vendors,settings.vendor);$("#dashboardRoomFilter").innerHTML=optionHtml("Все помещения",filterAggregate.rooms,settings.room);
     const modifiedDevices=Number(summary.modifiedDevices??summary.modified??0),addedDevices=Number(summary.added||0),unchangedDevices=comparison?Math.max(0,Number(fleet.latestCount||aggregate.devices)-modifiedDevices-addedDevices):Number(fleet.latestCount||aggregate.devices);
     const metrics={devices:aggregate.devices,total:Number(fleet.latestCount||aggregate.devices),totalAcross:Number(fleet.uniqueAcrossUploads||aggregate.uniqueMacs),changed:modifiedDevices,missing:Number(summary.removed||0),unchanged:unchangedDevices,vendors:aggregate.uniqueVendors,rooms:aggregate.uniqueRooms,uniqueMacs:Number(fleet.uniqueAcrossUploads||aggregate.uniqueMacs),switches:aggregate.uniqueSwitches},statusCharts={dynamics:(fleet.series||[]).slice(-20).map((item)=>({label:String(item.name||item.date||item.id).slice(0,28),value:Number(item.count||0)})),vendors:vendorRows,fields:comparison?.fieldCounts||[],missing:comparison?.missingVendors||[]};
     renderDashboardStatus({metrics,settings:state.dashboardSettings,changeAnalysis,statusCharts});$("#snapshotMetric").textContent=finalDashboardSnapshots().length;$("#uniqueMacMetric").textContent=fleet.uniqueAcrossUploads||aggregate.uniqueMacs;$("#switchMetric").textContent=aggregate.uniqueSwitches;$("#roomMetric").textContent=aggregate.uniqueRooms;
@@ -1955,11 +1988,11 @@
     if($("#dashboardPeriodControls"))$("#dashboardPeriodControls").hidden=(settings.changeMode==="snapshots");if($("#dashboardSnapshotControls"))$("#dashboardSnapshotControls").hidden=(settings.changeMode!=="snapshots");
     const fill=(selector,selected)=>{const node=$(selector);if(!node)return;node.innerHTML=options.length?options.map((item)=>`<option value="${esc(item.id)}" ${item.id===selected?"selected":""}>${esc(item.name)}${item.date?` · ${esc(item.date.slice(0,10))}`:""}</option>`).join(""):'<option value="">Нет сохранённых выгрузок</option>';};fill("#dashboardBaselineSnapshot",settings.baselineSnapshotId||options.at(-2)?.id||"");fill("#dashboardComparisonSnapshot",settings.comparisonSnapshotId||options.at(-1)?.id||"");
   }
-  function renderDashboardChanges(analysis={}){dashboardChangeAnalysis=analysis?.changes?analysis:localDashboardChangeAnalysis();dashboardChangeAnalysis.groups=groupDashboardChanges(dashboardChangeAnalysis.changes||[]);dashboardChangeAnalysis.summary=summarizeDashboardChanges(dashboardChangeAnalysis.changes||[]);const summary=dashboardChangeAnalysis.summary||{},set=(selector,value)=>{if($(selector))$(selector).textContent=String(value||0);};set("#dashboardChangeTotal",summary.total);set("#dashboardCriticalCount",summary.critical);set("#dashboardAddedCount",summary.added);set("#dashboardRemovedCount",summary.removed);set("#dashboardModifiedCount",summary.modified);const label=dashboardChangeAnalysis.mode==="snapshots"?`Выгрузки: ${dashboardChangeAnalysis.baselineSnapshotId||"-"} → ${dashboardChangeAnalysis.comparisonSnapshotId||"-"}`:`Период: ${dashboardChangeAnalysis.dateFrom||"-"} → ${dashboardChangeAnalysis.dateTo||"-"}`;if($("#dashboardChangesPeriodLabel"))$("#dashboardChangesPeriodLabel").textContent=label;syncDashboardChangeControls({...state.dashboardSettings,...dashboardChangeAnalysis},dashboardChangeAnalysis.snapshotOptions||dashboardSnapshotOptions());renderDashboardChangesTable();}
+  function renderDashboardChanges(analysis={}){dashboardChangeAnalysis=analysis?.changes?analysis:localDashboardChangeAnalysis();dashboardChangeAnalysis.groups=groupDashboardChanges(dashboardChangeAnalysis.changes||[]);dashboardChangeAnalysis.summary=summarizeDashboardChanges(dashboardChangeAnalysis.changes||[]);const summary=dashboardChangeAnalysis.summary||{},set=(selector,value)=>{if($(selector))$(selector).textContent=String(value||0);};set("#dashboardChangeTotal",summary.total);set("#dashboardCriticalCount",summary.critical);set("#dashboardAddedCount",summary.added);set("#dashboardRemovedCount",summary.removed);set("#dashboardModifiedCount",summary.modified);set("#dashboardChangedRoomMetric",summary.changedRooms);const label=dashboardChangeAnalysis.mode==="snapshots"?`Выгрузки: ${dashboardChangeAnalysis.baselineSnapshotId||"-"} → ${dashboardChangeAnalysis.comparisonSnapshotId||"-"}`:`Период: ${dashboardChangeAnalysis.dateFrom||"-"} → ${dashboardChangeAnalysis.dateTo||"-"}`;if($("#dashboardChangesPeriodLabel"))$("#dashboardChangesPeriodLabel").textContent=label;syncDashboardChangeControls({...state.dashboardSettings,...dashboardChangeAnalysis},dashboardChangeAnalysis.snapshotOptions||dashboardSnapshotOptions());renderDashboardChangesTable();}
   function renderDashboardChangesTable(){
-    const severity=$("#dashboardChangeSeverityFilter")?.value||"all",type=$("#dashboardChangeTypeFilter")?.value||dashboardChangeTypeFilter||"all",query=($("#dashboardChangeSearch")?.value||"").trim().toLowerCase(),labels={critical:"Критическое",high:"Высокое",medium:"Среднее",low:"Низкое"},typeLabels={added:"Добавлено",removed:"Отсутствует",modified:"Изменено"};
+    const severity=$("#dashboardChangeSeverityFilter")?.value||"all",type=$("#dashboardChangeTypeFilter")?.value||dashboardChangeTypeFilter||"all",query=($("#dashboardChangeSearch")?.value||"").trim().toLowerCase(),macQuery=String($("#dashboardChangeMacSearch")?.value||"").toUpperCase().replace(/[^0-9A-F]/g,""),labels={critical:"Критическое",high:"Высокое",medium:"Среднее",low:"Низкое"},typeLabels={added:"Добавлено",removed:"Отсутствует",modified:"Изменено"};
     dashboardChangeTypeFilter=type;
-    const groups=(dashboardChangeAnalysis.groups||groupDashboardChanges(dashboardChangeAnalysis.changes||[])).filter((group)=>(severity==="all"||group.severity===severity)&&(type==="all"||group.types.has(type))&&(!query||[group.macFormatted,group.device.vendor,group.device.model,group.device.ip,group.device.address,group.device.room,group.device.switchIp,group.source,...group.changes.flatMap((item)=>[item.fieldLabel,item.before,item.after])].some((value)=>String(value||"").toLowerCase().includes(query)))).slice(0,1000);
+    const groups=(dashboardChangeAnalysis.groups||groupDashboardChanges(dashboardChangeAnalysis.changes||[])).filter((group)=>(severity==="all"||group.severity===severity)&&(type==="all"||group.types.has(type))&&(!macQuery||String(group.mac||"").includes(macQuery))&&(!query||[group.macFormatted,group.device.vendor,group.device.model,group.device.ip,group.device.address,group.device.room,group.device.smartroomId,group.device.switchIp,group.source,...group.changes.flatMap((item)=>[item.fieldLabel,item.before,item.after])].some((value)=>String(value||"").toLowerCase().includes(query)))).slice(0,1000);
     $("#dashboardChangesBody").innerHTML=groups.length?groups.map((group,index)=>{
       const groupId=`dashboard-change-${index}`,device=group.device||{},fields=group.changes.map((item)=>item.fieldLabel).filter((value,index,all)=>all.indexOf(value)===index).join(", ");
       const parent=`<tr class="change-row change-${esc(group.severity)} dashboard-change-parent" data-dashboard-change-group="${groupId}"><td><span class="severity-badge severity-${esc(group.severity)}">${labels[group.severity]||group.severity}</span></td><td>${esc(String(group.date||"-").replace("T"," ").slice(0,19))}</td><td><button class="movement-group-toggle" data-toggle-dashboard-change="${groupId}" aria-expanded="false" title="Развернуть изменения">▸</button> <button class="link-button" data-mac="${esc(group.mac)}">${esc(group.macFormatted||group.mac)}</button></td><td>${esc(typeLabels[group.type]||group.type)}</td><td>${esc(device.model||"-")}</td><td>${esc(device.address||"-")}</td><td>${esc(device.room||"-")}</td><td>${esc(fields||"Устройство")}</td><td>${esc(group.source||"-")}</td></tr>`;
@@ -1976,7 +2009,7 @@
   function renderDashboardStatus(payload={}){
     const metrics=payload.metrics||{},total=Number(metrics.total||0),changed=Number(metrics.changed||0),unchanged=Number(metrics.unchanged||0),settings=payload.settings||dashboardSettings(),charts=payload.statusCharts||{};
     const set=(selector,value)=>{const node=$(selector);if(node)node.textContent=value;};
-    set("#dashboardTotalMetric",metrics.totalAcross!==undefined?`${Number(metrics.totalAcross||0)} / ${total}`:total);set("#dashboardChangedMetric",changed);set("#dashboardMissingMetric",Number(metrics.missing||0));set("#dashboardUnchangedMetric",unchanged);set("#dashboardVendorMetric",Number(metrics.vendors||0));set("#dashboardRoomCountMetric",Number(metrics.rooms||0));
+    set("#dashboardTotalMetric",metrics.totalAcross!==undefined?`${Number(metrics.totalAcross||0)} / ${total}`:total);set("#dashboardChangedMetric",changed);set("#dashboardMissingMetric",Number(metrics.missing||0));set("#dashboardUnchangedMetric",unchanged);set("#dashboardVendorMetric",Number(metrics.vendors||0));set("#dashboardRoomCountMetric",Number(metrics.rooms||0));set("#dashboardChangedRoomMetric",Number(payload.changeAnalysis?.summary?.changedRooms||0));
     const critical=Number(payload.changeAnalysis?.summary?.critical||0);set("#dashboardChangedHint",`${total?Math.round(changed/total*100):0}% от всех · критических: ${critical}`);set("#dashboardUnchangedHint",`${total?Math.round(unchanged/total*100):0}% от всех`);
     $$("[data-dashboard-status]").forEach((button)=>button.classList.toggle("active-filter",button.dataset.dashboardStatus===(settings.status||"all")));
     const draw=(selector,items,empty)=>{const node=$(selector);if(node)node.innerHTML=localChartHtml((items||[]).map((item)=>Array.isArray(item)?item:[item.label,item.value]),empty);};
@@ -2172,7 +2205,20 @@
       toast("Backend анализ качества данных завершён.");
     }catch(error){analyzeLocalQuality();}
   }
+  function initializeAnalyticsExpanders(){
+    $$("#analyticsView .analytics-grid .tool-panel").forEach((panel)=>{
+      if(panel.dataset.analyticsExpandable==="ready")return;
+      panel.dataset.analyticsExpandable="ready";
+      const head=panel.querySelector(".panel-head");
+      if(!head)return;
+      const actions=document.createElement("div");
+      actions.className="analytics-panel-actions";
+      actions.innerHTML='<button class="icon-button" type="button" data-analytics-collapse title="Свернуть раздел" aria-label="Свернуть раздел">−</button><button class="icon-button" type="button" data-analytics-expand title="Развернуть раздел" aria-label="Развернуть раздел">⛶</button>';
+      head.append(actions);
+    });
+  }
   async function renderAnalytics(){
+    initializeAnalyticsExpanders();
     if(browserOnlyMode&&state.resultBrowserSnapshotId&&BrowserSnapshots?.aggregate){
       try{const cache=await loadBrowserDashboardCache(dashboardSettings());if(renderBrowserDashboardCache(cache)){applyDashboardVisibility(state.dashboardSettings);return;}}catch(error){toast("Не удалось построить полный локальный dashboard: "+error.message);}
     }
@@ -2198,13 +2244,43 @@
     renderVendorModelHistory(query, from, to);
     renderMovementHistory(query, from, to);
   }
+  async function runGlobalSearch(){
+    const query=($("#globalSearchInput")?.value||"").trim();
+    if(!query){$("#globalSearchInput")?.focus();return;}
+    const mac=normalize(query);
+    if(mac){await showDevice(mac);return;}
+    const historyInput=$("#historySearchInput");
+    if(historyInput)historyInput.value=query;
+    view("history");
+    renderHistory();
+  }
   function localHistoryItems(query="", from="", to=""){
     const q=String(query||"").toLowerCase(),fromTime=from?Date.parse(from+"T00:00:00"):0,toTime=to?Date.parse(to+"T23:59:59"):Infinity;
-    return (state.snapshots||[]).filter((snapshot)=>{const time=Date.parse(snapshot.createdAt||snapshot.date||"")||0,text=[snapshot.name,snapshot.source,(snapshot.devices||[]).map((device)=>[device.mac,device.macFormatted,device.vendor,device.model,device.ip,device.address,device.room,device.switchIp].join(" ")).join(" ")].join(" ").toLowerCase();return time>=fromTime&&time<=toTime&&(!q||text.includes(q));});
+    return (state.snapshots||[]).filter((snapshot)=>{const time=Date.parse(snapshot.createdAt||snapshot.date||"")||0,text=[snapshot.name,snapshot.source,(snapshot.devices||[]).map((device)=>[device.mac,device.macFormatted,device.vendor,device.model,device.ip,device.address,device.room,device.smartroomId,device.switchIp].join(" ")).join(" ")].join(" ").toLowerCase();return time>=fromTime&&time<=toTime&&(!q||text.includes(q));});
   }
   function localSnapshotHistoryRows(query="", from="", to=""){
     const snapshots=localHistoryItems(query,from,to);
-    return snapshots.length?snapshots.map((snapshot)=>`<tr><td><input type="checkbox" data-snapshot-select value="${esc(snapshot.id)}" aria-label="Выбрать выгрузку"></td><td>${esc(snapshot.createdAt?new Date(snapshot.createdAt).toLocaleString("ru-RU"):"")}</td><td>${esc(snapshot.name||"Snapshot")}</td><td>${Number(snapshot.deviceCount??(snapshot.devices||[]).length)}</td><td>${esc(snapshot.source||"browser")}</td><td><button class="button secondary" data-local-snapshot="${esc(snapshot.id)}">Открыть</button></td></tr>`).join(""):'<tr><td colspan="6" class="empty-state">Локальная история снимков пока пуста.</td></tr>';
+    return localSnapshotHistoryRowsFrom(snapshots);
+  }
+  function localSnapshotHistoryRowsFrom(snapshots=[]){
+    return snapshots.length?snapshots.map((snapshot)=>`<tr><td><input type="checkbox" data-snapshot-select value="${esc(snapshot.id)}" aria-label="Выбрать выгрузку"></td><td>${esc(snapshot.createdAt?new Date(snapshot.createdAt).toLocaleString("ru-RU"):"")}</td><td>${esc(snapshot.name||"Snapshot")}${snapshot._matchCount!==undefined?`<small class="muted">Совпадений: ${Number(snapshot._matchCount||0)}</small>`:""}</td><td>${Number(snapshot.deviceCount??(snapshot.devices||[]).length)}</td><td>${esc(snapshot.source||"browser")}</td><td><button class="button secondary" data-local-snapshot="${esc(snapshot.id)}">Открыть</button></td></tr>`).join(""):'<tr><td colspan="6" class="empty-state">Локальная история снимков пока пуста.</td></tr>';
+  }
+  async function localHistoryItemsAsync(query="",from="",to=""){
+    if(!query)return localHistoryItems("",from,to);
+    const q=String(query).trim(),fromTime=from?Date.parse(from+"T00:00:00"):0,toTime=to?Date.parse(to+"T23:59:59"):Infinity,matched=[];
+    for(const snapshot of state.snapshots||[]){
+      const time=Date.parse(snapshot.fileCreatedAt||snapshot.createdAt||snapshot.savedAt||"")||0;
+      if(time<fromTime||time>toTime)continue;
+      if(snapshot.browserStored&&BrowserSnapshots?.page){
+        const result=await BrowserSnapshots.page(snapshot.id,{query:q,offset:0,limit:25}).catch(()=>null);
+        if(Number(result?.pagination?.total||0)>0)matched.push({...snapshot,_matchCount:result.pagination.total});
+      }else{
+        const text=[snapshot.name,snapshot.source,...(snapshot.devices||[]).flatMap((device)=>[device.mac,device.macFormatted,device.vendor,device.model,device.ip,device.address,device.room,device.smartroomId,device.switchIp])].join(" ").toLowerCase();
+        if(text.includes(q.toLowerCase()))matched.push({...snapshot,_matchCount:(snapshot.devices||[]).filter((device)=>Object.values(device).join(" ").toLowerCase().includes(q.toLowerCase())).length});
+      }
+      await MemoryGuard.yieldToMainThread();
+    }
+    return matched;
   }
   function selectedSnapshotIds(){return $$("[data-snapshot-select]:checked").map((input)=>input.value).filter(Boolean);}
   async function deleteSelectedSnapshots(){
@@ -2225,7 +2301,7 @@
     const q=String(query||"").toLowerCase(),fromTime=from?Date.parse(from+"T00:00:00"):0,toTime=to?Date.parse(to+"T23:59:59"):Infinity;
     const movements=(state.movementHistory||[]).filter((item)=>{const time=Date.parse(item.changedAt||"")||0,text=[item.mac,item.type,item.field,item.before,item.after,item.source].join(" ").toLowerCase();return time>=fromTime&&time<=toTime&&(!q||text.includes(q));});
     for(let index=1;index<snapshots.length;index++){
-      const before=snapshots[index-1],after=snapshots[index],result=localComparisonPayload({baselineId:before.id,currentId:after.id,fields:["vendor","model","ip","address","room","switchIp","switchPort"]});
+      const before=snapshots[index-1],after=snapshots[index],result=localComparisonPayload({baselineId:before.id,currentId:after.id,fields:["vendor","model","ip","address","room","smartroomId","switchIp","switchPort"]});
       for(const change of result.changes||[])movements.push({...change,changedAt:after.createdAt||"",source:(before.name||before.source||"snapshot")+" → "+(after.name||after.source||"snapshot")});
     }
     return movements.reverse();
@@ -2269,7 +2345,17 @@
   function resizeMovementColumn(event){if(!movementColumnResize)return;const width=Math.max(64,Math.min(600,movementColumnResize.startWidth+event.clientX-movementColumnResize.startX));movementColumnSettings.widths[movementColumnResize.column]=Math.round(width);applyMovementColumnSettings();}
   function finishMovementColumnResize(){if(!movementColumnResize)return;movementColumnResize.handle?.classList.remove("active");movementColumnResize=null;saveMovementColumnSettings(movementColumnSettings,false);}
   function setMovementGroupsExpanded(expanded){$$('[data-movement-child]').forEach((row)=>{row.hidden=!expanded;});$$('[data-toggle-movement-group]').forEach((button)=>{button.textContent=expanded?"▾":"▸";button.setAttribute("aria-expanded",expanded?"true":"false");button.title=expanded?"Свернуть группу":"Развернуть группу";});}
-  async function exportMovementHistory(){const params=movementHistoryParams();params.set("format","xlsx");const result=await api("/history/movements/export?"+params.toString());downloadBase64(result.filename||"filtered-history.xlsx",result.content,result.mimeType);toast("Расширенная история экспортирована в XLSX.");}
+  async function exportMovementHistory(){
+    const params=movementHistoryParams();params.set("format","xlsx");
+    try{const result=await api("/history/movements/export?"+params.toString());downloadBase64(result.filename||"filtered-history.xlsx",result.content,result.mimeType);toast("Расширенная история экспортирована в XLSX.");return result;}
+    catch(error){
+      const filters=movementHistoryFilters();let items=localMovementItems(filters.query,filters.dateFrom.slice(0,10),filters.dateTo.slice(0,10));
+      if(filters.field)items=items.filter((item)=>(item.field||item.field_name)===filters.field);
+      if(filters.changeType)items=items.filter((item)=>localMovementChangeType(item)===filters.changeType);
+      const columns=["Дата","MAC-адрес","Тип","Поле","Было","Стало","Производитель","Модель","IP","Адрес","Помещение","Smartroom ID","IP коммутатора","Порт","Источник"];
+      const result=await XlsxExporter.createWorkbook({columns,totalRows:items.length,sheetName:"Изменения",streamRows:async(accept)=>accept(items),rowMapper:(item)=>{const device=compactDashboardDevice(item.afterDevice)||compactDashboardDevice(item.beforeDevice)||{};return[item.changedAt||item.changed_at||"",formatMac(item.mac)||item.mac||"",item.type||localMovementChangeType(item),item.field||item.field_name||"",item.before??item.from_value??"",item.after??item.to_value??"",device.vendor||"",device.model||"",device.ip||"",device.address||"",device.room||"",device.smartroomId||"",device.switchIp||"",device.switchPort||"",item.source||""];}});deliverDownload("mac-movement-history.xlsx",result.blob);toast("История изменений экспортирована локально в XLSX.");return result;
+    }
+  }
   async function deleteShownMovementHistory(){if(!enhancedMovementIds.length){toast("Нет показанных SQLite-изменений для удаления.");return;}if(!state.engineeringMode||!state.engineeringToken){toast("Для удаления включите инженерный режим.");return;}if(!confirm(`Удалить показанные записи изменений (${enhancedMovementIds.length})?`))return;try{const result=await api("/history/movements/delete",{method:"POST",body:JSON.stringify({ids:enhancedMovementIds})});toast("Удалено изменений: "+result.deleted);renderMovementHistory();renderServices();}catch(error){toast(error.message);}}
   async function renderMovementHistory(){
     const root=$("#localMovementBody");
@@ -2307,7 +2393,7 @@
       const data=await api("/statistics/snapshots?"+historyQueryParams(query,from,to,"500").toString());
       root.innerHTML=data.tableRowsHtml||data.emptyTableRowsHtml||'<tr><td colspan="5" class="empty-state">Backend snapshot history is empty.</td></tr>';
     }catch(error){
-      root.innerHTML=localSnapshotHistoryRows(query,from,to);
+      root.innerHTML=localSnapshotHistoryRowsFrom(await localHistoryItemsAsync(query,from,to));
     }
   }
   async function renderBackendHistorySummaries(query="", from="", to=""){
@@ -2543,6 +2629,39 @@
       return result;
     }catch(error){failProcess(processId,error);toast(error.message);throw error;}
   }
+  async function exportFullJson(){
+    if(!currentDeviceCount()&&!(state.snapshots||[]).length){toast("Нет данных для полного JSON-отчёта.");return null;}
+    const processId=beginProcess("Полный JSON","Потоковая упаковка устройств, аналитики и истории",5);
+    try{
+      const result=await FullJsonReport.createReport({
+        state,
+        streamCurrentRows:streamCurrentXlsxRows,
+        streamInvalidRows:streamFullReportInvalidRows,
+        streamSnapshotRows:streamFullReportSnapshotRows,
+        analyticsPayload:fullExportAnalyticsPayload,
+        onProgress:(percent,message)=>updateProcess(processId,Math.max(5,Math.min(98,percent)),message),
+      });
+      const date=new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
+      deliverDownload(`mac-analyzer-full-${date}.json`,result.blob);
+      finishProcess(processId,`Полный JSON готов: ${result.snapshots} выгрузок, ${result.snapshotRows.toLocaleString("ru-RU")} строк истории`);
+      toast("Полный JSON сохранён.");
+      return result;
+    }catch(error){failProcess(processId,error);toast(error.message);throw error;}
+  }
+  async function exportCurrentJson(){
+    const processId=beginProcess("Экспорт JSON","Потоковая упаковка полного текущего результата",5);
+    try{
+      const result=await FullJsonReport.createDeviceExport({
+        streamRows:streamCurrentXlsxRows,
+        onProgress:(count)=>updateProcess(processId,Math.min(96,10+Math.round(count/Math.max(1,currentDeviceCount())*86)),`Упаковано устройств: ${count.toLocaleString("ru-RU")}`),
+      });
+      const date=new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
+      deliverDownload(`mac-analysis-${date}.json`,result.blob);
+      finishProcess(processId,`JSON готов: ${result.rows.toLocaleString("ru-RU")} устройств`);
+      toast("JSON сохранён полностью.");
+      return result;
+    }catch(error){failProcess(processId,error);throw error;}
+  }
   async function exportManagedBinary(type){
     if(!currentDeviceCount()){toast("Нет результатов для экспорта.");return;}
     const processId=beginProcess("Экспорт "+type.toUpperCase(),"Подготовка "+currentDeviceCount()+" записей",10),columns=exportColumns(),ouiSettings={length:state.ouiLength,style:state.ouiStyle};
@@ -2555,6 +2674,7 @@
   }
   async function exportData(type){
     if(!currentDeviceCount()){toast("Нет результатов для экспорта.");return;}
+    if(type==="json"){try{return await exportCurrentJson();}catch(error){toast(error.message);return;}}
     const processId=beginProcess("Экспорт данных","Подготовка формата "+type,10),columns=exportColumns(),ouiSettings={length:state.ouiLength,style:state.ouiStyle};
     try{updateProcess(processId,35,"Формирование файла backend-сервисом");const result=await api("/export",{method:"POST",body:JSON.stringify(currentDevicePayload({format:type,columns,ouiSettings}))});updateProcess(processId,85,"Сохранение файла");if(result.binary){downloadBase64(result.filename||("mac-analysis."+type),result.content,result.mimeType||"application/octet-stream");}else{download(result.filename||("mac-analysis."+type),type==="csv"?"\uFEFF"+result.content:result.content,result.mimeType||"text/plain");}toast("Экспорт подготовлен backend-сервисом.");finishProcess(processId,"Экспорт завершён: "+type);}
     catch(error){updateProcess(processId,60,"Backend недоступен: локальный экспорт");if(localExportData(type))finishProcess(processId,"Экспорт завершён в браузере: "+type,"warning");else{toast("Backend export error: "+error.message);failProcess(processId,error);}}
@@ -2855,7 +2975,7 @@
   function localDeviceMap(devices=[]){const result=new Map();for(const device of devices||[]){const mac=normalize(device.mac||device.macFormatted);if(mac)result.set(mac,device);}return result;}
   function localComparisonPayload(payload=comparisonPayload()){
     const snapshotRows=payload.__snapshotRows||state.snapshots||[];
-    const byId=(id)=>snapshotRows.find((entry)=>entry.id===id),baseline=byId(payload.baselineId)||snapshotRows[1]||snapshotRows[0],current=byId(payload.currentId)||snapshotRows[0],fields=payload.fields&&payload.fields.length?payload.fields:["vendor","model","ip","address","room","switchIp","switchPort"];
+    const byId=(id)=>snapshotRows.find((entry)=>entry.id===id),baseline=byId(payload.baselineId)||snapshotRows[1]||snapshotRows[0],current=byId(payload.currentId)||snapshotRows[0],fields=payload.fields&&payload.fields.length?payload.fields:["vendor","model","ip","address","room","smartroomId","switchIp","switchPort"];
     if(!baseline||!current||baseline.id===current.id)return{changes:[],changesRowsHtml:'<tr><td colspan="5" class="empty-state">Нужно минимум два разных снимка для локального сравнения.</td></tr>',emptyRowsHtml:'<tr><td colspan="5" class="empty-state">Нужно минимум два разных снимка для локального сравнения.</td></tr>',summaryHtml:'<h2>Результат сравнения</h2><span class="summary-number">0</span><p class="muted">Добавлено: 0 · Удалено: 0 · Изменено: 0</p>'};
     const before=localDeviceMap(baseline.devices),after=localDeviceMap(current.devices),changes=[];
     for(const [mac,device] of after.entries()){if(!before.has(mac)){changes.push({mac,type:"Добавлено",field:"-",before:"",after:device.macFormatted||formatMac(mac),beforeDevice:null,afterDevice:compactDashboardDevice(device)});continue;}const previous=before.get(mac);for(const field of fields){const oldValue=String(previous[field]??""),newValue=String(device[field]??"");if(oldValue!==newValue)changes.push({mac,type:"Изменено",field:labels[field]||field,before:oldValue,after:newValue,beforeDevice:compactDashboardDevice(previous),afterDevice:compactDashboardDevice(device)});}}
@@ -3030,7 +3150,10 @@
   $("#clearResultFiltersButton").addEventListener("click",()=>{$("#searchInput").value="";$("#vendorFilter").value="";$("#validityFilter").value="";resultPage=1;renderResults();});
   $("#exportXlsxButton").addEventListener("click",async()=>{try{await exportManagedBinary("xlsx");}catch(error){toast(error.message);}});
   $("#exportFullXlsxButton").addEventListener("click",async()=>{try{await exportFullWorkbook();}catch{}});
+  $("#exportFullJsonButton").addEventListener("click",async()=>{try{await exportFullJson();}catch{}});
   $("#exportPdfButton").addEventListener("click",async()=>{try{await exportManagedBinary("pdf");}catch(error){toast(error.message);}});
+  $("#globalSearchForm").addEventListener("submit",(event)=>{event.preventDefault();runGlobalSearch();});
+  $("#exportMenu").addEventListener("click",(event)=>{const action=event.target.closest("[data-export-action]")?.dataset.exportAction;if(!action)return;event.preventDefault();const target=document.getElementById(action);if(target)target.click();$("#exportMenu").removeAttribute("open");});
   $("#comparisonFilters").addEventListener("click",(e)=>{const filter=e.target.dataset.comparisonFilter;if(!filter)return;$$("[data-comparison-filter]").forEach((button)=>button.classList.toggle("active-filter",button.dataset.comparisonFilter===filter));const types={added:"Добавлено",removed:"Удалено",modified:"Изменено"};$$("#comparisonBody tr").forEach((row)=>{const type=row.children[1]?.textContent;row.hidden=filter!=="all"&&type!==types[filter];});});
   $("#historyBody").addEventListener("click",async(e)=>{
     const id=e.target.dataset.loadSnapshot||e.target.dataset.localSnapshot;if(!id)return;
@@ -3172,6 +3295,8 @@
   $("#dashboardChangeSeverityFilter").addEventListener("change",renderDashboardChangesTable);
   $("#dashboardChangeTypeFilter").addEventListener("change",renderDashboardChangesTable);
   $("#dashboardChangeSearch").addEventListener("input",debounce(renderDashboardChangesTable,180));
+  $("#dashboardChangeMacSearch").addEventListener("input",debounce(renderDashboardChangesTable,120));
+  $("#analyticsView").addEventListener("click",(event)=>{const expand=event.target.closest("[data-analytics-expand]"),collapse=event.target.closest("[data-analytics-collapse]");if(!expand&&!collapse)return;const panel=event.target.closest(".tool-panel");if(!panel)return;if(expand){panel.classList.toggle("analytics-panel-expanded");expand.setAttribute("aria-pressed",String(panel.classList.contains("analytics-panel-expanded")));}else{panel.classList.toggle("analytics-panel-collapsed");collapse.textContent=panel.classList.contains("analytics-panel-collapsed")?"+":"−";collapse.title=panel.classList.contains("analytics-panel-collapsed")?"Развернуть раздел":"Свернуть раздел";}});
   $$("[data-dashboard-change-type]").forEach((button)=>button.addEventListener("click",()=>{const type=button.dataset.dashboardChangeType||"all";if(type==="critical"){$("#dashboardChangeSeverityFilter").value="critical";$("#dashboardChangeTypeFilter").value="all";dashboardChangeTypeFilter="all";}else{$("#dashboardChangeSeverityFilter").value="all";$("#dashboardChangeTypeFilter").value=type;dashboardChangeTypeFilter=type;}renderDashboardChangesTable();}));
   $("#dashboardChangesBody").addEventListener("click",(event)=>{const toggle=event.target.closest("[data-toggle-dashboard-change]");if(toggle){const id=toggle.dataset.toggleDashboardChange,expanded=toggle.getAttribute("aria-expanded")==="true";toggle.setAttribute("aria-expanded",expanded?"false":"true");toggle.textContent=expanded?"▸":"▾";$$(`[data-dashboard-change-child="${id}"]`).forEach((row)=>{row.hidden=expanded;});return;}const macButton=event.target.closest("[data-mac]");if(macButton)showDevice(macButton.dataset.mac);});
   $("#closeDashboardChangesDialog").addEventListener("click",()=>$("#dashboardChangesDialog").close());
@@ -3179,7 +3304,7 @@
   $("#saveDashboardSettingsButton").addEventListener("click",showDashboardSettingsDialog);
   $$('[data-dashboard-settings-tab]').forEach((button)=>button.addEventListener("click",()=>selectDashboardSettingsTab(button.dataset.dashboardSettingsTab)));
   $("#applyDashboardSettingsButton").addEventListener("click",()=>saveDashboardSettings(dashboardDialogSettings()));
-  $("#resetDashboardSettingsButton").addEventListener("click",()=>{const current=dashboardSettings();fillDashboardSettingsDialog({...current,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true},autoRefresh:true,refreshInterval:60});saveDashboardSettings(dashboardDialogSettings());});
+  $("#resetDashboardSettingsButton").addEventListener("click",()=>{const current=dashboardSettings();fillDashboardSettingsDialog({...current,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true,changedRooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true},autoRefresh:true,refreshInterval:60});saveDashboardSettings(dashboardDialogSettings());});
   $("#closeDashboardSettingsDialog").addEventListener("click",()=>$("#dashboardSettingsDialog").close());
   $("#cancelDashboardSettingsButton").addEventListener("click",()=>$("#dashboardSettingsDialog").close());
   $("#exportDashboardButton").addEventListener("click",(event)=>{event.preventDefault();event.stopImmediatePropagation();exportDashboard();},true);
@@ -3203,5 +3328,5 @@
     }
     await restoreWorkspaceSourceFiles();
   }
-  applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});view(viewFromHash(),{updateHash:true,render:false});renderEngineeringState();renderAll();renderColumnPreferences();renderParityStatus();if(!browserOnlyMode){loadThemePreference();loadOuiPreference().then(()=>{renderResults();});loadVendorDetectorSettings();loadHistoryEnrichmentSettings();loadDashboardSettings();loadExternalApiSettings();refreshApiCacheStatus().catch(()=>{});}loadEngineeringSession();setBackendStatus(false,"Автономный режим · выберите локальную папку данных");restoreInitialState().finally(()=>{window.MacAnalyzerAppReady=true;document.documentElement.dataset.macAnalyzerApp="ready";});
+  initializeAnalyticsExpanders();applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});view(viewFromHash(),{updateHash:true,render:false});renderEngineeringState();renderAll();renderColumnPreferences();renderParityStatus();if(!browserOnlyMode){loadThemePreference();loadOuiPreference().then(()=>{renderResults();});loadVendorDetectorSettings();loadHistoryEnrichmentSettings();loadDashboardSettings();loadExternalApiSettings();refreshApiCacheStatus().catch(()=>{});}loadEngineeringSession();setBackendStatus(false,"Автономный режим · выберите локальную папку данных");restoreInitialState().finally(()=>{window.MacAnalyzerAppReady=true;document.documentElement.dataset.macAnalyzerApp="ready";});
 })();

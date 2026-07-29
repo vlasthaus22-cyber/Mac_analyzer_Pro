@@ -13,7 +13,7 @@ def test_column_conflict_review_contains_recommendations_examples_and_selects():
     detection = detect(HEADERS, ROWS, ai=True)
     review = column_conflict_review_payload(HEADERS, ROWS, detection)
 
-    assert len(review["fields"]) == 8
+    assert len(review["fields"]) == 9
     assert review["autoMapping"]["mac"] == 0
     assert review["autoMapping"]["ip"] == 1
     assert review["autoMapping"]["switchIp"] == 2
@@ -39,7 +39,7 @@ def test_column_conflict_review_keeps_all_headers_for_manual_override():
     assert model["recommendedIndex"] == 4
     assert model["samples"] == ["Catalyst 9200", "Catalyst 9300"]
     for header in HEADERS:
-        assert review["rowsHtml"].count(f">{header}</option>") == 8
+        assert review["rowsHtml"].count(f">{header}</option>") == 9
     assert review["emptyRowsHtml"].startswith('<tr><td colspan="4"')
 
 

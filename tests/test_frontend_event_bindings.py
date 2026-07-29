@@ -99,7 +99,7 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert '<script src="frontend/memory-guard.js?v=20260722.9"></script>' in html
     assert '<script src="frontend/file-readers.js?v=20260722.8"></script>' in html
-    assert '<meta name="application-build" content="2026.07.28.1">' in html
+    assert '<meta name="application-build" content="2026.07.29.1">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -202,7 +202,7 @@ def test_full_xlsx_export_includes_analytics_changes_and_mac_history():
 
     assert 'id="exportFullXlsxButton"' in html
     assert "Скачать всё XLSX" in html
-    assert '<script src="frontend/full-xlsx-report.js?v=20260727.5"></script>' in html
+    assert '<script src="frontend/full-xlsx-report.js?v=20260729.1"></script>' in html
     assert "async function exportFullWorkbook()" in app
     assert "const FullXlsxReport = window.MacAnalyzerFullXlsxReport;" in app
     assert "FullXlsxReport.buildReport({" in app
@@ -987,9 +987,9 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260728.1"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260729.1"></script>' in html
     assert '<script src="frontend/xlsx-exporter.js?v=20260727.5"></script>' in html
-    assert '<script src="frontend/full-xlsx-report.js?v=20260727.5"></script>' in html
+    assert '<script src="frontend/full-xlsx-report.js?v=20260729.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
     assert 'async function storeLocalSnapshot(' in app
     assert 'devices:rows.slice(0,previewLimit)' in app
@@ -1490,7 +1490,7 @@ def test_history_screen_uses_backend_statistics():
     assert 'function localSnapshotHistoryRows(query="", from="", to="")' in app
     assert 'function renderLocalSqliteHistory(query="", from="", to="")' in app
     assert 'function renderLocalVendorModelHistory(query="", from="", to="")' in app
-    assert 'root.innerHTML=localSnapshotHistoryRows(query,from,to);' in app
+    assert 'root.innerHTML=localSnapshotHistoryRowsFrom(await localHistoryItemsAsync(query,from,to));' in app
     assert 'renderLocalHistorySummaries(query,from,to);' in app
     assert 'renderLocalSqliteHistory(query,from,to);' in app
     assert 'renderLocalVendorModelHistory(query,from,to);' in app
@@ -2034,6 +2034,35 @@ def test_dashboard_change_period_snapshot_drilldown_is_wired_backend_and_local()
     assert ".dashboard-changes-table { flex:1 1 260px;" in styles
 
 
+def test_search_dashboard_smartroom_and_unified_exports_are_wired():
+    html = read_index_html()
+    app = read_app_js()
+    snapshots = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
+    chronology = Path("frontend/mac-chronology.js").read_text(encoding="utf-8")
+    full_json = Path("frontend/full-json-report.js").read_text(encoding="utf-8")
+
+    for marker in (
+        'id="globalSearchForm"', 'id="globalSearchInput"', 'id="exportMenu"',
+        'id="exportFullJsonButton"', 'id="dashboardChangeMacSearch"',
+        'id="dashboardChangedRoomMetric"', 'data-field="smartroomId"',
+        'data-dashboard-card-toggle="changedRooms"',
+    ):
+        assert marker in html
+    for marker in (
+        "async function runGlobalSearch()", "function dashboardSnapshotPair(",
+        "current.vendor=vendor.value", "current.room=room.value",
+        "BrowserSnapshots.aggregate(currentId,{limit:200,vendor:settings.vendor,room:settings.room",
+        "async function exportFullJson()", "FullJsonReport.createReport({",
+        "function initializeAnalyticsExpanders()",
+    ):
+        assert marker in app
+    assert "const vendorFilter = String(options.vendor || \"\").trim();" in snapshots
+    assert "const roomFilter = String(options.room || \"\").trim();" in snapshots
+    assert "smartroomId: String(device?.smartroomId || device?.smartroom_id || \"\")" in snapshots
+    assert "function appearanceChanges(appearances)" in chronology
+    assert "window.MacAnalyzerFullJsonReport" in full_json
+
+
 def test_pyqt_single_device_analytics_text_report_is_rendered_locally_and_from_api():
     html = read_index_html()
     app = read_app_js()
@@ -2394,6 +2423,7 @@ if __name__ == "__main__":
     test_pyqt_analytics_dialog_report_is_available_in_web_ui()
     test_pyqt_mac_history_dialog_keeps_separate_history_and_movement_tables()
     test_dashboard_change_period_snapshot_drilldown_is_wired_backend_and_local()
+    test_search_dashboard_smartroom_and_unified_exports_are_wired()
     test_pyqt_single_device_analytics_text_report_is_rendered_locally_and_from_api()
     test_primary_and_enrichment_files_are_grouped_in_browser_only_html()
     test_user_and_engineering_modes_match_pyqt_access_split()

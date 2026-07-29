@@ -589,6 +589,17 @@
       .map(([label, value]) => ({ label, value }));
   }
 
+  function matchesDashboardFilter(device, options = {}) {
+    const vendor = String(device?.vendor || "").trim();
+    const room = String(device?.room || "").trim();
+    const vendorFilter = String(options.vendor || "").trim();
+    const roomFilter = String(options.room || "").trim();
+    const unknown = new Set(["", "unknown", "не определено", "неизвестный вендор", "unknown vendor"]);
+    return (!vendorFilter || vendor === vendorFilter)
+      && (!roomFilter || room === roomFilter)
+      && (options.showUnknown !== false || !unknown.has(vendor.toLowerCase()));
+  }
+
   async function aggregate(id, options = {}) {
     const vendors = new Map();
     const models = new Map();
@@ -611,10 +622,11 @@
     const metadata = await streamSnapshot(id, async (kind, rows) => {
       if (kind !== "device") return;
       for (const device of rows) {
-        devices += 1;
         const vendor = String(device?.vendor || "").trim();
         const model = String(device?.model || "").trim();
         const room = String(device?.room || "").trim();
+        if (!matchesDashboardFilter(device, options)) continue;
+        devices += 1;
         const switchIp = String(device?.switchIp || device?.switch_ip || "").trim();
         const mac = String(device?.mac || device?.macFormatted || device?.mac_formatted || device?.oui || "").replace(/[^0-9a-f]/gi, "").toUpperCase();
         tallyRows(vendors, vendor);
@@ -682,7 +694,7 @@
         let currentCount = 0;
         const metadata = await streamSnapshot(snapshotId, async (kind, chunk) => {
           if (kind !== "device") return;
-          const compact = chunk.map(compactComparisonDevice).filter((device) => device.mac).map((device) => ({ mac: device.mac }));
+          const compact = chunk.filter((device) => matchesDashboardFilter(device, options)).map(compactComparisonDevice).filter((device) => device.mac).map((device) => ({ mac: device.mac }));
           currentCount += compact.length;
           await mergeEnrichmentRows(jobId, compact, { allowNew: true });
           compact.length = 0;
@@ -716,6 +728,7 @@
       ip: String(device?.ip || ""),
       address: String(device?.address || ""),
       room: String(device?.room || ""),
+      smartroomId: String(device?.smartroomId || device?.smartroom_id || ""),
       switchIp: String(device?.switchIp || device?.switch_ip || ""),
       switchPort: String(device?.switchPort || device?.switch_port || ""),
     };
@@ -805,7 +818,7 @@
     const jobId = `snapshot-compare-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const limit = Math.max(100, Math.min(20000, Number(options.limit || 5000)));
     const result = {
-      fields: ["vendor", "model", "ip", "address", "room", "switchIp", "switchPort"],
+      fields: ["vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort"],
       added: 0, removed: 0, modifiedDevices: 0, modifiedFields: 0, changedDevices: 0, unchanged: 0, critical: 0,
       changes: [], fieldCounts: new Map(), changedVendors: new Map(), unchangedVendors: new Map(), missingVendors: new Map(),
     };
@@ -972,6 +985,7 @@
     page,
     aggregate,
     aggregateSeries,
+    matchesDashboardFilter,
     compareSnapshots,
     createPageCollector,
     clearEnrichment,

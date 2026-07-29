@@ -14,7 +14,7 @@ def test_result_filter_handles_query_vendor_and_validity():
     assert cisco["items"][0]["oui"] == "AA-BB-CC-00"
     assert cisco["items"][0]["valid"] is True
     assert cisco["vendors"] == ["Apple", "Cisco"]
-    assert cisco["headerHtml"] == "<th>MAC</th><th>OUI</th><th>Производитель</th><th>Модель</th><th>IP</th><th>Адрес</th><th>Помещение</th><th>IP коммутатора</th><th>Порт</th><th>Источник</th>"
+    assert cisco["headerHtml"] == "<th>MAC</th><th>OUI</th><th>Производитель</th><th>Модель</th><th>IP</th><th>Адрес</th><th>Помещение</th><th>Smartroom ID</th><th>IP коммутатора</th><th>Порт</th><th>Источник</th>"
     assert 'data-mac="AABBCC000001"' in cisco["tableRowsHtml"]
     assert "<td>AA:BB:CC:00:00:01</td>" in cisco["tableRowsHtml"]
     assert "<td>AA-BB-CC-00</td>" in cisco["tableRowsHtml"]

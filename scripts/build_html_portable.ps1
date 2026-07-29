@@ -30,6 +30,7 @@ $scripts = @(
     "frontend/mac-chronology.js",
     "frontend/xlsx-exporter.js",
     "frontend/full-xlsx-report.js",
+    "frontend/full-json-report.js",
     "frontend/portable-database.js",
     "frontend/local-folder-store.js",
     "frontend/workspace-file-lifecycle.js",

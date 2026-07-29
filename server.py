@@ -76,7 +76,7 @@ STORAGE, STORAGE_MIGRATION_REPORT = initialize_storage(ROOT)
 DATABASE_PATH = STORAGE.database
 HOST = os.environ.get("MAC_ANALYZER_HOST", "127.0.0.1")
 PORT = int(os.environ.get("MAC_ANALYZER_PORT", "8080"))
-DEFAULT_RESULT_COLUMNS = ["macFormatted", "oui", "vendor", "model", "ip", "address", "room", "switchIp", "switchPort", "source"]
+DEFAULT_RESULT_COLUMNS = ["macFormatted", "oui", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "source"]
 DEFAULT_RESULT_COLUMN_WIDTHS = {
     "macFormatted": 180,
     "oui": 110,
@@ -85,6 +85,7 @@ DEFAULT_RESULT_COLUMN_WIDTHS = {
     "ip": 130,
     "address": 200,
     "room": 120,
+    "smartroomId": 140,
     "switchIp": 150,
     "switchPort": 100,
     "source": 150,
@@ -108,6 +109,7 @@ DEFAULT_RESULT_LABELS = {
     "ip": "IP",
     "address": "Адрес",
     "room": "Помещение",
+    "smartroomId": "Smartroom ID",
     "switchIp": "IP коммутатора",
     "switchPort": "Порт",
     "source": "Источник",
@@ -166,7 +168,7 @@ BUILTIN_MODELS = {
     "00231401": "Lenovo ThinkPad X1", "00231402": "Lenovo ThinkPad T14",
     "00231410": "Lenovo Legion 5", "00231420": "Lenovo Yoga 9i",
 }
-DEVICE_FIELDS = ("vendor", "model", "ip", "address", "room", "switchIp", "switchPort")
+DEVICE_FIELDS = ("vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort")
 SIGNAL_STATE: dict[str, Any] = {"lastSignal": None, "lastSignalAt": None, "shutdownRequested": False}
 ENRICHMENT_JOBS: dict[str, dict[str, Any]] = {}
 WORKSPACE_FILE_CACHE = WorkspaceFileCache(
@@ -540,6 +542,7 @@ def init_database() -> None:
                 ip TEXT,
                 address TEXT,
                 room TEXT,
+                smartroom_id TEXT,
                 switch_ip TEXT,
                 switch_port TEXT,
                 source TEXT,
@@ -651,6 +654,9 @@ def init_database() -> None:
             CREATE INDEX IF NOT EXISTS idx_data_quality_reports_created ON data_quality_reports(created_at);
             """
         )
+        history_columns = {row["name"] for row in conn.execute("PRAGMA table_info(mac_history)").fetchall()}
+        if "smartroom_id" not in history_columns:
+            conn.execute("ALTER TABLE mac_history ADD COLUMN smartroom_id TEXT")
         for oui, vendor in BUILTIN_VENDORS.items():
             conn.execute(
                 "INSERT OR IGNORE INTO vendor_mappings (oui, vendor, source, updated_at) VALUES (?, ?, 'builtin', ?)",
@@ -1135,6 +1141,7 @@ def column_conflict_review_payload(headers: list[Any], rows: list[Any], result: 
         ("mac", "MAC-адрес", True), ("vendor", "Производитель", False),
         ("model", "Модель", False), ("ip", "IP-адрес", False),
         ("address", "Физический адрес", False), ("room", "Помещение", False),
+        ("smartroomId", "Smartroom ID", False),
         ("switchIp", "IP коммутатора", False), ("switchPort", "Порт подключения", False),
     ]
     review_rows: list[dict[str, Any]] = []
@@ -1946,6 +1953,7 @@ def enrich_device(device: dict[str, Any], context: Optional[dict[str, Any]] = No
         "ip": value("ip"),
         "address": address,
         "room": value("room"),
+        "smartroomId": value("smartroomId", "smartroom_id"),
         "switchIp": switch_ip,
         "switchPort": value("switchPort", "switch_port"),
         "source": as_text(device.get("source")),
@@ -1962,7 +1970,7 @@ def save_history(devices: list[dict[str, Any]], source: str, recorded_at: str = 
         for chunk in _chunks(macs):
             placeholders = ",".join("?" for _ in chunk)
             rows = conn.execute(
-                f"SELECT mac, vendor, model, ip, address, room, switch_ip, switch_port FROM mac_history WHERE mac IN ({placeholders}) ORDER BY id DESC",
+                f"SELECT mac, vendor, model, ip, address, room, smartroom_id, switch_ip, switch_port FROM mac_history WHERE mac IN ({placeholders}) ORDER BY id DESC",
                 chunk,
             ).fetchall()
             for row in rows:
@@ -1974,22 +1982,22 @@ def save_history(devices: list[dict[str, Any]], source: str, recorded_at: str = 
             history_rows.append((
                 mac, device.get("macFormatted") or format_mac(mac), device.get("oui") or mac[:6],
                 as_text(device.get("vendor")), as_text(device.get("model")), as_text(device.get("ip")),
-                as_text(device.get("address")), as_text(device.get("room")), as_text(device.get("switchIp")),
+                as_text(device.get("address")), as_text(device.get("room")), as_text(device.get("smartroomId") or device.get("smartroom_id")), as_text(device.get("switchIp")),
                 as_text(device.get("switchPort")), source or as_text(device.get("source")), timestamp,
             ))
             previous = previous_by_mac.get(mac)
             if previous:
                 current_values = {
                     "vendor": as_text(device.get("vendor")), "model": as_text(device.get("model")), "ip": as_text(device.get("ip")),
-                    "address": as_text(device.get("address")), "room": as_text(device.get("room")), "switchIp": as_text(device.get("switchIp")),
+                    "address": as_text(device.get("address")), "room": as_text(device.get("room")), "smartroomId": as_text(device.get("smartroomId") or device.get("smartroom_id")), "switchIp": as_text(device.get("switchIp")),
                     "switchPort": as_text(device.get("switchPort")),
                 }
                 for field, new_value in current_values.items():
-                    old_value = as_text(previous.get({"switchIp": "switch_ip", "switchPort": "switch_port"}.get(field, field)))
+                    old_value = as_text(previous.get({"smartroomId": "smartroom_id", "switchIp": "switch_ip", "switchPort": "switch_port"}.get(field, field)))
                     if new_value != old_value and (new_value or old_value):
                         movement_rows.append((mac, field, old_value, new_value, source, timestamp))
         conn.executemany(
-            "INSERT INTO mac_history (mac, mac_formatted, oui, vendor, model, ip, address, room, switch_ip, switch_port, source, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO mac_history (mac, mac_formatted, oui, vendor, model, ip, address, room, smartroom_id, switch_ip, switch_port, source, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             history_rows,
         )
         if movement_rows:
@@ -3087,14 +3095,14 @@ def database_search(query_text: str = "", limit: int = 100) -> dict[str, Any]:
         if text_query:
             history_rows = conn.execute(
                 """
-                SELECT mac, mac_formatted, vendor, model, ip, address, room, switch_ip, switch_port, source, recorded_at
+                SELECT mac, mac_formatted, vendor, model, ip, address, room, smartroom_id, switch_ip, switch_port, source, recorded_at
                 FROM mac_history
                 WHERE mac LIKE ? OR mac_formatted LIKE ? OR vendor LIKE ? OR model LIKE ? OR ip LIKE ?
-                   OR address LIKE ? OR room LIKE ? OR switch_ip LIKE ? OR switch_port LIKE ? OR source LIKE ?
+                   OR address LIKE ? OR room LIKE ? OR smartroom_id LIKE ? OR switch_ip LIKE ? OR switch_port LIKE ? OR source LIKE ?
                 ORDER BY recorded_at DESC, id DESC
                 LIMIT ?
                 """,
-                (mac_like, like_value, like_value, like_value, like_value, like_value, like_value, like_value, like_value, like_value, bounded_limit),
+                (mac_like, like_value, like_value, like_value, like_value, like_value, like_value, like_value, like_value, like_value, like_value, bounded_limit),
             ).fetchall()
             vendor_rows = conn.execute(
                 """
@@ -3119,7 +3127,7 @@ def database_search(query_text: str = "", limit: int = 100) -> dict[str, Any]:
         else:
             history_rows = conn.execute(
                 """
-                SELECT mac, mac_formatted, vendor, model, ip, address, room, switch_ip, switch_port, source, recorded_at
+                SELECT mac, mac_formatted, vendor, model, ip, address, room, smartroom_id, switch_ip, switch_port, source, recorded_at
                 FROM mac_history
                 ORDER BY recorded_at DESC, id DESC
                 LIMIT ?
@@ -3325,7 +3333,7 @@ def database_device_lookup(mac_value: Any) -> Optional[dict[str, Any]]:
     with db_connection() as conn:
         history = conn.execute(
             """
-            SELECT mac, mac_formatted, oui, vendor, model, ip, address, room, switch_ip, switch_port, source, recorded_at
+            SELECT mac, mac_formatted, oui, vendor, model, ip, address, room, smartroom_id, switch_ip, switch_port, source, recorded_at
             FROM mac_history
             WHERE mac = ?
             ORDER BY recorded_at DESC, id DESC
@@ -3360,6 +3368,7 @@ def database_device_lookup(mac_value: Any) -> Optional[dict[str, Any]]:
             "ip": history["ip"] or "",
             "address": history["address"] or "",
             "room": history["room"] or "",
+            "smartroomId": history["smartroom_id"] or "",
             "switchIp": history["switch_ip"] or "",
             "switchPort": history["switch_port"] or "",
             "source": history["source"] or "",

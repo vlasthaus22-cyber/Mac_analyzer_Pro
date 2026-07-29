@@ -12,6 +12,11 @@ assert.equal(snapshots.snapshotChunkRows, 1_000);
 assert.equal(typeof snapshots.beginStreamedSnapshot, "function");
 assert.equal(typeof snapshots.appendStreamedSnapshotChunk, "function");
 assert.equal(typeof snapshots.finishStreamedSnapshot, "function");
+assert.equal(typeof snapshots.matchesDashboardFilter, "function");
+assert.equal(snapshots.matchesDashboardFilter({ vendor: "Cisco", room: "101" }, { room: "101" }), true);
+assert.equal(snapshots.matchesDashboardFilter({ vendor: "Cisco", room: "101" }, { room: "202" }), false);
+assert.equal(snapshots.matchesDashboardFilter({ vendor: "Cisco", room: "101" }, { vendor: "Cisco", room: "101" }), true);
+assert.equal(snapshots.matchesDashboardFilter({ vendor: "Unknown", room: "101" }, { showUnknown: false }), false);
 
 const devices = Array.from({ length: 120_000 }, (_, index) => ({
   mac: `A1B2C3${index.toString(16).padStart(6, "0").toUpperCase()}`,

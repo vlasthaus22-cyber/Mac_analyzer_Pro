@@ -4,7 +4,7 @@ from typing import Any, Callable, Iterable
 from .workspace_cache_service import WorkspaceFileCache, workspace_row_iterator
 
 
-ENRICH_FIELDS = ["vendor", "model", "ip", "address", "room", "switchIp", "switchPort"]
+ENRICH_FIELDS = ["vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort"]
 
 
 def normalize_mac(value: Any) -> str:

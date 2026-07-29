@@ -371,7 +371,7 @@ def test_rest_api_and_ui_controls_smoke():
         assert detected_columns["mapping"]["model"] == 2
         assert "detectorHtml" in detected_columns
         assert "Column detector" in detected_columns["detectorHtml"]
-        assert len(detected_columns["review"]["fields"]) == 8
+        assert len(detected_columns["review"]["fields"]) == 9
         assert detected_columns["review"]["autoMapping"]["mac"] == 0
         assert 'data-conflict-field="mac"' in detected_columns["review"]["rowsHtml"]
         assert 'data-conflict-column="mac"' in detected_columns["review"]["rowsHtml"]

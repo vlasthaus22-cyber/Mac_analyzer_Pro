@@ -39,6 +39,7 @@ DEVICE_FIELD_LABELS = {
     "ip": "IP",
     "address": "Адрес",
     "room": "Помещение",
+    "smartroomId": "Smartroom ID",
     "switchIp": "IP коммутатора",
     "switchPort": "Порт",
     "source": "Источник",
@@ -98,7 +99,7 @@ def _source_name(value: Any) -> str:
 def device_fields_html(device: dict[str, Any], model_prefixes: list[dict[str, Any]]) -> str:
     fields = [
         "vendor", "vendorSource", "vendorConfidence", "model", "modelSource", "modelConfidence",
-        "ip", "address", "room", "switchIp", "switchPort", "source",
+        "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "source",
     ]
     rows = "".join(
         '<div class="device-field">'
@@ -133,6 +134,7 @@ def device_detailed_report(mac: str, device: dict[str, Any]) -> str:
         f"IP-адрес: {value('Не указан', 'ip')}",
         f"Физический адрес: {value('Не указан', 'address')}",
         f"Помещение: {value('Не указано', 'room')}",
+        f"Smartroom ID: {value('Не указан', 'smartroomId', 'smartroom_id')}",
         f"Коммутатор: {value('Не указан', 'switchIp', 'switch_ip')}",
         f"Порт: {value('Не указан', 'switchPort', 'switch_port')}",
         "",
@@ -192,6 +194,7 @@ def build_device_analytics(
         f"<td>{html.escape(_text(item.get('ip'), '-'))}</td>"
         f"<td>{html.escape(_text(item.get('address'), '-'))}</td>"
         f"<td>{html.escape(_text(item.get('room'), '-'))}</td>"
+        f"<td>{html.escape(_text(item.get('smartroomId') or item.get('smartroom_id'), '-'))}</td>"
         "</tr>"
         for item in recent_history
     )

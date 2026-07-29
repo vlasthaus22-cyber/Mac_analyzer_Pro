@@ -117,7 +117,10 @@ def test_dashboard_change_analysis_filters_period_without_marking_port_change_cr
     ]
     result = analyze_dashboard_changes([], movements, {"changeMode": "period", "changeDateFrom": "2026-07-01", "changeDateTo": "2026-07-31"})
 
-    assert result["summary"] == {"added": 0, "removed": 0, "modified": 1, "critical": 0, "total": 1}
+    assert result["summary"] == {
+        "added": 0, "removed": 0, "modified": 1, "critical": 0, "total": 1,
+        "changedRooms": 0, "changedRoomValues": [],
+    }
     assert result["changes"][0]["field"] == "switchPort"
     assert result["changes"][0]["severity"] == "medium"
     assert result["changes"][0]["before"] == "Gi1"
@@ -137,7 +140,10 @@ def test_dashboard_change_analysis_compares_selected_snapshots():
     ]
     result = analyze_dashboard_changes(snapshots, [], {"changeMode": "snapshots", "baselineSnapshotId": "old", "comparisonSnapshotId": "new"})
 
-    assert result["summary"] == {"added": 1, "removed": 1, "modified": 1, "critical": 1, "total": 3}
+    assert result["summary"] == {
+        "added": 1, "removed": 1, "modified": 1, "critical": 1, "total": 3,
+        "changedRooms": 1, "changedRoomValues": ["101"],
+    }
     assert result["baselineSnapshotId"] == "old"
     assert result["comparisonSnapshotId"] == "new"
     assert {item["type"] for item in result["changes"]} == {"added", "removed", "modified"}
@@ -185,6 +191,7 @@ def test_dashboard_uses_previous_and_current_final_snapshots_for_all_status_metr
     assert payload["metrics"]["unchanged"] == 0
     assert payload["changeAnalysis"]["summary"] == {
         "added": 1, "removed": 1, "modified": 1, "critical": 0, "total": 3,
+        "changedRooms": 3, "changedRoomValues": ["101", "102", "103"],
     }
     assert {item["mac"] for item in payload["devices"]} == {"AABBCC000001", "AABBCC000002"}
 
@@ -207,6 +214,31 @@ def test_dashboard_reports_unique_macs_across_uploads_and_latest_count():
     assert [item["delta"] for item in payload["uploadFleet"]["series"]] == [0, 0]
 
 
+def test_dashboard_counts_changed_rooms_and_smartroom_changes():
+    snapshots = [
+        {
+            "id": "old",
+            "name": "Анализ: old.xlsx",
+            "kind": "analysis",
+            "createdAt": "2026-07-01T08:00:00Z",
+            "devices": [{"mac": "001122334455", "room": "101", "smartroomId": "SR-OLD"}],
+        },
+        {
+            "id": "new",
+            "name": "Анализ: new.xlsx",
+            "kind": "analysis",
+            "createdAt": "2026-07-02T08:00:00Z",
+            "devices": [{"mac": "001122334455", "room": "101", "smartroomId": "SR-NEW"}],
+        },
+    ]
+    result = analyze_dashboard_changes(
+        snapshots, [], {"changeMode": "snapshots", "baselineSnapshotId": "old", "comparisonSnapshotId": "new"}
+    )
+    assert result["summary"]["changedRooms"] == 1
+    assert result["summary"]["changedRoomValues"] == ["101"]
+    assert any(item["field"] == "smartroomId" for item in result["changes"])
+
+
 if __name__ == "__main__":
     test_dashboard_filters_metrics_and_export()
     test_dashboard_metrics_payload_counts_known_and_invalid_records()
@@ -216,4 +248,5 @@ if __name__ == "__main__":
     test_dashboard_change_analysis_compares_selected_snapshots()
     test_dashboard_uses_previous_and_current_final_snapshots_for_all_status_metrics()
     test_dashboard_reports_unique_macs_across_uploads_and_latest_count()
+    test_dashboard_counts_changed_rooms_and_smartroom_changes()
     print("dashboard service test passed")

@@ -9,6 +9,8 @@
     ip: "IP устройства",
     address: "Адрес помещения",
     room: "Помещение",
+    smartroomId: "Smartroom ID",
+    smartroom_id: "Smartroom ID",
     switchIp: "IP коммутатора",
     switch_ip: "IP коммутатора",
     switchPort: "Порт",
@@ -51,6 +53,7 @@
       ip: deviceValue(device, "ip"),
       address: deviceValue(device, "address"),
       room: deviceValue(device, "room"),
+      smartroomId: deviceValue(device, "smartroomId", "smartroom_id"),
       switchIp: deviceValue(device, "switchIp", "switch_ip"),
       switchPort: deviceValue(device, "switchPort", "switch_port"),
       source: deviceValue(device, "source", "source_file"),
@@ -160,6 +163,33 @@
     };
   }
 
+  function appearanceChanges(appearances) {
+    const ordered = (appearances || []).slice().sort(
+      (left, right) => (Date.parse(left.createdAt || "") || 0) - (Date.parse(right.createdAt || "") || 0),
+    );
+    const fields = ["vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort"];
+    const events = [];
+    for (let index = 1; index < ordered.length; index += 1) {
+      const previous = compactDevice(ordered[index - 1].device);
+      const current = compactDevice(ordered[index].device);
+      for (const field of fields) {
+        if (String(previous[field] || "") === String(current[field] || "")) continue;
+        events.push({
+          type: "movement",
+          event: "Изменение между финальными выгрузками",
+          date: ordered[index].createdAt || "",
+          field,
+          fieldLabel: fieldLabels[field] || field,
+          before: previous[field] || "",
+          after: current[field] || "",
+          source: `${ordered[index - 1].snapshotName || "Выгрузка"} → ${ordered[index].snapshotName || "Выгрузка"}`,
+          device: current,
+        });
+      }
+    }
+    return events;
+  }
+
   function eventKey(item) {
     return [
       item.type, item.date, item.field, item.before, item.after, item.source,
@@ -170,6 +200,7 @@
   function buildEvents(options = {}) {
     const events = [
       ...(options.appearances || []).map(normalizeAppearance),
+      ...appearanceChanges(options.appearances || []),
       ...(options.history || []).map(normalizeHistory),
       ...(options.movements || []).map(normalizeMovement),
       ...(options.events || []).map((item) => {
@@ -207,6 +238,7 @@
       ["IP устройства", device.ip],
       ["Адрес", device.address],
       ["Помещение", device.room],
+      ["Smartroom ID", device.smartroomId],
       ["Коммутатор", device.switchIp],
       ["Порт", device.switchPort],
     ].filter(([, value]) => value);
@@ -256,7 +288,7 @@
   }
 
   function appearancesRowsHtml(appearances, options = {}) {
-    if (!appearances.length) return '<tr><td colspan="7" class="empty-state">История появлений MAC пока пуста.</td></tr>';
+    if (!appearances.length) return '<tr><td colspan="8" class="empty-state">История появлений MAC пока пуста.</td></tr>';
     return appearances.slice().reverse().map((item) => {
       const device = compactDevice(item.device);
       return "<tr>" +
@@ -267,6 +299,7 @@
         `<td>${escapeHtml(device.ip || "—")}</td>` +
         `<td>${escapeHtml(device.address || "—")}</td>` +
         `<td>${escapeHtml(device.room || "—")}</td>` +
+        `<td>${escapeHtml(device.smartroomId || "—")}</td>` +
         "</tr>";
     }).join("");
   }

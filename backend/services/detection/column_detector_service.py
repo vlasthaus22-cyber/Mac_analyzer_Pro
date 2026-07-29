@@ -11,10 +11,11 @@ FIELD_PATTERNS = {
     "ip": r"^ip$|ip.?address|host.?ip|client.?ip|endpoint|address.?ip|ip.?Р°РґСЂРµСЃ",
     "address": r"address|location|place|site|building|rack|street|Р°РґСЂРµСЃ|Р»РѕРєР°С†РёСЏ",
     "room": r"room|office|cabinet|floor|auditorium|РїРѕРјРµС‰|РєР°Р±РёРЅРµС‚",
+    "smartroomId": r"smart.?room.*id|id.*smart.?room|smartroom",
     "switchPort": r"switch.*port|port|interface|iface|ifname|if.?name|РїРѕСЂС‚",
 }
 
-FIELD_ORDER = ["mac", "vendor", "model", "switchIp", "ip", "address", "room", "switchPort"]
+FIELD_ORDER = ["mac", "vendor", "model", "switchIp", "ip", "address", "room", "smartroomId", "switchPort"]
 
 FIELD_LABELS = {
     "mac": "MAC address",
@@ -24,6 +25,7 @@ FIELD_LABELS = {
     "ip": "host IP",
     "address": "address",
     "room": "room",
+    "smartroomId": "Smartroom ID",
     "switchPort": "switch port",
 }
 
@@ -35,6 +37,7 @@ FIELD_KEYWORDS = {
     "ip": {"ip", "host", "client", "endpoint", "address"},
     "address": {"address", "location", "place", "site", "building", "rack", "street"},
     "room": {"room", "office", "cabinet", "floor", "auditorium"},
+    "smartroomId": {"smartroom", "smart", "room", "id"},
     "switchPort": {"port", "interface", "iface", "ifname", "if"},
 }
 
@@ -43,6 +46,7 @@ NEGATIVE_KEYWORDS = {
     "switchIp": {"host", "client", "endpoint", "address"},
     "address": {"ip", "mac"},
     "room": {"ip", "mac", "port"},
+    "smartroomId": {"ip", "mac", "port"},
     "model": {"ip", "mac", "port"},
 }
 
@@ -143,7 +147,7 @@ def _sample_score(field, profile, header_score):
         return profile["ip"] if header_score else profile["ip"] * 0.35
     if field == "switchPort":
         return profile["port"]
-    if field in {"vendor", "model", "address", "room"}:
+    if field in {"vendor", "model", "address", "room", "smartroomId"}:
         return min(profile["text"], 0.45)
     return 0.0
 
@@ -172,7 +176,7 @@ def _semantic_boost(field, header, profile):
     elif field == "switchPort" and profile["port"] >= 0.75:
         boost += 0.18
         reasons.append("sample values look like switch ports")
-    elif field in {"vendor", "model", "address", "room"} and profile["text"] >= 0.8:
+    elif field in {"vendor", "model", "address", "room", "smartroomId"} and profile["text"] >= 0.8:
         boost += 0.1
         reasons.append("sample values are descriptive text")
 

@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
-  <meta name="application-build" content="2026.07.28.1">
-  <link rel="stylesheet" href="styles.css?v=20260728.1">
+  <meta name="application-build" content="2026.07.29.1">
+  <link rel="stylesheet" href="styles.css?v=20260729.1">
 </head>
 <body>
   <div class="app-shell">
@@ -38,6 +38,41 @@
           <p id="viewSubtitle">Импортируйте данные, обогатите их и сохраните результат.</p>
         </div>
         <div class="topbar-actions">
+          <form class="global-search" id="globalSearchForm" role="search">
+            <input id="globalSearchInput" type="search" placeholder="Найти MAC, модель, помещение..." aria-label="Поиск по программе">
+            <button class="icon-button" type="submit" title="Найти" aria-label="Найти">⌕</button>
+          </form>
+          <details class="export-menu" id="exportMenu">
+            <summary class="button primary">Скачать</summary>
+            <div class="export-menu-tree">
+              <strong>Текущий результат</strong>
+              <button type="button" data-export-action="exportXlsxButton">XLSX</button>
+              <button type="button" data-export-action="exportExcelButton">Excel XML</button>
+              <button type="button" data-export-action="exportCsvButton">CSV</button>
+              <button type="button" data-export-action="exportJsonButton">JSON</button>
+              <button type="button" data-export-action="exportYamlButton">YAML</button>
+              <button type="button" data-export-action="exportTxtButton">TXT</button>
+              <button type="button" data-export-action="exportHtmlButton">HTML</button>
+              <button type="button" data-export-action="exportPdfButton">PDF / печать</button>
+              <strong>Полный архив данных</strong>
+              <button type="button" data-export-action="exportFullXlsxButton">Всё в одном XLSX</button>
+              <button type="button" id="exportFullJsonButton">Всё в одном JSON</button>
+              <strong>Аналитика и история</strong>
+              <button type="button" data-export-action="exportDashboardButton">Dashboard PNG</button>
+              <button type="button" data-export-action="exportChartsSvgButton">Диаграммы SVG</button>
+              <button type="button" data-export-action="exportAnalyticsReportButton">Отчёт TXT</button>
+              <button type="button" data-export-action="exportHistoryButton">История</button>
+              <button type="button" data-export-action="exportMovementHistoryButton">Изменения XLSX</button>
+              <button type="button" data-export-action="exportClustersButton">Кластеры CSV</button>
+              <button type="button" data-export-action="exportTopologyButton">Топология HTML</button>
+              <strong>Служебные данные</strong>
+              <button type="button" data-export-action="exportComparisonExcelButton">Сравнение Excel</button>
+              <button type="button" data-export-action="exportComparisonCsvButton">Сравнение CSV</button>
+              <button type="button" data-export-action="exportComparisonTxtButton">Сравнение TXT</button>
+              <button type="button" data-export-action="exportIpMappingsButton">IP-маппинг CSV</button>
+              <button type="button" data-export-action="exportParityReportButton">Статус переноса JSON</button>
+            </div>
+          </details>
           <button class="button secondary" id="portableDatabaseButton" type="button" title="Папка с локальной базой автономного HTML">Локальная база</button>
           <button class="mode-badge user-mode" id="appModeButton" type="button" title="Переключить режим"><span id="appModeIcon">USER</span><strong id="appModeLabel">Пользовательский режим</strong><small id="appModeHint">Просмотр и поиск</small></button>
           <button class="icon-button" id="helpButton" title="Справка" aria-label="Справка">?</button>
@@ -110,6 +145,7 @@
               <label class="check"><input type="checkbox" data-field="ip" checked> IP-адрес</label>
               <label class="check"><input type="checkbox" data-field="address" checked> Физический адрес</label>
               <label class="check"><input type="checkbox" data-field="room" checked> Помещение</label>
+              <label class="check"><input type="checkbox" data-field="smartroomId" checked> Smartroom ID</label>
               <label class="check"><input type="checkbox" data-field="switchIp" checked> IP коммутатора</label>
               <label class="check"><input type="checkbox" data-field="switchPort" checked> Порт коммутатора</label>
               <label class="check"><input type="checkbox" data-field="history" checked> Данные из локальной истории</label>
@@ -123,15 +159,15 @@
             <select id="vendorFilter"><option value="">Все вендоры</option></select>
             <select id="validityFilter"><option value="">Все записи</option><option value="valid">Только корректные</option><option value="invalid">Только ошибки</option></select>
             <button class="icon-button" id="clearResultFiltersButton" title="Очистить фильтры" aria-label="Очистить фильтры">×</button>
-            <button class="button secondary" id="exportExcelButton">Excel</button>
-            <button class="button secondary" id="exportXlsxButton">XLSX</button>
-            <button class="button primary" id="exportFullXlsxButton" title="Устройства, аналитика, выгрузки, изменения и история каждого MAC в одной книге">Скачать всё XLSX</button>
-            <button class="button secondary" id="exportPdfButton">PDF / печать</button>
-            <button class="button secondary" id="exportCsvButton">CSV</button>
-            <button class="button secondary" id="exportTxtButton">TXT</button>
-            <button class="button secondary" id="exportYamlButton">YAML</button>
-            <button class="button secondary" id="exportJsonButton">JSON</button>
-            <button class="button secondary" id="exportHtmlButton">HTML</button>
+            <button class="button secondary legacy-export-trigger" id="exportExcelButton" hidden>Excel</button>
+            <button class="button secondary legacy-export-trigger" id="exportXlsxButton" hidden>XLSX</button>
+            <button class="button primary legacy-export-trigger" id="exportFullXlsxButton" hidden>Скачать всё XLSX</button>
+            <button class="button secondary legacy-export-trigger" id="exportPdfButton" hidden>PDF / печать</button>
+            <button class="button secondary legacy-export-trigger" id="exportCsvButton" hidden>CSV</button>
+            <button class="button secondary legacy-export-trigger" id="exportTxtButton" hidden>TXT</button>
+            <button class="button secondary legacy-export-trigger" id="exportYamlButton" hidden>YAML</button>
+            <button class="button secondary legacy-export-trigger" id="exportJsonButton" hidden>JSON</button>
+            <button class="button secondary legacy-export-trigger" id="exportHtmlButton" hidden>HTML</button>
             <button class="button secondary" id="copyResultsTableButton">Копировать таблицу</button>
             <button class="button secondary" id="copyResultsMacButton">Копировать MAC</button>
           </div>
@@ -252,7 +288,7 @@
           <select id="dashboardRoomFilter"><option value="">Все помещения</option></select>
           <button class="button secondary" id="refreshDashboardButton">Обновить</button>
           <button class="button secondary" id="saveDashboardSettingsButton">Настроить dashboard</button>
-          <button class="button secondary" id="exportDashboardButton">PNG dashboard</button>
+          <button class="button secondary legacy-export-trigger" id="exportDashboardButton">PNG dashboard</button>
         </div>
         <div class="dashboard-change-toolbar" aria-label="Период анализа изменений">
           <label>Режим сравнения
@@ -279,6 +315,7 @@
           <button type="button" class="metric dashboard-kpi" data-dashboard-status="unchanged" data-dashboard-card="unchanged"><span>Без изменений</span><strong id="dashboardUnchangedMetric">0</strong><small id="dashboardUnchangedHint">0% от всех</small></button>
           <article class="metric" data-dashboard-card="vendors"><span>Производителей</span><strong id="dashboardVendorMetric">0</strong><small>Уникальных</small></article>
           <article class="metric" data-dashboard-card="rooms"><span>Помещений</span><strong id="dashboardRoomCountMetric">0</strong><small>Уникальных</small></article>
+          <article class="metric" data-dashboard-card="changedRooms"><span>Помещений с изменениями</span><strong id="dashboardChangedRoomMetric">0</strong><small>За выбранный интервал</small></article>
         </section>
         <section class="metrics analytics-metrics">
           <article class="metric"><span>Снимков</span><strong id="snapshotMetric">0</strong></article>
@@ -299,16 +336,16 @@
           <div class="tool-panel"><div class="panel-head"><h2>Динамика загрузок</h2><span class="muted">Снимки по времени</span></div><div class="bar-list" id="timelineChart"></div></div>
           <div class="tool-panel"><div class="panel-head"><h2>Статистика локальной базы</h2><span class="muted">Снимки, динамика, производительность</span></div><div class="bar-list" id="backendStatisticsChart"></div></div>
           <div class="tool-panel"><div class="panel-head"><h2>Временная статистика</h2><span class="muted">Дни, недели, месяцы</span></div><div class="bar-list" id="temporalStatisticsChart"></div></div>
-          <div class="tool-panel"><div class="panel-head"><h2>Кластеры устройств</h2><button class="button secondary" id="exportClustersButton">CSV</button></div><div class="bar-list" id="clusterChart"></div></div>
-          <div class="tool-panel topology-panel"><div class="panel-head"><h2>Топология сети</h2><button class="button secondary" id="exportTopologyButton">HTML</button></div><div class="topology-list" id="topologyGraph"></div></div>
+          <div class="tool-panel"><div class="panel-head"><h2>Кластеры устройств</h2><button class="button secondary legacy-export-trigger" id="exportClustersButton" hidden>CSV</button></div><div class="bar-list" id="clusterChart"></div></div>
+          <div class="tool-panel topology-panel"><div class="panel-head"><h2>Топология сети</h2><button class="button secondary legacy-export-trigger" id="exportTopologyButton" hidden>HTML</button></div><div class="topology-list" id="topologyGraph"></div></div>
           <div class="tool-panel"><div class="panel-head"><h2>Анализ качества данных</h2><button class="button secondary" id="qualityAnalysisButton">Проверить</button></div><div class="bar-list" id="qualityInsights"><p class="muted">Запустите проверку текущего набора устройств.</p></div><div class="mapping-list" id="qualityReportsList"></div></div>
-          <div class="tool-panel analytics-report-panel"><div class="panel-head"><div><h2>Аналитический отчёт</h2><span class="muted" id="analyticsReportStatus">Отчёт по текущему набору устройств</span></div><div class="report-actions"><button class="button secondary" id="refreshAnalyticsReportButton">Обновить</button><button class="button secondary" id="exportAnalyticsReportButton">TXT</button></div></div><pre id="analyticsReportPreview" class="analytics-report-preview">Нет данных</pre></div>
+          <div class="tool-panel analytics-report-panel"><div class="panel-head"><div><h2>Аналитический отчёт</h2><span class="muted" id="analyticsReportStatus">Отчёт по текущему набору устройств</span></div><div class="report-actions"><button class="button secondary" id="refreshAnalyticsReportButton">Обновить</button><button class="button secondary legacy-export-trigger" id="exportAnalyticsReportButton" hidden>TXT</button></div></div><pre id="analyticsReportPreview" class="analytics-report-preview">Нет данных</pre></div>
         </section>
       </section>
 
       <section class="view" id="historyView" role="tabpanel">
         <section class="results-section">
-          <div class="results-toolbar"><h2>История загрузок и изменений</h2><input id="historyDateFrom" type="date"><input id="historyDateTo" type="date"><input id="historySearchInput" type="search" placeholder="Поиск по MAC, производителю, модели, IP, адресу и файлу"><button class="button secondary" id="exportHistoryButton">Экспорт</button><button class="icon-button" id="clearHistoryFiltersButton" title="Очистить фильтры">×</button><button class="button secondary danger-action" id="deleteSelectedSnapshotsButton" data-engineering-permission="delete:snapshots">Удалить выбранные</button><button class="button secondary" id="clearHistoryButton" data-engineering-permission="delete:history">Очистить историю</button></div>
+          <div class="results-toolbar"><h2>История загрузок и изменений</h2><input id="historyDateFrom" type="date"><input id="historyDateTo" type="date"><input id="historySearchInput" type="search" placeholder="Поиск по MAC, производителю, модели, IP, адресу и файлу"><button class="button secondary legacy-export-trigger" id="exportHistoryButton" hidden>Экспорт</button><button class="icon-button" id="clearHistoryFiltersButton" title="Очистить фильтры">×</button><button class="button secondary danger-action" id="deleteSelectedSnapshotsButton" data-engineering-permission="delete:snapshots">Удалить выбранные</button><button class="button secondary" id="clearHistoryButton" data-engineering-permission="delete:history">Очистить историю</button></div>
           <div class="table-wrap"><table><thead><tr><th><input type="checkbox" id="selectAllSnapshots" aria-label="Выбрать все выгрузки"></th><th>Дата</th><th>Снимок</th><th>Устройств</th><th>Источник</th><th>Действие</th></tr></thead><tbody id="historyBody"></tbody></table></div>
         </section>
         <section class="results-section enhanced-history-section">
@@ -323,7 +360,7 @@
           <div class="enhanced-history-actions">
             <button class="button primary" id="applyMovementFiltersButton">Применить</button>
             <button class="button secondary" id="clearMovementFiltersButton">Сбросить</button>
-            <button class="button secondary" id="exportMovementHistoryButton">Экспорт XLSX</button>
+            <button class="button secondary legacy-export-trigger" id="exportMovementHistoryButton" hidden>Экспорт XLSX</button>
             <button class="button secondary danger-action" id="deleteShownMovementsButton" data-engineering-permission="delete:history">Удалить показанные</button>
             <button class="button secondary" id="expandMovementGroupsButton">Развернуть все</button>
             <button class="button secondary" id="collapseMovementGroupsButton">Свернуть все</button>
@@ -660,7 +697,7 @@
     <div class="mac-timeline" id="deviceChronologyBody" aria-live="polite"></div>
     <h3>История появлений</h3>
     <div class="bar-list compact" id="macHistoryStats"></div>
-    <div class="table-wrap"><table><thead><tr><th>Дата</th><th>Файл</th><th>Производитель</th><th>Модель</th><th>IP</th><th>Адрес</th><th>Помещение</th></tr></thead><tbody id="deviceHistoryRecordsBody"></tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>Дата</th><th>Файл</th><th>Производитель</th><th>Модель</th><th>IP</th><th>Адрес</th><th>Помещение</th><th>Smartroom ID</th></tr></thead><tbody id="deviceHistoryRecordsBody"></tbody></table></div>
     <h3>Изменения параметров</h3>
     <div class="table-wrap"><table><thead><tr><th>Дата</th><th>Поле</th><th>Было</th><th>Стало</th><th>Файл</th></tr></thead><tbody id="deviceHistoryBody"></tbody></table></div>
   </dialog>
@@ -695,7 +732,8 @@
     <div class="dashboard-change-filters">
       <label>Важность<select id="dashboardChangeSeverityFilter"><option value="all">Все уровни</option><option value="critical">Критические</option><option value="high">Высокие</option><option value="medium">Средние</option><option value="low">Низкие</option></select></label>
       <label>Тип<select id="dashboardChangeTypeFilter"><option value="all">Все типы</option><option value="added">Добавлено</option><option value="removed">Отсутствует</option><option value="modified">Изменено</option></select></label>
-      <label>Поиск<input type="search" id="dashboardChangeSearch" placeholder="MAC, поле, значение"></label>
+      <label>MAC-адрес<input type="search" id="dashboardChangeMacSearch" placeholder="00:11:22:33:44:55"></label>
+      <label>Поиск по данным<input type="search" id="dashboardChangeSearch" placeholder="Поле, значение, помещение"></label>
     </div>
     <div class="table-wrap dashboard-changes-table"><table><thead><tr><th>Важность</th><th>Дата</th><th>MAC</th><th>Тип</th><th>Модель</th><th>Адрес помещения</th><th>Помещение</th><th>Что изменилось</th><th>Источник</th></tr></thead><tbody id="dashboardChangesBody"><tr><td colspan="9" class="empty-state">Изменений не найдено.</td></tr></tbody></table></div>
   </dialog>
@@ -719,6 +757,7 @@
         <label class="check"><input type="checkbox" data-dashboard-card-toggle="unchanged">Без изменений</label>
         <label class="check"><input type="checkbox" data-dashboard-card-toggle="vendors">Производителей</label>
         <label class="check"><input type="checkbox" data-dashboard-card-toggle="rooms">Помещений</label>
+        <label class="check"><input type="checkbox" data-dashboard-card-toggle="changedRooms">Помещений с изменениями</label>
       </div></fieldset>
     </section>
     <section class="dashboard-settings-panel" data-dashboard-settings-panel="charts" role="tabpanel" hidden>
@@ -760,15 +799,16 @@
   <script src="frontend/memory-guard.js?v=20260722.9"></script>
   <script src="frontend/file-readers.js?v=20260722.8"></script>
   <script src="frontend/state-persistence.js?v=20260722.7"></script>
-  <script src="frontend/browser-snapshot-store.js?v=20260728.1"></script>
-  <script src="frontend/mac-chronology.js?v=20260727.5"></script>
+  <script src="frontend/browser-snapshot-store.js?v=20260729.1"></script>
+  <script src="frontend/mac-chronology.js?v=20260729.1"></script>
   <script src="frontend/xlsx-exporter.js?v=20260727.5"></script>
-  <script src="frontend/full-xlsx-report.js?v=20260727.5"></script>
+  <script src="frontend/full-xlsx-report.js?v=20260729.1"></script>
+  <script src="frontend/full-json-report.js?v=20260729.1"></script>
   <script src="frontend/portable-database.js?v=20260728.1"></script>
   <script src="frontend/local-folder-store.js?v=20260728.1"></script>
   <script src="frontend/workspace-file-lifecycle.js?v=20260722.7"></script>
   <script src="frontend/guide.js?v=20260722.7"></script>
-  <script src="app.js?v=20260728.1"></script>
+  <script src="app.js?v=20260729.1"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;
