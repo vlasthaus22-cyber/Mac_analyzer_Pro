@@ -72,7 +72,9 @@ def create_clean_database(application_root: Path, data_root: Path) -> dict[str, 
     unexpected_files = [
         path
         for path in data_root.rglob("*")
-        if path.is_file() and path.resolve() != packaged_reference.resolve()
+        if path.is_file()
+        and path.resolve() != packaged_reference.resolve()
+        and path.name != ".gitkeep"
     ]
     if unexpected_files:
         raise RuntimeError(

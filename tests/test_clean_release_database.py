@@ -14,6 +14,8 @@ PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 def test_clean_release_database_has_complete_schema_and_no_user_rows():
     with tempfile.TemporaryDirectory(prefix="clean-release-database-") as temporary:
         data_root = Path(temporary) / "data"
+        (data_root / "reference").mkdir(parents=True)
+        (data_root / "reference" / ".gitkeep").write_text("", encoding="utf-8")
         completed = subprocess.run(
             [
                 str(PYTHON),
