@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 from server import (
     ENGINEERING_PERMISSIONS,
+    ENGINEERING_SESSION_SERVICE,
     db_connection,
     engineering_token_hash,
     init_database,
@@ -11,6 +12,12 @@ from server import (
     utc_now,
     validate_engineering_session,
 )
+
+
+def test_engineering_domain_logic_is_owned_by_system_service():
+    assert engineering_token_hash.__module__ == "backend.services.system.engineering_service"
+    assert normalize_engineering_ttl.__module__ == "backend.services.system.engineering_service"
+    assert ENGINEERING_SESSION_SERVICE.__class__.__module__ == "backend.services.system.engineering_service"
 
 
 def cleanup():
@@ -68,6 +75,7 @@ def test_engineering_session_ttl_is_bounded():
 
 
 if __name__ == "__main__":
+    test_engineering_domain_logic_is_owned_by_system_service()
     test_engineering_session_token_permissions_and_revocation()
     test_expired_engineering_session_is_rejected()
     test_engineering_session_ttl_is_bounded()

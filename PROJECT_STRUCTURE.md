@@ -37,7 +37,8 @@ Mac_analyzer_Pro/
       integrations/        внешние API, уведомления и планировщик
       comparison/          сравнение двух и нескольких выгрузок
       exporting/           CSV/TXT/HTML/JSON/YAML/XLSX/PDF экспорт
-      system/              пути хранения, legacy-миграция и parity-аудит
+      system/              пути хранения, доступ, legacy-миграция и parity-аудит
+        engineering_service.py инженерные сессии, хеширование токенов и разрешения
         diagnostics_service.py read-only самодиагностика SQLite, API, структуры и OOM-защиты
   config/                  локальные настройки
   data/

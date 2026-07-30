@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import csv
 import binascii
-import hashlib
 import hmac
 import html as html_lib
 import io
@@ -18,7 +17,6 @@ import ipaddress
 import mimetypes
 import os
 import re
-import secrets
 import signal
 import smtplib
 import sqlite3
@@ -68,6 +66,12 @@ from backend.services.detection.reference_data_service import import_oui_referen
 from backend.services.system.legacy_migration_service import migrate_legacy_sqlite
 from backend.services.system.parity_service import build_parity_report, build_parity_status
 from backend.services.system.diagnostics_service import build_system_diagnostics
+from backend.services.system.engineering_service import (
+    DEFAULT_ENGINEERING_PERMISSIONS,
+    EngineeringSessionService,
+    engineering_token_hash,
+    normalize_engineering_ttl,
+)
 from backend.services.system.storage_paths import initialize_storage
 from backend.services.workspace.workspace_cache_service import WorkspaceCacheMiss, WorkspaceFileCache, prepare_workspace_files, resolve_workspace_files
 
@@ -120,7 +124,7 @@ DEFAULT_RESULT_LABELS = {
     "modelConfidence": "Уверенность модели",
     "modelMatchedPrefix": "Префикс модели",
 }
-ENGINEERING_PERMISSIONS = ["delete:history", "delete:snapshots", "delete:mappings", "delete:tasks", "delete:ip-mappings", "delete:api-cache", "write:settings", "write:migration"]
+ENGINEERING_PERMISSIONS = list(DEFAULT_ENGINEERING_PERMISSIONS)
 
 BUILTIN_VENDORS = {
     "00037F": "Apple Inc.", "001A11": "Apple Inc.", "18FE34": "Apple Inc.",
@@ -4317,70 +4321,23 @@ def save_theme_settings(theme: Any) -> dict[str, Any]:
     return theme_payload(normalized)
 
 
-def engineering_token_hash(token: str) -> str:
-    return hashlib.sha256(as_text(token).encode("utf-8")).hexdigest()
-
-
-def normalize_engineering_ttl(ttl_minutes: Any = 480) -> int:
-    try:
-        normalized = int(ttl_minutes or 480)
-    except (TypeError, ValueError):
-        normalized = 480
-    return min(1440, max(1, normalized))
+ENGINEERING_SESSION_SERVICE = EngineeringSessionService(
+    db_connection,
+    utc_now,
+    ENGINEERING_PERMISSIONS,
+)
 
 
 def issue_engineering_session(ttl_minutes: int = 480) -> dict[str, Any]:
-    token = secrets.token_urlsafe(32)
-    created_at = utc_now()
-    expires_at = (datetime.utcnow() + timedelta(minutes=normalize_engineering_ttl(ttl_minutes))).replace(microsecond=0).isoformat() + "Z"
-    session = {
-        "token": token,
-        "role": "engineer",
-        "permissions": ENGINEERING_PERMISSIONS,
-        "expiresAt": expires_at,
-        "createdAt": created_at,
-    }
-    with db_connection() as conn:
-        conn.execute(
-            "INSERT INTO engineering_sessions (token_hash, role, permissions_json, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
-            (engineering_token_hash(token), session["role"], json.dumps(session["permissions"]), created_at, expires_at),
-        )
-    return session
+    return ENGINEERING_SESSION_SERVICE.issue(ttl_minutes)
 
 
 def validate_engineering_session(token: str, permission: str = "") -> Optional[dict[str, Any]]:
-    if not as_text(token):
-        return None
-    token_hash = engineering_token_hash(token)
-    with db_connection() as conn:
-        row = conn.execute(
-            "SELECT role, permissions_json, created_at, expires_at, revoked_at FROM engineering_sessions WHERE token_hash = ?",
-            (token_hash,),
-        ).fetchone()
-    if not row or row["revoked_at"]:
-        return None
-    expires_at = datetime.fromisoformat(row["expires_at"].replace("Z", ""))
-    if expires_at <= datetime.utcnow():
-        return None
-    permissions = json.loads(row["permissions_json"])
-    if permission and permission not in permissions:
-        return None
-    return {
-        "role": row["role"],
-        "permissions": permissions,
-        "createdAt": row["created_at"],
-        "expiresAt": row["expires_at"],
-    }
+    return ENGINEERING_SESSION_SERVICE.validate(token, permission)
 
 
 def revoke_engineering_session(token: str) -> bool:
-    token_hash = engineering_token_hash(token)
-    with db_connection() as conn:
-        cursor = conn.execute(
-            "UPDATE engineering_sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL",
-            (utc_now(), token_hash),
-        )
-    return cursor.rowcount > 0
+    return ENGINEERING_SESSION_SERVICE.revoke(token)
 
 
 def api_cache_get(key: str) -> Optional[dict[str, str]]:

@@ -55,6 +55,7 @@ def test_project_structure_and_maintenance_commands_exist():
         "backend/services/exporting/export_service.py",
         "backend/services/exporting/pdf_service.py",
         "backend/services/system/__init__.py",
+        "backend/services/system/engineering_service.py",
         "backend/services/system/legacy_migration_service.py",
         "backend/services/system/parity_service.py",
         "backend/services/system/storage_paths.py",
@@ -165,6 +166,9 @@ def test_project_structure_and_maintenance_commands_exist():
         adapter = (ROOT / system_adapter).read_text(encoding="utf-8-sig")
         assert len(adapter.splitlines()) <= 4
         assert "backend.services.system" in adapter
+    server = (ROOT / "server.py").read_text(encoding="utf-8-sig")
+    assert "from backend.services.system.engineering_service import" in server
+    assert "ENGINEERING_SESSION_SERVICE = EngineeringSessionService(" in server
 
 
 if __name__ == "__main__":
