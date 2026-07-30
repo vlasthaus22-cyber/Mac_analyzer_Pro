@@ -54,7 +54,8 @@ Mac_analyzer_Pro/
   logs/                    журналы backend и исходной программы
   portable/                готовые пользовательские сборки (создаются командами сборки, не хранятся в Git)
     html/MAC-Analyzer-Pro.html один автономный файл без EXE, CMD, Python и backend
-    complete/*.zip        полный проект, автономный HTML и локальные данные без EXE/DLL/CMD
+    complete/*.zip        безопасный пакет: автономный HTML и исходники без EXE/DLL/CMD
+    full-project/*.zip    полный Git-проект, автономный HTML и все tracked-файлы, без пользовательских данных
     dist/MACAnalyzerBackend/ единый пакет: исходный server.py, Python-first лаунчер и резервный asInvoker backend
   START_MAC_ANALYZER.cmd    необязательный legacy-запуск backend для разработки
   STOP_MAC_ANALYZER.cmd     остановка необязательного backend
@@ -86,6 +87,7 @@ powershell -ExecutionPolicy Bypass -File scripts/run_tests.ps1
 powershell -ExecutionPolicy Bypass -File scripts/build_portable.ps1
 powershell -ExecutionPolicy Bypass -File scripts/build_html_portable.ps1
 powershell -ExecutionPolicy Bypass -File scripts/build_complete_release.ps1
+powershell -ExecutionPolicy Bypass -File scripts/build_full_project_release.ps1
 ```
 
 ## SQLite-обогащение без накопления памяти браузера

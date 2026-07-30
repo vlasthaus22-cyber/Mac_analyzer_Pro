@@ -20,6 +20,17 @@ Open `portable/html/MAC-Analyzer-Pro.html` after a local build. This generated f
 frontend, styles, XLSX reader, enrichment logic, history, and local database
 modules. Do not edit it directly; rebuild it from the source files.
 
+For a release archive containing the entire tracked project plus the generated
+autonomous HTML, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build_full_project_release.ps1
+```
+
+The full-project builder includes every Git-tracked file and verifies that no
+source file is omitted. User databases, imports, exports, logs, secrets, caches,
+virtual environments, and previous build output remain excluded.
+
 `mac_analyzer_standalone.html` is a legacy parity artifact and is not the main
 application. New functionality belongs in `index.html`, `app.js`, and
 `frontend/`.
