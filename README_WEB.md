@@ -67,6 +67,8 @@ MADB. SQLite из `data/databases` автономный HTML напрямую ч
 frontend/backend, Python API, сервисы, тесты, инструменты, CMD-запускатели и
 Windows manifest. Пользовательские базы, импорты, экспорты, журналы, секреты,
 кеши, старые вложенные релизы и временные build/runtime-файлы,
+не включаются. Единый пакет `scripts/build_everything_release.ps1` объединяет
+готовую Windows-среду с EXE/backend, автономный HTML и полный Git-проект.
 EXE, DLL и CMD исключаются; состав и SHA-256 каждого файла записываются в
 `FILE_MANIFEST.sha256`.
 

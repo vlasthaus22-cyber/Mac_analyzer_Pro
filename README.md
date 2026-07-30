@@ -31,6 +31,13 @@ The full-project builder includes every Git-tracked file and verifies that no
 source file is omitted. User databases, imports, exports, logs, secrets, caches,
 virtual environments, and previous build output remain excluded.
 
+To create the all-in-one Windows release containing the ready runtime, the
+autonomous HTML, and the complete source project, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build_everything_release.ps1
+```
+
 `mac_analyzer_standalone.html` is a legacy parity artifact and is not the main
 application. New functionality belongs in `index.html`, `app.js`, and
 `frontend/`.
