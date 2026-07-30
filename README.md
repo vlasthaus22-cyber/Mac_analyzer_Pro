@@ -39,6 +39,16 @@ source project, run:
 powershell -ExecutionPolicy Bypass -File scripts/build_everything_release.ps1
 ```
 
+To combine the current fixed program with the preserved working database,
+history, snapshots, mappings, imports, and backups from v1.0.27, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build_v1027_data_release.ps1
+```
+
+The migration works on an archive copy and removes saved API keys, passwords,
+webhooks, tokens, and engineering sessions before release packaging.
+
 `mac_analyzer_standalone.html` is a legacy parity artifact and is not the main
 application. New functionality belongs in `index.html`, `app.js`, and
 `frontend/`.

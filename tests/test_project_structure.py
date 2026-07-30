@@ -20,6 +20,7 @@ def test_project_structure_and_maintenance_commands_exist():
         "scripts/build_complete_release.ps1",
         "scripts/build_everything_release.ps1",
         "scripts/build_full_project_release.ps1",
+        "scripts/build_v1027_data_release.ps1",
         "scripts/build_source_portable.ps1",
         "scripts/run_tests.ps1",
         "tests/README.md",
@@ -28,6 +29,7 @@ def test_project_structure_and_maintenance_commands_exist():
         "tools/create_clean_release_database.py",
         "tools/generate_parity_status.py",
         "tools/migrate_legacy.py",
+        "tools/prepare_legacy_release_data.py",
         "tools/verify_portable_backend.py",
         "backend/services/detection/column_detector_service.py",
         "backend/services/detection/detection_index_service.py",
@@ -91,6 +93,7 @@ def test_project_structure_and_maintenance_commands_exist():
         "tests/test_clean_release_database.py",
         "tests/test_everything_release_build.py",
         "tests/test_full_project_release_build.py",
+        "tests/test_prepare_legacy_release_data.py",
         "tests/test_repeated_enrichment_memory.py",
         "data/README.md",
         "data/reference/.gitkeep",
@@ -112,6 +115,13 @@ def test_project_structure_and_maintenance_commands_exist():
     portable_build = (ROOT / "scripts/build_portable.ps1").read_text(encoding="utf-8-sig")
     assert 'Filter "__pycache__"' in portable_build
     assert '$_.Extension -in @(".pyc", ".pyo")' in portable_build
+    legacy_release_build = (ROOT / "scripts/build_v1027_data_release.ps1").read_text(
+        encoding="utf-8-sig"
+    )
+    assert "build_everything_release.ps1" in legacy_release_build
+    assert '"-SkipCleanDatabase"' in legacy_release_build
+    assert "prepare_legacy_release_data.py" in legacy_release_build
+    assert "FILE_MANIFEST.sha256" in legacy_release_build
     assert 'Filter = "test_*.py"' in test_script
     assert 'Join-Path $root "tests"' in test_script
     assert 'Join-Path $root "frontend"' in test_script
