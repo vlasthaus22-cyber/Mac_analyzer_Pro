@@ -1,7 +1,8 @@
 param(
     [string]$OutputDirectory = "",
-    [string]$Version = "v1.0.31",
-    [string]$PortablePackage = ""
+    [string]$Version = "v1.0.32",
+    [string]$PortablePackage = "",
+    [switch]$SkipCleanDatabase
 )
 
 $ErrorActionPreference = "Stop"
@@ -53,6 +54,27 @@ try {
     Copy-DirectoryContents $sourcePackage (Join-Path $package "Source")
     Copy-Item -LiteralPath (Join-Path $sourcePackage "MAC-Analyzer-Pro.html") -Destination (Join-Path $package "MAC-Analyzer-Pro.html") -Force
 
+    $databaseReport = $null
+    if (-not $SkipCleanDatabase) {
+        $python = Join-Path $root ".venv\Scripts\python.exe"
+        if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+            throw "Python environment is required to create the clean release database."
+        }
+        $windowsPackage = Join-Path $package "Windows-Portable"
+        $databaseOutput = & $python (Join-Path $root "tools\create_clean_release_database.py") `
+            --application-root $windowsPackage --data-root (Join-Path $windowsPackage "data")
+        if ($LASTEXITCODE -ne 0) { throw "Clean release database creation failed." }
+        $databaseReport = $databaseOutput | ConvertFrom-Json
+    }
+    $windowsPackage = Join-Path $package "Windows-Portable"
+    $generatedCaches = @(
+        Get-ChildItem -LiteralPath $windowsPackage -Recurse -Force |
+            Where-Object { $_.Name -eq "__pycache__" -or $_.Extension -in @(".pyc", ".pyo") }
+    )
+    if ($generatedCaches.Count) {
+        throw "Windows portable package contains generated Python caches: $($generatedCaches.FullName -join ', ')"
+    }
+
     @(
         "MAC ANALYZER PRO - EVERYTHING PACKAGE"
         ""
@@ -60,8 +82,8 @@ try {
         "2. Ready Windows version with backend: open Windows-Portable and run START_MAC_ANALYZER.cmd."
         "3. Complete source code, tests, and tools: open Source."
         ""
-        "User databases, imports, exports, logs, secrets, and caches are not included."
-        "A clean working database is created automatically on first launch."
+        "A clean initialized SQLite database and the OUI reference are included."
+        "User history, imports, exports, logs, secrets, and caches are not included."
     ) | Set-Content -LiteralPath (Join-Path $package "README_FIRST.txt") -Encoding UTF8
 
     $sourceInfo = Get-Content -LiteralPath (Join-Path $sourcePackage "PACKAGE_INFO.json") -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -76,8 +98,12 @@ try {
         trackedProjectFiles = $sourceInfo.trackedProjectFiles
         windowsRuntimeFiles = $runtimeFiles.Count
         administratorRightsRequired = $false
-        runtimeDataIncluded = $false
-        runtimeDataPolicy = "A clean database is created on first run; user databases, imports, exports, logs, secrets, and caches are excluded."
+        cleanDatabaseIncluded = -not $SkipCleanDatabase
+        cleanDatabase = if ($databaseReport) { "Windows-Portable/data/databases/mac_analyzer_web.db" } else { $null }
+        cleanDatabaseIntegrity = if ($databaseReport) { $databaseReport.integrity } else { $null }
+        cleanDatabaseTables = if ($databaseReport) { $databaseReport.tables } else { 0 }
+        userRuntimeDataIncluded = $false
+        runtimeDataPolicy = "A clean initialized database is included; user history, imports, exports, logs, secrets, and caches are excluded."
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $package "PACKAGE_INFO.json") -Encoding UTF8
 
     $programFiles = @(Get-ChildItem -LiteralPath $package -Recurse -File -Force)
@@ -116,7 +142,12 @@ try {
         autonomousHtmlIncluded = $true
         fullSourceIncluded = $true
         windowsRuntimeIncluded = $true
-        runtimeDataIncluded = $false
+        cleanDatabaseIncluded = -not $SkipCleanDatabase
+        cleanDatabaseBytes = if ($databaseReport) { $databaseReport.bytes } else { 0 }
+        cleanDatabaseIntegrity = if ($databaseReport) { $databaseReport.integrity } else { "skipped" }
+        cleanDatabaseTables = if ($databaseReport) { $databaseReport.tables } else { 0 }
+        cleanDatabaseUserRows = if ($databaseReport) { $databaseReport.userDataRows } else { 0 }
+        userRuntimeDataIncluded = $false
     } | ConvertTo-Json -Compress
 } finally {
     if (Test-Path -LiteralPath $stagingRoot) { Remove-Item -LiteralPath $stagingRoot -Recurse -Force }

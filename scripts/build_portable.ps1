@@ -59,6 +59,12 @@ $arguments += Join-Path $root "server.py"
 if ($LASTEXITCODE -ne 0) { throw "Portable backend build failed." }
 
 $package = Join-Path $distPath "MACAnalyzerBackend"
+Get-ChildItem -LiteralPath $package -Directory -Filter "__pycache__" -Recurse -ErrorAction SilentlyContinue |
+    Sort-Object { $_.FullName.Length } -Descending |
+    Remove-Item -Recurse -Force
+Get-ChildItem -LiteralPath $package -File -Recurse -ErrorAction SilentlyContinue |
+    Where-Object { $_.Extension -in @(".pyc", ".pyo") } |
+    Remove-Item -Force
 Copy-Item -LiteralPath (Join-Path $root "START_MAC_ANALYZER.cmd") -Destination $package -Force
 Copy-Item -LiteralPath (Join-Path $root "STOP_MAC_ANALYZER.cmd") -Destination $package -Force
 $verifiedFrontendFiles = @(

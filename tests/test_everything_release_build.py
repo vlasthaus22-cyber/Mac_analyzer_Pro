@@ -48,6 +48,7 @@ def test_everything_release_combines_runtime_autonomous_html_and_all_sources():
                 "test",
                 "-PortablePackage",
                 str(fake_runtime),
+                "-SkipCleanDatabase",
             ],
             cwd=ROOT,
             text=True,
@@ -62,7 +63,8 @@ def test_everything_release_combines_runtime_autonomous_html_and_all_sources():
         assert report["autonomousHtmlIncluded"] is True
         assert report["fullSourceIncluded"] is True
         assert report["windowsRuntimeIncluded"] is True
-        assert report["runtimeDataIncluded"] is False
+        assert report["cleanDatabaseIncluded"] is False
+        assert report["userRuntimeDataIncluded"] is False
 
         with zipfile.ZipFile(report["file"]) as package:
             prefix = package.namelist()[0].split("/", 1)[0] + "/"

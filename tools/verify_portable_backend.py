@@ -86,7 +86,18 @@ def wait_until_healthy(base_url: str, process: subprocess.Popen[bytes]) -> dict[
     raise RuntimeError(f"Portable backend did not become healthy: {last_error}")
 
 
-def verify(package: Path, port: int) -> dict[str, Any]:
+def stop_process(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+
+
+def verify(package: Path, port: int, use_package_database: bool = False) -> dict[str, Any]:
     package = package.resolve()
     executable = package / "MACAnalyzerBackend.exe"
     if not executable.is_file():
@@ -102,10 +113,18 @@ def verify(package: Path, port: int) -> dict[str, Any]:
 
     data_root = package / "data"
     data_root.mkdir(parents=True, exist_ok=True)
-    verification_storage = tempfile.TemporaryDirectory(prefix="portable-smoke-", dir=data_root)
+    verification_storage = None
     environment = os.environ.copy()
     environment["MAC_ANALYZER_PORT"] = str(port)
-    environment["MAC_ANALYZER_DATA_DIR"] = verification_storage.name
+    if use_package_database:
+        included_database = data_root / "databases" / "mac_analyzer_web.db"
+        if not included_database.is_file():
+            raise FileNotFoundError(included_database)
+        environment.pop("MAC_ANALYZER_DATA_DIR", None)
+        environment.pop("MAC_ANALYZER_DATABASE_PATH", None)
+    else:
+        verification_storage = tempfile.TemporaryDirectory(prefix="portable-smoke-", dir=data_root)
+        environment["MAC_ANALYZER_DATA_DIR"] = verification_storage.name
     process = subprocess.Popen(
         [str(executable)],
         cwd=package,
@@ -189,6 +208,26 @@ def verify(package: Path, port: int) -> dict[str, Any]:
         database_path = Path(health["databasePath"])
         assert database_path.is_file()
         assert package in database_path.parents
+        restart_persistence = False
+        if use_package_database:
+            stop_process(process)
+            process = subprocess.Popen(
+                [str(executable)],
+                cwd=package,
+                env=environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            wait_until_healthy(base_url, process)
+            persisted = request_json(
+                base_url,
+                "GET",
+                "/api/database/search?query=" + urllib.parse.quote("Portable Vendor"),
+            )
+            if int(persisted.get("count", 0)) < 2:
+                raise AssertionError("Database records did not persist after backend restart")
+            restart_persistence = True
         return {
             "status": "passed",
             "package": package_info["package"],
@@ -204,24 +243,28 @@ def verify(package: Path, port: int) -> dict[str, Any]:
             "enrichmentRounds": 3,
             "devicesPerRound": 2,
             "durationMs": rounds,
+            "includedDatabaseUsed": use_package_database,
+            "restartPersistence": restart_persistence,
         }
     finally:
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
-        verification_storage.cleanup()
+        stop_process(process)
+        if verification_storage is not None:
+            verification_storage.cleanup()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("package", type=Path)
     parser.add_argument("--port", type=int, default=8091)
+    parser.add_argument("--use-package-database", action="store_true")
     arguments = parser.parse_args()
-    print(json.dumps(verify(arguments.package, arguments.port), ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            verify(arguments.package, arguments.port, arguments.use_package_database),
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

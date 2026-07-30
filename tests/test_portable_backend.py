@@ -52,6 +52,8 @@ def test_windows_fallback_never_requests_elevation():
     assert 'b"requestedExecutionLevel" not in manifest' in verifier
     assert 'b"asInvoker" not in manifest' in verifier
     assert 'package / "mac_analyzer_standalone.html"' in verifier
+    assert "--use-package-database" in verifier
+    assert '"restartPersistence": restart_persistence' in verifier
 
 
 def test_source_only_portable_package_has_no_backend_executable():

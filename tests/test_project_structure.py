@@ -25,6 +25,7 @@ def test_project_structure_and_maintenance_commands_exist():
         "tests/README.md",
         "tools/README.md",
         "tools/_bootstrap.py",
+        "tools/create_clean_release_database.py",
         "tools/generate_parity_status.py",
         "tools/migrate_legacy.py",
         "tools/verify_portable_backend.py",
@@ -87,6 +88,7 @@ def test_project_structure_and_maintenance_commands_exist():
         "tests/portable_database.test.js",
         "tests/test_html_portable_build.py",
         "tests/test_complete_release_build.py",
+        "tests/test_clean_release_database.py",
         "tests/test_everything_release_build.py",
         "tests/test_full_project_release_build.py",
         "tests/test_repeated_enrichment_memory.py",
@@ -107,6 +109,9 @@ def test_project_structure_and_maintenance_commands_exist():
     assert 'Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/health"' in start_script
     assert "Backend exited before startup" in start_script
     assert "Set-Content -LiteralPath $pidFile" in start_script
+    portable_build = (ROOT / "scripts/build_portable.ps1").read_text(encoding="utf-8-sig")
+    assert 'Filter "__pycache__"' in portable_build
+    assert '$_.Extension -in @(".pyc", ".pyo")' in portable_build
     assert 'Filter = "test_*.py"' in test_script
     assert 'Join-Path $root "tests"' in test_script
     assert 'Join-Path $root "frontend"' in test_script

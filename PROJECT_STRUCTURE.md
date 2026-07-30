@@ -55,7 +55,7 @@ Mac_analyzer_Pro/
   portable/                готовые пользовательские сборки (создаются командами сборки, не хранятся в Git)
     html/MAC-Analyzer-Pro.html один автономный файл без EXE, CMD, Python и backend
     complete/*.zip        безопасный пакет: автономный HTML и исходники без EXE/DLL/CMD
-    everything/*.zip      всё в одном: Windows runtime, автономный HTML и полный Git-проект
+    everything/*.zip      всё в одном: Windows runtime, чистая SQLite-база, OUI, автономный HTML и полный Git-проект
     full-project/*.zip    полный Git-проект, автономный HTML и все tracked-файлы, без пользовательских данных
     dist/MACAnalyzerBackend/ единый пакет: исходный server.py, Python-first лаунчер и резервный asInvoker backend
   START_MAC_ANALYZER.cmd    необязательный legacy-запуск backend для разработки
