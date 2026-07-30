@@ -19,6 +19,11 @@ assert.deepEqual(
   { headers: ["MAC", "Vendor"], rows: [["00:11:22:33:44:55", "Cisco"]] },
 );
 assert.equal(readers.clientDelimiter("MAC;Vendor\n001122;Cisco", "sample.csv"), ";");
+const utf8Csv = "MAC,Address\n00:11:22:33:44:55,Ленина 1\n";
+const utf8Bytes = new TextEncoder().encode(utf8Csv);
+const decodedUtf8 = readers.readClientTextFile({
+  arrayBuffer: async () => utf8Bytes.buffer,
+});
 assert.deepEqual(
   readers.xlsxSharedStringsFromXml('<sst><si><t>Cisco &amp; Systems</t></si><si><r><t>Room</t></r><r><t> 12</t></r></si></sst>'),
   ["Cisco & Systems", "Room 12"],
@@ -28,4 +33,10 @@ assert.deepEqual(
   { values: ["AABBCC000001", "", "10.0.0.1"], cellCount: 2, populated: true },
 );
 
-console.log("frontend file readers test passed");
+decodedUtf8.then((text) => {
+  assert.equal(text, utf8Csv);
+  console.log("frontend file readers test passed");
+}).catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

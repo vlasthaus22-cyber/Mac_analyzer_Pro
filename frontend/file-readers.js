@@ -16,7 +16,25 @@
 
   async function readClientTextFile(file) {
     const buffer = await file.arrayBuffer();
-    const encodings = ["utf-8", "windows-1251", "utf-16le", "utf-16be"];
+    const bytes = new Uint8Array(buffer);
+    const bomEncoding = bytes[0] === 0xff && bytes[1] === 0xfe
+      ? "utf-16le"
+      : bytes[0] === 0xfe && bytes[1] === 0xff
+        ? "utf-16be"
+        : bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf
+          ? "utf-8"
+          : "";
+    if (bomEncoding) {
+      const text = new TextDecoder(bomEncoding).decode(buffer).replace(/\0/g, "");
+      if (text.trim()) return text;
+    }
+    try {
+      const utf8 = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+      if (utf8.trim()) return utf8;
+    } catch {
+      // Invalid UTF-8 is scored against the supported legacy encodings below.
+    }
+    const encodings = ["windows-1251", "utf-16le", "utf-16be"];
     let best = { score: -Infinity, text: "" };
     for (const encoding of encodings) {
       try {
