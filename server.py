@@ -555,6 +555,7 @@ def init_database() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_mac_history_mac ON mac_history(mac);
             CREATE INDEX IF NOT EXISTS idx_mac_history_oui ON mac_history(oui);
+            CREATE INDEX IF NOT EXISTS idx_mac_history_switch_ip ON mac_history(switch_ip);
             CREATE INDEX IF NOT EXISTS idx_mac_history_recorded_at ON mac_history(recorded_at);
             CREATE TABLE IF NOT EXISTS mac_movements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1800,15 +1801,32 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
             placeholders = ",".join("?" for _ in chunk)
             history_rows.extend(dict(row) for row in conn.execute(
                 f"""
-                SELECT history.mac, history.vendor, history.model, history.ip, history.address,
-                       history.room, history.switch_ip, history.switch_port, history.id
-                FROM mac_history AS history
-                JOIN (
-                    SELECT mac, MAX(id) AS latest_id
+                WITH latest AS (
+                    SELECT mac,
+                           MAX(CASE WHEN TRIM(COALESCE(vendor, '')) != '' THEN id END) AS vendor_id,
+                           MAX(CASE WHEN TRIM(COALESCE(model, '')) != '' THEN id END) AS model_id,
+                           MAX(CASE WHEN TRIM(COALESCE(ip, '')) != '' THEN id END) AS ip_id,
+                           MAX(CASE WHEN TRIM(COALESCE(address, '')) != '' THEN id END) AS address_id,
+                           MAX(CASE WHEN TRIM(COALESCE(room, '')) != '' THEN id END) AS room_id,
+                           MAX(CASE WHEN TRIM(COALESCE(smartroom_id, '')) != '' THEN id END) AS smartroom_id,
+                           MAX(CASE WHEN TRIM(COALESCE(switch_ip, '')) != '' THEN id END) AS switch_ip_id,
+                           MAX(CASE WHEN TRIM(COALESCE(switch_port, '')) != '' THEN id END) AS switch_port_id
                     FROM mac_history
                     WHERE mac IN ({placeholders})
                     GROUP BY mac
-                ) AS latest ON latest.latest_id = history.id
+                )
+                SELECT latest.mac, vendor.vendor, model.model, ip.ip, address.address,
+                       room.room, smartroom.smartroom_id, switch_ip.switch_ip,
+                       switch_port.switch_port
+                FROM latest
+                LEFT JOIN mac_history AS vendor ON vendor.id = latest.vendor_id
+                LEFT JOIN mac_history AS model ON model.id = latest.model_id
+                LEFT JOIN mac_history AS ip ON ip.id = latest.ip_id
+                LEFT JOIN mac_history AS address ON address.id = latest.address_id
+                LEFT JOIN mac_history AS room ON room.id = latest.room_id
+                LEFT JOIN mac_history AS smartroom ON smartroom.id = latest.smartroom_id
+                LEFT JOIN mac_history AS switch_ip ON switch_ip.id = latest.switch_ip_id
+                LEFT JOIN mac_history AS switch_port ON switch_port.id = latest.switch_port_id
                 """,
                 chunk,
             ).fetchall())
@@ -1853,6 +1871,21 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
                 chunk,
             ).fetchall():
                 ip_mappings[row["switch_ip"]] = as_text(row["physical_address"])
+            for row in conn.execute(
+                f"""
+                SELECT history.switch_ip, history.address
+                FROM mac_history AS history
+                JOIN (
+                    SELECT switch_ip, MAX(id) AS latest_id
+                    FROM mac_history
+                    WHERE switch_ip IN ({placeholders})
+                      AND TRIM(COALESCE(address, '')) != ''
+                    GROUP BY switch_ip
+                ) AS latest ON latest.latest_id = history.id
+                """,
+                chunk,
+            ).fetchall():
+                ip_mappings.setdefault(as_text(row["switch_ip"]), as_text(row["address"]))
     latest_history: dict[str, dict[str, Any]] = {}
     for row in history_rows:
         mac = normalize_mac(row.get("mac"))

@@ -203,10 +203,78 @@ def test_save_history_uses_file_date_for_records_movements_and_vendor_model_hist
     cleanup(mac)
 
 
+def test_enrichment_restores_latest_non_empty_history_fields_and_switch_address():
+    init_database()
+    source_mac = "F2E3D4C5B601"
+    same_switch_mac = "F2E3D4C5B602"
+    switch_ip = "198.51.100.241"
+    cleanup(source_mac, same_switch_mac)
+    with db_connection() as conn:
+        conn.execute("DELETE FROM ip_address_mappings WHERE switch_ip = ?", (switch_ip,))
+        conn.execute(
+            """
+            INSERT INTO mac_history
+                (mac, mac_formatted, oui, vendor, model, ip, address, room,
+                 smartroom_id, switch_ip, switch_port, source, recorded_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                source_mac, "F2:E3:D4:C5:B6:01", source_mac[:6],
+                "Previous Export Vendor", "PE-48", "192.0.2.10",
+                "Корпус А, этаж 3", "А-305", "SR-305", switch_ip, "Gi1/0/7",
+                "previous-complete.xlsx", "2025-01-01T10:00:00Z",
+            ),
+        )
+        # A later incomplete export must not hide useful values from the
+        # earlier complete export.
+        conn.execute(
+            """
+            INSERT INTO mac_history
+                (mac, mac_formatted, oui, vendor, model, ip, address, room,
+                 smartroom_id, switch_ip, switch_port, source, recorded_at)
+            VALUES (?, ?, ?, '', '', '', '', '', '', ?, '', ?, ?)
+            """,
+            (
+                source_mac, "F2:E3:D4:C5:B6:01", source_mac[:6], switch_ip,
+                "later-incomplete.xlsx", "2025-02-01T10:00:00Z",
+            ),
+        )
+
+    restored = enrich_device({"mac": source_mac, "switchIp": switch_ip})
+    assert restored["vendor"] == "Previous Export Vendor"
+    assert restored["model"] == "PE-48"
+    assert restored["address"] == "Корпус А, этаж 3"
+    assert restored["room"] == "А-305"
+    assert restored["smartroomId"] == "SR-305"
+    assert restored["switchPort"] == "Gi1/0/7"
+
+    # The learned physical location also applies to another device observed
+    # on the same switch IP, without requiring a manually imported mapping.
+    same_switch = enrich_device({"mac": same_switch_mac, "switchIp": switch_ip})
+    assert same_switch["address"] == "Корпус А, этаж 3"
+
+    # Values supplied by the current export always remain authoritative.
+    current = enrich_device({
+        "mac": source_mac,
+        "vendor": "Current Vendor",
+        "model": "CURRENT-1",
+        "address": "Текущий адрес",
+        "switchIp": switch_ip,
+    })
+    assert current["vendor"] == "Current Vendor"
+    assert current["model"] == "CURRENT-1"
+    assert current["address"] == "Текущий адрес"
+
+    cleanup(source_mac, same_switch_mac)
+    with db_connection() as conn:
+        conn.execute("DELETE FROM ip_address_mappings WHERE switch_ip = ?", (switch_ip,))
+
+
 if __name__ == "__main__":
     test_vendor_model_history_and_learning()
     test_history_enricher_uses_vendor_model_history_without_mac_history()
     test_history_enrichment_settings_control_exact_and_prefix_matching()
     test_save_history_records_enrichment_before_after_even_when_value_is_cleared()
     test_save_history_uses_file_date_for_records_movements_and_vendor_model_history()
+    test_enrichment_restores_latest_non_empty_history_fields_and_switch_address()
     print("vendor model history test passed")

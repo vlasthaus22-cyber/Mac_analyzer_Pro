@@ -13,6 +13,14 @@ Analytics change tabs open the journal with an explicit active category for
 all, critical, added, missing, or modified devices. Reopening the journal
 clears stale category filters; the same behavior is available without backend.
 
+Repeated enrichment restores the newest non-empty manufacturer, model, IP,
+physical address, room, SmartRoom identifier, switch IP, and switch port for
+the exact MAC from earlier exports. A known physical address is also reused for
+other devices on the same switch IP. Values present in the current export are
+never overwritten by historical values. The backend uses indexed SQLite
+lookups; autonomous mode keeps the exact device history in IndexedDB and
+processes it in bounded chunks.
+
 ## Primary autonomous mode
 
 In a downloaded GitHub Release, launch the root `MAC-Analyzer-Pro.html`. It

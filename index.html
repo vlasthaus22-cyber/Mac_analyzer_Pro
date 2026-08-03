@@ -806,7 +806,7 @@
   <script src="frontend/memory-guard.js?v=20260722.9"></script>
   <script src="frontend/file-readers.js?v=20260722.8"></script>
   <script src="frontend/state-persistence.js?v=20260722.7"></script>
-  <script src="frontend/browser-snapshot-store.js?v=20260729.3"></script>
+  <script src="frontend/browser-snapshot-store.js?v=20260803.1"></script>
   <script src="frontend/mac-chronology.js?v=20260729.1"></script>
   <script src="frontend/local-analytics.js?v=20260729.3"></script>
   <script src="frontend/xlsx-exporter.js?v=20260727.5"></script>
@@ -2171,6 +2171,35 @@
         return imported;
       }
 
+      function applyFallbackDeviceHistory(devices = fallbackState.devices) {
+        if (fallbackState.historyEnrichmentSettings?.enabled === false) return 0;
+        const fields = ["vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort"];
+        const history = new Map();
+        (fallbackState.snapshots || []).forEach((snapshot) => (snapshot.devices || []).forEach((device) => {
+          const mac = normalizeMac(device.mac || device.macFormatted);
+          if (!mac) return;
+          const saved = history.get(mac) || {};
+          fields.forEach((field) => {
+            const value = String(device[field] ?? "").trim();
+            if (value && !(field === "vendor" && ["unknown", "не определено"].includes(value.toLowerCase())) && !saved[field]) saved[field] = value;
+          });
+          history.set(mac, saved);
+        }));
+        let changed = 0;
+        (devices || []).forEach((device) => {
+          const saved = history.get(normalizeMac(device.mac || device.macFormatted));
+          if (!saved) return;
+          let rowChanged = false;
+          fields.forEach((field) => {
+            const current = String(device[field] ?? "").trim();
+            const missing = !current || (field === "vendor" && ["unknown", "не определено"].includes(current.toLowerCase()));
+            if (missing && saved[field]) { device[field] = saved[field]; rowChanged = true; }
+          });
+          if (rowChanged) changed += 1;
+        });
+        return changed;
+      }
+
       function exportFallbackIpMappings() {
         const line = (values) => values.map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`).join(",");
         const content = "\uFEFFswitch_ip,address,source,updated_at\n" + fallbackIpMappingRows().map((item) => line([item.switchIp, item.address, item.source, item.updatedAt])).join("\n");
@@ -2237,6 +2266,7 @@
         fallbackUpdateProcess(processId, 72, "Определение производителей, моделей и адресов");
         const createdAt = fallbackState.files[0]?.createdAt || new Date().toISOString();
         fallbackState.devices = Array.from(byMac.values());
+        applyFallbackDeviceHistory(fallbackState.devices);
         inferFallbackSwitchAddressMappings(fallbackState.devices, source);
         applyFallbackVendorModelMappings(fallbackState.devices);
         if (previousComparison) fallbackRecordMovementsFromIndex(previousComparison, fallbackState.devices, source, createdAt);

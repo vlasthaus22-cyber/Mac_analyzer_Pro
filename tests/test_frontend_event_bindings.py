@@ -1002,7 +1002,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260729.3"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260803.1"></script>' in html
     assert '<script src="frontend/xlsx-exporter.js?v=20260727.5"></script>' in html
     assert '<script src="frontend/full-xlsx-report.js?v=20260729.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
@@ -1014,8 +1014,17 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert app.index('await BrowserSnapshots.prune(keepIds);') < app.index('await BrowserSnapshots.save(record,(percent)=>')
     assert 'browserSnapshotRows: 1_000_000' in memory_guard
     assert 'const snapshotStore = "snapshots";' in snapshot_store
-    assert 'const databaseVersion = 5;' in snapshot_store
+    assert 'const databaseVersion = 6;' in snapshot_store
     assert 'const enrichmentRowStore = "enrichmentRows";' in snapshot_store
+    assert 'const deviceHistoryStore = "deviceHistory";' in snapshot_store
+    assert 'async function enrichDevicesFromHistory(rows)' in snapshot_store
+    assert 'async function enrichEnrichmentRowsFromHistory(jobId)' in snapshot_store
+    assert 'async function mergeDeviceHistoryRows(rows, source = "browser-history")' in snapshot_store
+    assert 'async function backfillDeviceHistory(snapshotIds = [])' in snapshot_store
+    assert 'await BrowserSnapshots.enrichDevicesFromHistory(devices);' in app
+    assert 'await BrowserSnapshots.enrichEnrichmentRowsFromHistory(jobId);' in app
+    assert 'await BrowserSnapshots?.backfillDeviceHistory?.(historicalSnapshots).catch(()=>0);' in app
+    assert 'function applyFallbackDeviceHistory(devices = fallbackState.devices)' in html
     assert 'async function mergeEnrichmentRows(jobId, devices, options = {})' in snapshot_store
     assert 'async function pruneEnrichmentRows(maxAgeMs = 12 * 60 * 60 * 1000)' in snapshot_store
     assert 'updatedAt: Date.now()' in snapshot_store

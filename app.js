@@ -902,10 +902,12 @@
         await MemoryGuard.yieldToMainThread();
       }
       const devices=Array.from(deviceMap.values());
+      if(state.historyEnrichmentSettings?.enabled!==false&&BrowserSnapshots?.enrichDevicesFromHistory)await BrowserSnapshots.enrichDevicesFromHistory(devices);
       inferSwitchAddressMappings(devices,"current-file");
       learnLocalRulesFromDevices(devices,2);
       activeLocalDetectionContext=createLocalDetectionContext();
       applyLocalVendorModelMappings(devices);
+      if(BrowserSnapshots?.mergeDeviceHistoryRows)await BrowserSnapshots.mergeDeviceHistoryRows(devices,"current-file");
       const ddio=await buildLocalDdioOverlay(switchTracker,(value,detail)=>onProgress(95+value*0.04,detail));
       state.ddioOverlay=ddio.overlay;state.ddioSummary=ddio.summary;
       onProgress(100,`Обработано устройств: ${devices.length.toLocaleString("ru-RU")}`);
@@ -943,6 +945,7 @@
         });
         await flush(allowNew);
       }
+      if(state.historyEnrichmentSettings?.enabled!==false&&BrowserSnapshots?.enrichEnrichmentRowsFromHistory)await BrowserSnapshots.enrichEnrichmentRowsFromHistory(jobId);
       const ddio=await buildLocalDdioOverlay(switchTracker,(value,detail)=>onProgress(80+value*0.02,detail));
       state.ddioOverlay=ddio.overlay;state.ddioSummary=ddio.summary;
       learn(state.localVendorMappings,vendorCounts,2);learn(state.localModelMappings,modelCounts,2);
@@ -954,6 +957,7 @@
         if(!device.model&&model){device.model=model;changed=true;}
         return changed;
       });
+      if(BrowserSnapshots?.mergeDeviceHistoryRows)await BrowserSnapshots.streamEnrichmentRows(jobId,(rows)=>BrowserSnapshots.mergeDeviceHistoryRows(rows,source||"browser-analysis"));
       const snapshotId=crypto.randomUUID(),name="Анализ: "+source,savedAt=new Date().toISOString(),rowBudget=MemoryGuard.limits.browserSnapshotRows||1000000,keepIds=[];
       let remainingRows=Math.max(0,rowBudget-Math.max(0,storedRows));
       for(const item of state.snapshots.filter((entry)=>entry.browserStored)){const count=Math.max(0,Number(item.deviceCount||0));if(count<=remainingRows){keepIds.push(item.id);remainingRows-=count;}else item.browserStored=false;}
@@ -3539,6 +3543,8 @@
       const folderRestored=await restoreLocalFolderHandle({preferBrowserState:restored});
       if(!folderRestored&&!restored)await restorePortableDatabaseHandle();
     }
+    const historicalSnapshots=(state.snapshots||[]).filter((item)=>item.browserStored).map((item)=>item.id).filter(Boolean).reverse();
+    await BrowserSnapshots?.backfillDeviceHistory?.(historicalSnapshots).catch(()=>0);
     await restoreWorkspaceSourceFiles();
   }
   initializeAnalyticsExpanders();applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});view(viewFromHash(),{updateHash:true,render:false});renderEngineeringState();renderAll();renderColumnPreferences();renderParityStatus();if(!browserOnlyMode){loadThemePreference();loadOuiPreference().then(()=>{renderResults();});loadVendorDetectorSettings();loadHistoryEnrichmentSettings();loadDashboardSettings();loadExternalApiSettings();refreshApiCacheStatus().catch(()=>{});}loadEngineeringSession();setBackendStatus(false,"Автономный режим · выберите локальную папку данных");restoreInitialState().finally(()=>{window.MacAnalyzerAppReady=true;document.documentElement.dataset.macAnalyzerApp="ready";});

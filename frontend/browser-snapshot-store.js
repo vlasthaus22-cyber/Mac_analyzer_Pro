@@ -2,12 +2,13 @@
   "use strict";
 
   const databaseName = "mac-analyzer-browser-storage-v1";
-  const databaseVersion = 5;
+  const databaseVersion = 6;
   const workspaceStore = "workspaces";
   const snapshotStore = "snapshots";
   const snapshotChunkStore = "snapshotChunks";
   const sourceFileStore = "sourceFiles";
   const enrichmentRowStore = "enrichmentRows";
+  const deviceHistoryStore = "deviceHistory";
   const snapshotChunkRows = 1_000;
 
   function openDatabase() {
@@ -32,6 +33,9 @@
         if (!database.objectStoreNames.contains(enrichmentRowStore)) {
           const rows = database.createObjectStore(enrichmentRowStore, { keyPath: "key" });
           rows.createIndex("jobId", "jobId", { unique: false });
+        }
+        if (!database.objectStoreNames.contains(deviceHistoryStore)) {
+          database.createObjectStore(deviceHistoryStore, { keyPath: "mac" });
         }
       };
       request.onsuccess = () => resolve(request.result);
@@ -514,6 +518,124 @@
       if (!afterKey) break;
     }
     return changed;
+  }
+
+  const historyFields = ["vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort"];
+
+  function normalizedHistoryValue(field, value) {
+    const text = String(value ?? "").trim();
+    if (field === "vendor" && ["unknown", "не определено"].includes(text.toLowerCase())) return "";
+    return text;
+  }
+
+  async function mergeDeviceHistoryRows(rows, source = "browser-history") {
+    const devices = Array.isArray(rows) ? rows : [];
+    if (!devices.length) return 0;
+    const database = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const current = database.transaction(deviceHistoryStore, "readwrite");
+      const store = current.objectStore(deviceHistoryStore);
+      let updated = 0;
+      for (const device of devices) {
+        const mac = String(device?.mac || device?.macFormatted || "").toUpperCase().replace(/[^0-9A-F]/g, "");
+        if (mac.length !== 12) continue;
+        const request = store.get(mac);
+        request.onsuccess = () => {
+          const previous = request.result || { mac };
+          const next = { ...previous, mac };
+          let changed = !request.result;
+          for (const field of historyFields) {
+            const value = normalizedHistoryValue(field, device[field]);
+            if (value && value !== next[field]) { next[field] = value; changed = true; }
+          }
+          if (changed) {
+            next.source = String(source || device.source || "browser-history");
+            next.updatedAt = new Date().toISOString();
+            store.put(next);
+            updated += 1;
+          }
+        };
+        request.onerror = () => reject(request.error || new Error("Unable to read device history"));
+      }
+      current.oncomplete = () => { database.close(); resolve(updated); };
+      current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Device history write failed")); };
+      current.onabort = current.onerror;
+    });
+  }
+
+  async function enrichDevicesFromHistory(rows) {
+    const devices = Array.isArray(rows) ? rows : [];
+    if (!devices.length) return 0;
+    const database = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const current = database.transaction(deviceHistoryStore, "readonly");
+      const store = current.objectStore(deviceHistoryStore);
+      let changed = 0;
+      for (const device of devices) {
+        const mac = String(device?.mac || device?.macFormatted || "").toUpperCase().replace(/[^0-9A-F]/g, "");
+        if (mac.length !== 12) continue;
+        const request = store.get(mac);
+        request.onsuccess = () => {
+          const history = request.result;
+          if (!history) return;
+          let rowChanged = false;
+          for (const field of historyFields) {
+            const currentValue = normalizedHistoryValue(field, device[field]);
+            const historicalValue = normalizedHistoryValue(field, history[field]);
+            if (!currentValue && historicalValue) { device[field] = historicalValue; rowChanged = true; }
+          }
+          if (rowChanged) changed += 1;
+        };
+        request.onerror = () => reject(request.error || new Error("Unable to read device history"));
+      }
+      current.oncomplete = () => { database.close(); resolve(changed); };
+      current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Device history enrichment failed")); };
+    });
+  }
+
+  async function enrichEnrichmentRowsFromHistory(jobId) {
+    let afterKey = "";
+    let changed = 0;
+    while (true) {
+      const page = await readEnrichmentPage(jobId, afterKey, snapshotChunkRows);
+      if (!page.rows.length) break;
+      const pageChanges = await enrichDevicesFromHistory(page.rows);
+      if (pageChanges) await mergeEnrichmentRows(jobId, page.rows, { allowNew: true });
+      changed += pageChanges;
+      afterKey = page.lastKey;
+      page.rows.length = 0;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (!afterKey) break;
+    }
+    return changed;
+  }
+
+  async function backfillDeviceHistory(snapshotIds = []) {
+    const ids = [...new Set((snapshotIds || []).map(String).filter(Boolean))];
+    if (!ids.length) return 0;
+    const signature = ids.join("|");
+    const database = await openDatabase();
+    const previousSignature = await new Promise((resolve, reject) => {
+      const current = database.transaction(deviceHistoryStore, "readonly");
+      const request = current.objectStore(deviceHistoryStore).get("__snapshot_backfill__");
+      request.onsuccess = () => resolve(String(request.result?.signature || ""));
+      request.onerror = () => reject(request.error || new Error("Unable to read history migration state"));
+      current.oncomplete = () => database.close();
+      current.onerror = () => { database.close(); reject(current.error || new Error("History migration read failed")); };
+    });
+    if (previousSignature === signature) return 0;
+    let merged = 0;
+    for (const snapshotId of ids) {
+      await streamSnapshot(snapshotId, async (kind, rows) => {
+        if (kind === "device") merged += await mergeDeviceHistoryRows(rows, `snapshot:${snapshotId}`);
+      });
+    }
+    await transaction(deviceHistoryStore, "readwrite", (store) => store.put({
+      mac: "__snapshot_backfill__",
+      signature,
+      updatedAt: new Date().toISOString(),
+    }));
+    return merged;
   }
 
   async function saveEnrichmentSnapshot(jobId, snapshot, invalid = [], onProgress = () => {}) {
@@ -1059,6 +1181,10 @@
     mergeEnrichmentRows,
     streamEnrichmentRows,
     transformEnrichmentRows,
+    enrichEnrichmentRowsFromHistory,
+    enrichDevicesFromHistory,
+    mergeDeviceHistoryRows,
+    backfillDeviceHistory,
     saveEnrichmentSnapshot,
     snapshotChunkRows,
     removeLegacyWorkspace,
