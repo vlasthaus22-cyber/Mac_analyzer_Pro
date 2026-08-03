@@ -123,6 +123,8 @@ def test_project_structure_and_maintenance_commands_exist():
     assert '"-SkipCleanDatabase"' in legacy_release_build
     assert "prepare_legacy_release_data.py" in legacy_release_build
     assert "FILE_MANIFEST.sha256" in legacy_release_build
+    assert '$packageName = "MAC-Analyzer-$Version-Full"' in legacy_release_build
+    assert "Everything-With-v1.0.27-Data" not in legacy_release_build
     assert 'Filter = "test_*.py"' in test_script
     assert 'Join-Path $root "tests"' in test_script
     assert 'Join-Path $root "frontend"' in test_script

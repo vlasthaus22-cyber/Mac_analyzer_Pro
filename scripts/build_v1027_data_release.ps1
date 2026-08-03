@@ -1,6 +1,6 @@
 param(
     [string]$OutputDirectory = "",
-    [string]$Version = "v1.0.34",
+    [string]$Version = "v1.0.35",
     [string]$LegacyArchive = "",
     [string]$PortablePackage = ""
 )
@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $outputRoot = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $root "portable\legacy-data" }
 $legacySource = if ($LegacyArchive) { [IO.Path]::GetFullPath($LegacyArchive) } else { Join-Path $root "portable\complete\MAC-Analyzer-Pro-v1.0.27-Complete.zip" }
-$packageName = "MAC-Analyzer-Pro-$Version-Everything-With-v1.0.27-Data"
+$packageName = "MAC-Analyzer-$Version-Full"
 $stagingRoot = Join-Path ([IO.Path]::GetTempPath()) ("mac-v1027-release-" + [Guid]::NewGuid().ToString("N"))
 $package = Join-Path $stagingRoot $packageName
 $archive = Join-Path $outputRoot "$packageName.zip"
@@ -31,10 +31,10 @@ try {
     & powershell @arguments | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Current Everything package build failed." }
 
-    $baseArchive = Join-Path $baseOutput "MAC-Analyzer-Pro-$Version-Everything-Windows.zip"
+    $baseArchive = Join-Path $baseOutput "MAC-Analyzer-$Version-Windows.zip"
     $expanded = Join-Path $stagingRoot "expanded"
     Expand-Archive -LiteralPath $baseArchive -DestinationPath $expanded
-    $basePackage = Join-Path $expanded "MAC-Analyzer-Pro-$Version-Everything-Windows"
+    $basePackage = Join-Path $expanded "MAC-Analyzer-$Version-Windows"
     Move-Item -LiteralPath $basePackage -Destination $package
 
     $python = Join-Path $root ".venv\Scripts\python.exe"

@@ -55,10 +55,10 @@ Mac_analyzer_Pro/
   logs/                    журналы backend и исходной программы
   portable/                готовые пользовательские сборки (создаются командами сборки, не хранятся в Git)
     html/MAC-Analyzer-Pro.html один автономный файл без EXE, CMD, Python и backend
-    complete/*.zip        безопасный пакет: автономный HTML и исходники без EXE/DLL/CMD
-    everything/*.zip      всё в одном: Windows runtime, чистая SQLite-база, OUI, автономный HTML и полный Git-проект
-    legacy-data/*.zip     текущая программа со всей рабочей базой и данными из v1.0.27; секреты удалены из копии
-    full-project/*.zip    полный Git-проект, автономный HTML и все tracked-файлы, без пользовательских данных
+    complete/MAC-Analyzer-*-Browser.zip безопасный пакет: автономный HTML и исходники без EXE/DLL/CMD
+    everything/MAC-Analyzer-*-Windows.zip Windows runtime, чистая SQLite-база, OUI, HTML и полный Git-проект
+    legacy-data/MAC-Analyzer-*-Full.zip полная программа со всей рабочей базой v1.0.27; секреты удалены из копии
+    full-project/MAC-Analyzer-*-Source.zip полный Git-проект, HTML и все tracked-файлы без пользовательских данных
     dist/MACAnalyzerBackend/ единый пакет: исходный server.py, Python-first лаунчер и резервный asInvoker backend
   START_MAC_ANALYZER.cmd    необязательный legacy-запуск backend для разработки
   STOP_MAC_ANALYZER.cmd     остановка необязательного backend

@@ -1,6 +1,6 @@
 param(
     [string]$OutputDirectory = "",
-    [string]$Version = "v1.0.34",
+    [string]$Version = "v1.0.35",
     [string]$PortablePackage = "",
     [switch]$SkipCleanDatabase
 )
@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $outputRoot = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $root "portable\everything" }
-$packageName = "MAC-Analyzer-Pro-$Version-Everything-Windows"
+$packageName = "MAC-Analyzer-$Version-Windows"
 $stagingRoot = Join-Path $outputRoot ".everything-staging"
 $package = Join-Path $stagingRoot $packageName
 $archive = Join-Path $outputRoot "$packageName.zip"
@@ -45,10 +45,10 @@ try {
     $sourceBuildRoot = Join-Path $stagingRoot "source-build"
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "scripts\build_full_project_release.ps1") -OutputDirectory $sourceBuildRoot -Version $Version | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Full source project build failed." }
-    $sourceArchive = Join-Path $sourceBuildRoot "MAC-Analyzer-Pro-$Version-Full-Project.zip"
+    $sourceArchive = Join-Path $sourceBuildRoot "MAC-Analyzer-$Version-Source.zip"
     $expandedSourceRoot = Join-Path $stagingRoot "expanded-source"
     Expand-Archive -LiteralPath $sourceArchive -DestinationPath $expandedSourceRoot
-    $sourcePackage = Join-Path $expandedSourceRoot "MAC-Analyzer-Pro-$Version-Full-Project"
+    $sourcePackage = Join-Path $expandedSourceRoot "MAC-Analyzer-$Version-Source"
 
     Copy-DirectoryContents $runtimePackage (Join-Path $package "Windows-Portable")
     Copy-DirectoryContents $sourcePackage (Join-Path $package "Source")

@@ -43,11 +43,14 @@ def test_complete_release_contains_program_layers_without_executables():
         report = json.loads(completed.stdout.strip())
         archive = Path(report["file"])
         assert archive.is_file()
+        assert archive.name == "MAC-Analyzer-test-Browser.zip"
+        assert len(archive.stem) <= 32
         assert report["executableFiles"] == 0
         assert report["commandFiles"] == 0
         with zipfile.ZipFile(archive) as package:
             raw_names = package.namelist()
             assert all("\\" not in name for name in raw_names)
+            assert raw_names[0].split("/", 1)[0] == "MAC-Analyzer-test-Browser"
             names = set(raw_names)
             suffixes = {Path(name).suffix.lower() for name in names}
             required = (

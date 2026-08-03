@@ -54,11 +54,14 @@ def test_full_project_release_contains_every_tracked_file_and_no_user_data():
         assert report["runtimeDataIncluded"] is False
         archive = Path(report["file"])
         assert archive.is_file()
+        assert archive.name == "MAC-Analyzer-test-Source.zip"
+        assert len(archive.stem) <= 32
 
         with zipfile.ZipFile(archive) as package:
             raw_names = package.namelist()
             assert all("\\" not in name for name in raw_names)
             prefix = raw_names[0].split("/", 1)[0] + "/"
+            assert prefix == "MAC-Analyzer-test-Source/"
             names = {name.removeprefix(prefix) for name in raw_names}
             tracked = _tracked_files()
             assert not tracked - names, f"Missing tracked files: {sorted(tracked - names)}"

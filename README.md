@@ -51,6 +51,11 @@ history, snapshots, mappings, imports, and backups from v1.0.27, run:
 powershell -ExecutionPolicy Bypass -File scripts/build_v1027_data_release.ps1
 ```
 
+Release artifacts use short, stable names: `MAC-Analyzer-<version>-Browser.zip`,
+`MAC-Analyzer-<version>-Source.zip`, `MAC-Analyzer-<version>-Windows.zip`, and
+the complete data package `MAC-Analyzer-<version>-Full.zip`. The directory at
+the root of each ZIP uses the same short name.
+
 The migration works on an archive copy and removes saved API keys, passwords,
 webhooks, tokens, and engineering sessions before release packaging.
 

@@ -1,12 +1,12 @@
 param(
     [string]$OutputDirectory = "",
-    [string]$Version = "v1.0.34"
+    [string]$Version = "v1.0.35"
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $outputRoot = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $root "portable\full-project" }
-$packageName = "MAC-Analyzer-Pro-$Version-Full-Project"
+$packageName = "MAC-Analyzer-$Version-Source"
 $stagingRoot = Join-Path $outputRoot ".full-project-staging"
 $package = Join-Path $stagingRoot $packageName
 $archive = Join-Path $outputRoot "$packageName.zip"

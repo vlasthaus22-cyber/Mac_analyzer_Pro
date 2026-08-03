@@ -60,14 +60,18 @@ def test_everything_release_combines_runtime_autonomous_html_and_all_sources():
         )
         assert completed.returncode == 0, completed.stderr
         report = json.loads(completed.stdout.strip())
+        archive = Path(report["file"])
+        assert archive.name == "MAC-Analyzer-test-Windows.zip"
+        assert len(archive.stem) <= 32
         assert report["autonomousHtmlIncluded"] is True
         assert report["fullSourceIncluded"] is True
         assert report["windowsRuntimeIncluded"] is True
         assert report["cleanDatabaseIncluded"] is False
         assert report["userRuntimeDataIncluded"] is False
 
-        with zipfile.ZipFile(report["file"]) as package:
+        with zipfile.ZipFile(archive) as package:
             prefix = package.namelist()[0].split("/", 1)[0] + "/"
+            assert prefix == "MAC-Analyzer-test-Windows/"
             names = {name.removeprefix(prefix) for name in package.namelist()}
             assert "MAC-Analyzer-Pro.html" in names
             assert "Windows-Portable/MACAnalyzerBackend.exe" in names
