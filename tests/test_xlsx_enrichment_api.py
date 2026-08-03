@@ -213,10 +213,13 @@ def test_third_ddio_xlsx_returns_display_only_ip_hint_after_switch_change():
             base_url,
             "ddio.xlsx",
             workbook_bytes(
-                ["IP Address", "Reservation MAC Address", "Lease MAC Address"],
                 [
-                    ["192.168.1.20", "00:11:22:33:44:55", ""],
-                    ["192.168.1.30", "", "00:11:22:33:44:55"],
+                    "Unused A", "Unused B", "Unused C", "Unused D", "Unused E", "Unused F", "Unused G", "Unused H",
+                    "Unused I", "Reservation MAC Address", "Reservation IP Address", "Unused L", "Lease MAC Address", "Lease IP Address",
+                ],
+                [
+                    ["", "", "", "", "", "", "", "", "", "00:11:22:33:44:55", "192.168.1.20", "", "", ""],
+                    ["", "", "", "", "", "", "", "", "", "", "", "", "00:11:22:33:44:55", "192.168.1.30"],
                 ],
             ),
         )
@@ -249,7 +252,7 @@ def test_third_ddio_xlsx_returns_display_only_ip_hint_after_switch_change():
                     "role": "ddio",
                     "fileToken": ddio["fileToken"],
                     "rowCount": ddio["rowCount"],
-                    "mapping": {"ip": 0, "reservationMac": 1, "leaseMac": 2},
+                    "mapping": {"reservationMac": 9, "reservationIp": 10, "leaseMac": 12, "leaseIp": 13},
                 },
                 "strategy": "primary",
                 "fields": {"ip": True, "switchIp": True},

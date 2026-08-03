@@ -307,7 +307,7 @@ table tbody tr.selected-row td { background:rgba(15,118,110,.12); box-shadow:ins
 .ddio-panel { display:grid; gap:8px; margin-top:10px; padding:10px; border:1px solid rgba(37,99,235,.28); border-left:3px solid #2563eb; border-radius:4px; background:rgba(219,234,254,.24); }
 .ddio-panel-head,.ddio-panel-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .ddio-panel-head small { display:block; margin-top:2px; color:var(--muted); font-size:11px; }
-.ddio-mapping-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
+.ddio-mapping-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
 .ddio-mapping-grid label { display:grid; gap:3px; color:var(--muted); font-size:11px; }
 .ddio-mapping-grid select { min-width:0; }
 .ddio-new-ip { display:block; margin-top:3px; color:#1d4ed8; font-size:11px; font-weight:700; }

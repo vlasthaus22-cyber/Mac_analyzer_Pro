@@ -32,6 +32,12 @@ assert.deepEqual(
   readers.xlsxRowFromXml('<row r="2"><c r="A2" t="s"><v>0</v></c><c r="C2" t="inlineStr"><is><t>10.0.0.1</t></is></c></row>', ["AABBCC000001"]),
   { values: ["AABBCC000001", "", "10.0.0.1"], cellCount: 2, populated: true },
 );
+assert.deepEqual(readers.xlsxDimensionSize("A1:N250"), { columns: 14, rows: 250 });
+assert.equal(
+  readers.xlsxRowFromXml('<row r="2"><c r="N2" t="inlineStr"><is><t>192.168.1.50</t></is></c></row>', []).values.length,
+  14,
+  "XLSX columns after H must remain addressable",
+);
 
 decodedUtf8.then((text) => {
   assert.equal(text, utf8Csv);

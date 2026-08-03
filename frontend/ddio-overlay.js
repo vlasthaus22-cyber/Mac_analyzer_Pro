@@ -46,8 +46,17 @@
       if (reservation && !lease) return -1;
       return 10 + (lease ? 20 : 0) - (reservation ? 8 : 0);
     }
+    if (field === "reservationIp") {
+      if (!ip || /switch|коммутатор|gateway|шлюз/.test(normalized) || !reservation) return -1;
+      return 30 - (lease ? 8 : 0) + (/address|адрес/.test(normalized) ? 5 : 0);
+    }
+    if (field === "leaseIp") {
+      if (!ip || /switch|коммутатор|gateway|шлюз/.test(normalized) || !lease) return -1;
+      return 30 - (reservation ? 8 : 0) + (/address|адрес/.test(normalized) ? 5 : 0);
+    }
     if (field === "ip") {
       if (!ip || /switch|коммутатор|gateway|шлюз/.test(normalized)) return -1;
+      if (reservation || lease) return -1;
       return 10 + (/address|адрес/.test(normalized) ? 5 : 0);
     }
     return -1;
@@ -69,12 +78,18 @@
     };
     const reservationMac = pick("reservationMac");
     const leaseMac = pick("leaseMac", new Set(reservationMac === "" ? [] : [reservationMac]));
-    return { reservationMac, leaseMac, ip: pick("ip") };
+    return {
+      reservationMac,
+      reservationIp: pick("reservationIp"),
+      leaseMac,
+      leaseIp: pick("leaseIp"),
+      ip: pick("ip"),
+    };
   }
 
   function compileMapping(mapping = {}) {
     const result = {};
-    for (const field of ["reservationMac", "leaseMac", "ip"]) {
+    for (const field of ["reservationMac", "reservationIp", "leaseMac", "leaseIp", "ip"]) {
       if (mapping[field] === "" || mapping[field] === undefined || mapping[field] === null) continue;
       const index = Number(mapping[field]);
       if (Number.isInteger(index) && index >= 0) result[field] = index;
@@ -84,10 +99,16 @@
 
   function validateMapping(mapping = {}) {
     const compiled = compileMapping(mapping);
+    const reservationComplete = compiled.reservationMac !== undefined
+      && (compiled.reservationIp !== undefined || compiled.ip !== undefined);
+    const leaseComplete = compiled.leaseMac !== undefined
+      && (compiled.leaseIp !== undefined || compiled.ip !== undefined);
     return {
-      valid: compiled.ip !== undefined && (compiled.reservationMac !== undefined || compiled.leaseMac !== undefined),
-      hasIp: compiled.ip !== undefined,
+      valid: reservationComplete || leaseComplete,
+      hasIp: compiled.reservationIp !== undefined || compiled.leaseIp !== undefined || compiled.ip !== undefined,
       hasMac: compiled.reservationMac !== undefined || compiled.leaseMac !== undefined,
+      reservationComplete,
+      leaseComplete,
       mapping: compiled,
     };
   }
@@ -133,17 +154,19 @@
   function collectCandidate(row, mapping, changes, candidates) {
     if (!Array.isArray(row) || !(changes instanceof Map) || !(candidates instanceof Map)) return 0;
     const compiled = compileMapping(mapping);
-    const ip = compiled.ip === undefined ? "" : text(row[compiled.ip]);
-    if (!ip) return 0;
     let matched = 0;
     const reservationMac = compiled.reservationMac === undefined ? "" : normalizeMac(row[compiled.reservationMac]);
     const leaseMac = compiled.leaseMac === undefined ? "" : normalizeMac(row[compiled.leaseMac]);
-    if (reservationMac && changes.has(reservationMac) && !candidates.has(reservationMac)) {
-      candidates.set(reservationMac, { ip, match: "reservation" });
+    const reservationIpIndex = compiled.reservationIp ?? compiled.ip;
+    const leaseIpIndex = compiled.leaseIp ?? compiled.ip;
+    const reservationIp = reservationIpIndex === undefined ? "" : text(row[reservationIpIndex]);
+    const leaseIp = leaseIpIndex === undefined ? "" : text(row[leaseIpIndex]);
+    if (reservationMac && reservationIp && changes.has(reservationMac) && !candidates.has(reservationMac)) {
+      candidates.set(reservationMac, { ip: reservationIp, match: "reservation" });
       matched++;
     }
-    if (leaseMac && changes.has(leaseMac)) {
-      candidates.set(leaseMac, { ip, match: "lease" });
+    if (leaseMac && leaseIp && changes.has(leaseMac)) {
+      candidates.set(leaseMac, { ip: leaseIp, match: "lease" });
       matched++;
     }
     return matched;

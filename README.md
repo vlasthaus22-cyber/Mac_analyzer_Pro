@@ -5,9 +5,12 @@ enrichment, OUI/vendor/model detection, history, comparisons, analytics,
 dashboards, topology, and export.
 
 An optional third DDIO export is kept outside normal enrichment. Reservation
-and lease MAC columns are matched independently; when a device moves to a
-different switch IP, DDIO can show an underlined candidate device IP in the
-results table. The hint never overwrites devices, history, snapshots, or exports.
+and lease MAC/IP pairs are mapped independently, including columns after H;
+the DDIO selectors always display Excel letters such as I, J, and AA. When a
+device moves to a different switch IP, DDIO can show an underlined candidate
+device IP in the results table. The hint never overwrites devices, history,
+snapshots, or exports. Legacy DDIO mappings with one shared IP column remain
+compatible.
 
 Analytics change tabs open the journal with an explicit active category for
 all, critical, added, missing, or modified devices. Reopening the journal

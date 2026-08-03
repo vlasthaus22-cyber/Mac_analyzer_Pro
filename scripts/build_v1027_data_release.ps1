@@ -1,6 +1,6 @@
 param(
     [string]$OutputDirectory = "",
-    [string]$Version = "v1.0.37",
+    [string]$Version = "v1.0.38",
     [string]$LegacyArchive = "",
     [string]$PortablePackage = ""
 )

@@ -68,7 +68,31 @@ def test_ddio_requires_ip_and_at_least_one_mac_column():
         raise AssertionError("DDIO mapping without MAC must fail")
 
 
+def test_ddio_uses_independent_reservation_and_lease_ip_columns_after_h():
+    changes = [{"mac": "001122334455", "before": "10.0.0.1", "after": "10.0.0.2"}]
+    row = [""] * 14
+    row[9] = "00:11:22:33:44:55"
+    row[10] = "192.168.1.40"
+    row[12] = "00:11:22:33:44:55"
+    row[13] = "192.168.1.50"
+    overlay = build_ddio_overlay(
+        [row],
+        {"reservationMac": 9, "reservationIp": 10, "leaseMac": 12, "leaseIp": 13},
+        changes,
+        {"001122334455": "192.168.1.10"},
+    )
+    assert overlay == {
+        "001122334455": {
+            "ip": "192.168.1.50",
+            "match": "lease",
+            "previousSwitchIp": "10.0.0.1",
+            "currentSwitchIp": "10.0.0.2",
+        }
+    }
+
+
 if __name__ == "__main__":
     test_ddio_uses_reservation_and_lease_mac_without_mutating_devices()
     test_ddio_requires_ip_and_at_least_one_mac_column()
+    test_ddio_uses_independent_reservation_and_lease_ip_columns_after_h()
     print("DDIO overlay service test passed")

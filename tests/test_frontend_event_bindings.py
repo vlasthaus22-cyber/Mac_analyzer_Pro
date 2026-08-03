@@ -15,9 +15,12 @@ def test_ddio_third_export_is_display_only_and_bound_in_primary_frontend():
     assert 'id="ddioFileInput"' in html
     assert 'id="browseDdioFileButton"' in html
     assert 'id="ddioMappingGrid"' in html
-    assert '<script src="frontend/ddio-overlay.js?v=20260802.1"></script>' in html
+    assert '<script src="frontend/ddio-overlay.js?v=20260803.2"></script>' in html
     assert 'loadDdioFile(e.target.files,e.target)' in app
-    assert 'reservationMac' in ddio and 'leaseMac' in ddio
+    assert all(field in ddio for field in ('reservationMac', 'reservationIp', 'leaseMac', 'leaseIp'))
+    assert '[["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"]]' in app
+    assert 'mappingOptionLabel(header,"letter")' in app
+    assert 'headers = Array.from({ length: columnCount }' in Path("frontend/file-readers.js").read_text(encoding="utf-8")
     assert 'applyDdioOverlayToResults(body,columns)' in app
     assert 'ddioFile:ddioFilePayload(true)' in app
     assert 'state.ddioOverlay=serverResult.ddioOverlay||{}' in app

@@ -7,8 +7,24 @@ const headers = [
   { name: "Lease MAC Address", index: 2 },
 ];
 const mapping = DDIO.detectMapping(headers);
-assert.deepStrictEqual(mapping, { reservationMac: 1, leaseMac: 2, ip: 0 });
+assert.deepStrictEqual(mapping, { reservationMac: 1, reservationIp: "", leaseMac: 2, leaseIp: "", ip: 0 });
 assert.strictEqual(DDIO.validateMapping(mapping).valid, true);
+
+const wideHeaders = Array.from({ length: 14 }, (_value, index) => ({ name: `Column ${index + 1}`, index }));
+wideHeaders[9].name = "Reservation MAC Address";
+wideHeaders[10].name = "Reservation IP Address";
+wideHeaders[12].name = "Lease MAC Address";
+wideHeaders[13].name = "Lease IP Address";
+const wideMapping = DDIO.detectMapping(wideHeaders);
+assert.deepStrictEqual(wideMapping, {
+  reservationMac: 9,
+  reservationIp: 10,
+  leaseMac: 12,
+  leaseIp: 13,
+  ip: "",
+});
+assert.strictEqual(DDIO.validateMapping(wideMapping).reservationComplete, true);
+assert.strictEqual(DDIO.validateMapping(wideMapping).leaseComplete, true);
 
 const tracker = DDIO.createSwitchTracker();
 DDIO.observeSwitch(tracker, 0, "00:11:22:33:44:55", "10.0.0.1", true);
@@ -41,5 +57,13 @@ assert.strictEqual(JSON.stringify(devices), before, "DDIO overlay must not mutat
 const sameIpOverlay = DDIO.buildOverlay(changes, candidates, new Map([["001122334455", "192.168.1.30"]]));
 assert.deepStrictEqual(sameIpOverlay, {}, "an already stored IP is not a new DDIO hint");
 
-console.log("frontend_ddio_overlay.test.js: ok");
+const wideRow = Array(14).fill("");
+wideRow[9] = "00:11:22:33:44:55";
+wideRow[10] = "192.168.1.40";
+wideRow[12] = "00:11:22:33:44:55";
+wideRow[13] = "192.168.1.50";
+const wideCandidates = new Map();
+DDIO.collectCandidate(wideRow, wideMapping, changes, wideCandidates);
+assert.deepStrictEqual(wideCandidates.get("001122334455"), { ip: "192.168.1.50", match: "lease" });
 
+console.log("frontend_ddio_overlay.test.js: ok");

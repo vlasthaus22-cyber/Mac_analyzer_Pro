@@ -341,6 +341,16 @@
     return Math.max(0, index - 1);
   }
 
+  function xlsxDimensionSize(reference) {
+    const finalCell = String(reference || "").split(":").pop() || "";
+    const columnMatch = /^\$?([A-Z]+)/i.exec(finalCell);
+    const rowMatch = /(\d+)$/.exec(finalCell);
+    return {
+      columns: columnMatch ? xlsxColumnIndex(columnMatch[1]) + 1 : 0,
+      rows: rowMatch ? Math.max(0, Number(rowMatch[1]) || 0) : 0,
+    };
+  }
+
   function xlsxCellValue(cell, sharedStrings) {
     const type = cell.getAttribute("t") || "";
     const value = cell.getElementsByTagName("v")[0]?.textContent ?? "";
@@ -452,13 +462,16 @@
     let processedBytes = 0;
     let rowCount = 0;
     let declaredRowCount = 0;
+    let declaredColumnCount = 0;
+    let observedColumnCount = 0;
     let stopped = false;
     let lastYieldRowCount = 0;
     const captureDimension = () => {
-      if (declaredRowCount) return;
+      if (declaredRowCount && declaredColumnCount) return;
       const reference = /<dimension\b[^>]*\bref="([^"]+)"/i.exec(pending)?.[1] || "";
-      const finalRow = /(\d+)$/.exec(reference)?.[1];
-      if (finalRow) declaredRowCount = Math.max(0, Number(finalRow) || 0);
+      const size = xlsxDimensionSize(reference);
+      if (size.rows) declaredRowCount = size.rows;
+      if (size.columns) declaredColumnCount = size.columns;
     };
     const drainRows = async () => {
       while (!stopped) {
@@ -475,6 +488,7 @@
         pending = pending.slice(rowEnd + closing.length);
         const parsed = xlsxRowFromXml(rowXml, sharedStrings);
         cellCount += parsed.cellCount;
+        observedColumnCount = Math.max(observedColumnCount, parsed.values.length);
         if (parsed.populated) {
           const rowIndex = rowCount;
           rowCount += 1;
@@ -514,6 +528,8 @@
     Object.defineProperties(rows, {
       parsedRowCount: { value: rowCount, enumerable: false },
       declaredRowCount: { value: declaredRowCount, enumerable: false },
+      declaredColumnCount: { value: declaredColumnCount, enumerable: false },
+      observedColumnCount: { value: observedColumnCount, enumerable: false },
       truncated: { value: stopped, enumerable: false },
     });
     return rows;
@@ -568,6 +584,9 @@
     });
     if (!headers) throw new Error("XLSX не содержит строк");
     if (!headers.some(Boolean)) throw new Error("Первая строка XLSX не содержит заголовков");
+    const declaredColumns = Math.min(512, Math.max(0, Number(rawRows.declaredColumnCount || 0)));
+    const columnCount = Math.max(headers.length, Number(rawRows.observedColumnCount || 0), declaredColumns);
+    headers = Array.from({ length: columnCount }, (_value, index) => String(headers[index] || `Column ${index + 1}`));
     const declaredDataRows = Math.max(0, Number(rawRows.declaredRowCount || 0) - 1);
     const countedDataRows = maximumDataRows && rawRows.truncated && !declaredDataRows
       ? Math.max(0, (await xlsxWorksheetRowCount(directory, sheetPath, onProgress)) - 1)
@@ -623,6 +642,7 @@
     xlsxSharedStringsFromXml,
     xlsxSharedStringsFromDirectory,
     xlsxRowFromXml,
+    xlsxDimensionSize,
     xlsxWorksheetRows,
     xlsxWorksheetRowCount,
     clientXlsxTable,

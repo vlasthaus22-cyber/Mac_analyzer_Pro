@@ -864,7 +864,7 @@
     const changes=DdioOverlay.switchChanges(switchTracker),file=state.ddioFile;
     if(!file||!changes.size)return{overlay:{},summary:{loaded:Boolean(file),switchIpChanges:changes.size,newIpHints:0}};
     const validation=DdioOverlay.validateMapping(file.mapping||{});
-    if(!validation.valid)throw new Error(!validation.hasMac?"DDIO: выберите MAC-колонку резервации или аренды":"DDIO: выберите колонку IP устройства");
+    if(!validation.valid)throw new Error("DDIO: выберите полную пару MAC + IP для резервации или аренды");
     const candidates=new Map();
     await visitLocalRowsForAnalysis(file,0,1,(value,detail)=>onProgress(value,`DDIO: ${detail}`),(row)=>{DdioOverlay.collectCandidate(row,file.mapping,changes,candidates);});
     const currentIpByMac=new Map();
@@ -1136,7 +1136,7 @@
   }
   function ddioMappingOptions(file,selected){
     const options=['<option value="">Не использовать</option>'];
-    for(const header of file?.headers||[]){const isSelected=selected!==""&&selected!==undefined&&selected!==null&&Number(selected)===Number(header.index);options.push(`<option value="${header.index}"${isSelected?" selected":""}>${esc(mappingOptionLabel(header))}</option>`);}
+    for(const header of file?.headers||[]){const isSelected=selected!==""&&selected!==undefined&&selected!==null&&Number(selected)===Number(header.index);options.push(`<option value="${header.index}"${isSelected?" selected":""}>${esc(mappingOptionLabel(header,"letter"))}</option>`);}
     return options.join("");
   }
   function renderDdioPanel(){
@@ -1147,8 +1147,8 @@
     if(!file){summary.textContent="Файл DDIO не выбран.";grid.innerHTML="";if(overlaySummary)overlaySummary.textContent="";return;}
     const validation=DdioOverlay.validateMapping(file.mapping||{});
     summary.textContent=`${file.name} · строк: ${Number(file.rowCount||0).toLocaleString("ru-RU")} · ${validation.valid?"колонки готовы":"проверьте сопоставление колонок"}`;
-    const fields=[["reservationMac","MAC резервации"],["leaseMac","MAC аренды"],["ip","IP устройства"]];
-    grid.innerHTML=fields.map(([field,title])=>`<label>${title}<select data-ddio-map="${field}">${ddioMappingOptions(file,file.mapping?.[field])}</select></label>`).join("");
+    const fields=[["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"]];
+    grid.innerHTML=fields.map(([field,title])=>`<label>${title}<select data-ddio-map="${field}">${ddioMappingOptions(file,file.mapping?.[field]??file.mapping?.ip)}</select></label>`).join("");
     const hints=Number(state.ddioSummary?.newIpHints||Object.keys(state.ddioOverlay||{}).length),changes=Number(state.ddioSummary?.switchIpChanges||0);
     if(overlaySummary)overlaySummary.textContent=state.ddioSummary?`Смен коммутатора: ${changes} · новых IP: ${hints}`:"Подсказки появятся после анализа.";
   }
@@ -1175,7 +1175,7 @@
       state.ddioFile=fileRecord;state.ddioOverlay={};state.ddioSummary=null;
       save({immediate:true});renderDdioPanel();
       finishProcess(processId,`DDIO загружен: ${Number(fileRecord.rowCount||0).toLocaleString("ru-RU")} строк`);
-      toast("DDIO загружен. Проверьте две MAC-колонки и IP.");
+      toast("DDIO загружен. Проверьте отдельные пары MAC + IP резервации и аренды.");
     }catch(error){failProcess(processId,error);toast("Не удалось загрузить DDIO: "+error.message);}
     finally{if(sourceInput)sourceInput.value="";}
   }
@@ -1521,7 +1521,7 @@
   }
   async function analyze() {
     if(!state.files.length){toast("Сначала добавьте файл.");return;}
-    if(state.ddioFile){const validation=DdioOverlay.validateMapping(state.ddioFile.mapping||{});if(!validation.valid){toast(!validation.hasMac?"DDIO: выберите MAC-колонку резервации или аренды":"DDIO: выберите колонку IP устройства");renderDdioPanel();return;}}
+    if(state.ddioFile){const validation=DdioOverlay.validateMapping(state.ddioFile.mapping||{});if(!validation.valid){toast("DDIO: выберите полную пару MAC + IP для резервации или аренды");renderDdioPanel();return;}}
     await snapshotMutationPromise;
     const enrich=Object.fromEntries($$("[data-field]").map((input)=>[input.dataset.field,input.checked]));
     const strategy=$("#strategySelect").value,progress=$("#enrichmentProgress"),cancelButton=$("#cancelAnalyzeButton");
@@ -3287,7 +3287,7 @@
   $$(".nav-item").forEach((b)=>{b.setAttribute("aria-controls",b.dataset.view+"View");b.addEventListener("click",()=>view(b.dataset.view));});
   window.addEventListener("hashchange",()=>view(viewFromHash(),{updateHash:true}));
   $("#browseFilesButton")?.addEventListener("click",()=>$("#fileInput")?.click());$("#browseEnrichmentFilesButton")?.addEventListener("click",()=>$("#enrichFileInput")?.click());$("#browseDdioFileButton")?.addEventListener("click",()=>$("#ddioFileInput")?.click());$("#clearDdioFileButton")?.addEventListener("click",clearDdioFile);$("#singleBrowseFileButton")?.addEventListener("click",()=>$("#singleFileInput")?.click());$("#dropZone")?.addEventListener("keydown",(e)=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$("#fileInput")?.click();}});$("#fileInput").addEventListener("change",(e)=>loadFiles(e.target.files,e.target,"primary"));$("#enrichFileInput")?.addEventListener("change",(e)=>loadFiles(e.target.files,e.target,"enrichment"));$("#ddioFileInput")?.addEventListener("change",(e)=>loadDdioFile(e.target.files,e.target));$("#singleFileInput").addEventListener("change",(e)=>{pendingSingleFile=e.target.files[0]||null;inspectSingleFile();});$("#singleSheetInput").addEventListener("change",inspectSingleFile);$("#singleManualMappingToggle").addEventListener("change",renderSingleMappingGrid);$("#singleFileAnalyzeButton").addEventListener("click",analyzeSingleFile);$("#dropZone").addEventListener("dragover",(e)=>{e.preventDefault();$("#dropZone").classList.add("dragover");});$("#dropZone").addEventListener("dragleave",()=>$("#dropZone").classList.remove("dragover"));$("#dropZone").addEventListener("drop",(e)=>{e.preventDefault();$("#dropZone").classList.remove("dragover");loadFiles(e.dataTransfer.files,null,"auto");});
-  $("#ddioMappingGrid")?.addEventListener("change",(event)=>{const select=event.target.closest("[data-ddio-map]");if(!select||!state.ddioFile)return;state.ddioFile.mapping={...(state.ddioFile.mapping||{}),[select.dataset.ddioMap]:select.value===""?"":Number(select.value)};state.ddioOverlay={};state.ddioSummary=null;save({immediate:true});renderDdioPanel();renderResults();});
+  $("#ddioMappingGrid")?.addEventListener("change",(event)=>{const select=event.target.closest("[data-ddio-map]");if(!select||!state.ddioFile)return;const mapping={...(state.ddioFile.mapping||{})};if((select.dataset.ddioMap==="reservationIp"||select.dataset.ddioMap==="leaseIp")&&mapping.ip!==""&&mapping.ip!==undefined){mapping.reservationIp=mapping.reservationIp??mapping.ip;mapping.leaseIp=mapping.leaseIp??mapping.ip;delete mapping.ip;}mapping[select.dataset.ddioMap]=select.value===""?"":Number(select.value);state.ddioFile.mapping=mapping;state.ddioOverlay={};state.ddioSummary=null;save({immediate:true});renderDdioPanel();renderResults();});
   $("#reconnectBackendButton")?.addEventListener("click",async()=>{try{await checkBackendConnection();await syncFromBackend();toast("Backend и SQLite подключены.");}catch{toast("Backend не отвечает на http://127.0.0.1:8080");}});
   $("#fileList").addEventListener("click",(e)=>{const id=e.target.dataset.removeFile,row=e.target.closest("[data-file-id]");if(id){state.files=state.files.filter((f)=>f.id!==id);state.ddioOverlay={};state.ddioSummary=null;sourceFilesById.delete(id);pruneStoredSourceFiles();ensureMappingSelection();save();renderAll();return;}if(row){state.activeMappingFileId=row.dataset.fileId;save();renderFiles();renderMapping();}});
   $("#cancelAnalyzeButton").addEventListener("click",cancelActiveEnrichment);
