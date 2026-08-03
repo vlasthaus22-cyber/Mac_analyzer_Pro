@@ -26,6 +26,7 @@ Mac_analyzer_Pro/
     portable-database.js  потоковая файловая база MADB; восстановление пишет снимки прямо в IndexedDB без полной RAM-копии
     local-folder-store.js локальная структура database/imports/exports/settings/logs/backups, поиск MADB в выбранной папке и перенос между браузерами
     workspace-file-lifecycle.js жизненный цикл файлов: использованные входы заменяются в следующем запуске, история остаётся в снимках
+    ddio-overlay.js          независимое DDIO-сопоставление по MAC резервации/аренды и визуальная подсветка нового IP при смене коммутатора
     state-persistence.js   компактное сохранение workspace; полный локальный результат хранится один раз в snapshot-store, аварийная inline-копия ограничена 20 000 строк
     guide.js               руководство, переключение разделов и отображение текущего режима
   backend/

@@ -85,181 +85,186 @@
       {
         "line": 53,
         "checked": true,
+        "text": "Третья выгрузка DDIO изолирована в `frontend/ddio-overlay.js` и"
+      },
+      {
+        "line": 57,
+        "checked": true,
         "text": "Пакетное ускорение обогащения: правила, история vendor/model и IP-адреса"
       },
       {
-        "line": 58,
+        "line": 62,
         "checked": true,
         "text": "ColumnManager: видимость, порядок, пользовательские столбцы, ручная ширина,"
       },
       {
-        "line": 60,
+        "line": 64,
         "checked": true,
         "text": "ExportManager: Excel, CSV, TXT, HTML, PDF, JSON, YAML. CSV, TXT,"
       },
       {
-        "line": 82,
+        "line": 86,
         "checked": true,
         "text": "Обогащение: основной/дополнительные файлы с явными ролями и раздельными"
       },
       {
-        "line": 91,
+        "line": 95,
         "checked": true,
         "text": "Сопоставление колонок, поля обогащения, OUI-форматы. Поле `Smartroom ID`"
       },
       {
-        "line": 95,
+        "line": 99,
         "checked": true,
         "text": "Поиск по БД, результаты, двойной клик по устройству."
       },
       {
-        "line": 96,
+        "line": 100,
         "checked": true,
         "text": "История MAC и расширенная история изменений: отдельные PyQt-таблицы"
       },
       {
-        "line": 104,
+        "line": 108,
         "checked": true,
         "text": "История производителей, моделей и загрузок."
       },
       {
-        "line": 105,
+        "line": 109,
         "checked": true,
         "text": "Управление SQLite-базой и удаление выгрузок: структурные фильтры истории по MAC, файлу, vendor/model, помещению и датам, выбор строк, удаление по ID и по фильтру; в истории загрузок можно выборочно удалить отмеченные выгрузки из SQLite и IndexedDB."
       },
       {
-        "line": 108,
+        "line": 112,
         "checked": true,
         "text": "Анализ одного файла."
       },
       {
-        "line": 112,
+        "line": 116,
         "checked": true,
         "text": "Сравнение двух файлов: added/removed/modified, Excel/CSV/TXT export."
       },
       {
-        "line": 113,
+        "line": 117,
         "checked": true,
         "text": "Сравнение нескольких файлов до 10 с отдельным mapping каждого файла."
       },
       {
-        "line": 114,
+        "line": 118,
         "checked": true,
         "text": "Временная статистика."
       },
       {
-        "line": 115,
+        "line": 119,
         "checked": true,
         "text": "Графики и диаграммы, отдельный текстовый AnalyticsDialog-отчёт с"
       },
       {
-        "line": 118,
+        "line": 122,
         "checked": true,
         "text": "DashboardWidget и DashboardSettingsDialog: сохранение настроек, фильтры производителя/помещения и статусов"
       },
       {
-        "line": 142,
+        "line": 146,
         "checked": true,
         "text": "Сетевая топология."
       },
       {
-        "line": 143,
+        "line": 147,
         "checked": true,
         "text": "Кластеризация."
       },
       {
-        "line": 144,
+        "line": 148,
         "checked": true,
         "text": "Автономная аналитика без backend вынесена в `frontend/local-analytics.js`:"
       },
       {
-        "line": 149,
+        "line": 153,
         "checked": true,
         "text": "Аналитика одного устройства и модели/префиксы: точный текстовый отчёт"
       },
       {
-        "line": 156,
+        "line": 160,
         "checked": true,
         "text": "Внешнее API-обогащение с выбором устройств и настройкой сервисов:"
       },
       {
-        "line": 159,
+        "line": 163,
         "checked": true,
         "text": "Уведомления: Email, Telegram, Slack, тесты и события анализа."
       },
       {
-        "line": 160,
+        "line": 164,
         "checked": true,
         "text": "Планировщик реальных задач и очереди файлов."
       },
       {
-        "line": 161,
+        "line": 165,
         "checked": true,
         "text": "AI-анализ качества данных."
       },
       {
-        "line": 162,
+        "line": 166,
         "checked": true,
         "text": "Быстрое обогащение больших XLSX: серверный кэш импортов с токенами,"
       },
       {
-        "line": 165,
+        "line": 169,
         "checked": true,
         "text": "Защита больших анализов от Out of Memory: результаты выводятся страницами по 25-1000 строк,"
       },
       {
-        "line": 211,
+        "line": 215,
         "checked": true,
         "text": "Светлая/тёмная тема: отдельный ThemeSelectionDialog, немедленное применение,"
       },
       {
-        "line": 213,
+        "line": 217,
         "checked": true,
         "text": "Инженерный/пользовательский режим как в PyQt: пользователь видит только безопасные"
       },
       {
-        "line": 218,
+        "line": 222,
         "checked": true,
         "text": "Контекстные действия таблиц: выбор строки, копирование MAC/строки/таблицы,"
       },
       {
-        "line": 220,
+        "line": 224,
         "checked": true,
         "text": "Полная справка и горячие клавиши PyQt: Ctrl+O/S/E/A/H/F,"
       },
       {
-        "line": 225,
+        "line": 229,
         "checked": true,
         "text": "Самодиагностика web-системы: read-only проверка файлов frontend/backend,"
       },
       {
-        "line": 229,
+        "line": 233,
         "checked": true,
         "text": "Переносимый Windows-backend: автономная PyInstaller-сборка с frontend,"
       },
       {
-        "line": 238,
+        "line": 242,
         "checked": true,
         "text": "Все пункты выше реализованы."
       },
       {
-        "line": 239,
+        "line": 243,
         "checked": true,
         "text": "Импортированы текущие SQLite-данные Python-версии."
       },
       {
-        "line": 240,
+        "line": 244,
         "checked": true,
         "text": "Все операции проверены через UI и REST API."
       },
       {
-        "line": 241,
+        "line": 245,
         "checked": true,
         "text": "Не осталось функций PyQt, для которых нет web-эквивалента."
       }
     ],
-    "checked": 51,
-    "total": 51,
+    "checked": 52,
+    "total": 52,
     "unchecked": []
   },
   "equivalents": [
@@ -930,7 +935,7 @@
     "registryUnchecked": 0
   },
   "missingEquivalents": [],
-  "summaryHtml": "<div class=\"bar-label\"><span>Status</span><strong>complete</strong></div><div class=\"bar-label\"><span>PyQt blocks</span><strong>31/31</strong></div><div class=\"bar-label\"><span>Missing equivalents</span><strong>0</strong></div><div class=\"bar-label\"><span>Registry unchecked</span><strong>0</strong></div><div class=\"bar-label\"><span>Registry checked</span><strong>51/51</strong></div>",
+  "summaryHtml": "<div class=\"bar-label\"><span>Status</span><strong>complete</strong></div><div class=\"bar-label\"><span>PyQt blocks</span><strong>31/31</strong></div><div class=\"bar-label\"><span>Missing equivalents</span><strong>0</strong></div><div class=\"bar-label\"><span>Registry unchecked</span><strong>0</strong></div><div class=\"bar-label\"><span>Registry checked</span><strong>52/52</strong></div>",
   "detailsHtml": "<div class=\"mapping-row\"><span><strong>Database management</strong><small>class DatabaseManagementDialog · complete · markers 4</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Enhanced MAC history</strong><small>class EnhancedHistoryDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>MAC history dialog</strong><small>class MACHistoryDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Column conflict review</strong><small>class ColumnConflictDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Vendor detector settings</strong><small>class VendorDetectorSettingsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>History enrichment settings</strong><small>class HistoryEnrichmentSettingsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Vendor/model history</strong><small>class VendorModelHistoryDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>IP address mapping</strong><small>class IPAddressMappingDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Column mapping</strong><small>class ColumnMappingDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Column manager</strong><small>class ColumnManagerDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>OUI format selection</strong><small>class OUIFormatSelectionDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Comparison file mapping</strong><small>class ComparisonFileMappingDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Multi-file comparison</strong><small>class MultiFileComparisonDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Comparison fields</strong><small>class FieldsSelectionDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>File comparison</strong><small>class FileComparisonDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Time statistics</strong><small>class TimeStatsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Notifications</strong><small>class NotificationSettingsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Scheduler</strong><small>class SchedulerDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>API enrichment</strong><small>class APIEnrichmentDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Clustering</strong><small>class ClusteringDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Single file analysis</strong><small>class SingleFileAnalysisDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Export dialog</strong><small>class ExportDialog · complete · markers 4</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Analytics dialog</strong><small>class AnalyticsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Single device analytics</strong><small>class SingleDeviceAnalyticsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Model prefixes</strong><small>class ModelPrefixesDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Theme selection</strong><small>class ThemeSelectionDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>API settings</strong><small>class APISettingsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Dashboard settings</strong><small>class DashboardSettingsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Topology</strong><small>show_topology · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Data quality analysis</strong><small>def analyze_data_quality · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Legacy SQLite migration</strong><small>mac_history.db · complete · markers 3</small></span><span class=\"muted\">OK</span></div>",
   "emptyDetailsHtml": "<p class=\"muted\">Нет данных parity.</p>"
 }

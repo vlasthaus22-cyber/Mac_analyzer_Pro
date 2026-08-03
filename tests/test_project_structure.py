@@ -75,6 +75,7 @@ def test_project_structure_and_maintenance_commands_exist():
         "frontend/full-xlsx-report.js",
         "frontend/portable-database.js",
         "frontend/workspace-file-lifecycle.js",
+        "frontend/ddio-overlay.js",
         "frontend/guide.js",
         "backend/services/system/diagnostics_service.py",
         "tests/frontend_memory_guard.test.js",

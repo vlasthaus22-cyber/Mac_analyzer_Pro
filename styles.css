@@ -303,3 +303,13 @@ table tbody tr.selected-row td { background:rgba(15,118,110,.12); box-shadow:ins
 @media (max-width:720px) { .guide-mode-strip,.guide-safety-grid,.guide-step-list,.guide-diagnostics-head { grid-template-columns:1fr; }.guide-tabs { grid-template-columns:repeat(2,minmax(0,1fr)); }.guide-tab:nth-child(2) { border-right:0; }.guide-tab:nth-child(-n+2) { border-bottom:1px solid var(--line); }.guide-section-head { display:block; }.guide-access-badge { display:inline-block; margin-top:4px; }.guide-diagnostics-summary { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width:480px) { .guide-value-grid,.guide-flow,.guide-tabs { grid-template-columns:1fr; }.guide-tab { border-right:0; border-bottom:1px solid var(--line); }.guide-tab:last-child { border-bottom:0; }.guide-value,.guide-flow li,.guide-step { min-height:0; }.guide-panel { padding-top:18px; }.guide-intro h2,.guide-section-head h2 { font-size:20px; } }
 @media (max-width:640px) { .global-search { grid-template-columns:minmax(0,1fr) 36px; flex:1 1 100%; }.export-menu-tree { position:fixed; top:72px; right:8px; left:8px; width:auto; } }
+.ddio-panel { display:grid; gap:8px; margin-top:10px; padding:10px; border:1px solid rgba(37,99,235,.28); border-left:3px solid #2563eb; border-radius:4px; background:rgba(219,234,254,.24); }
+.ddio-panel-head,.ddio-panel-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.ddio-panel-head small { display:block; margin-top:2px; color:var(--muted); font-size:11px; }
+.ddio-mapping-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
+.ddio-mapping-grid label { display:grid; gap:3px; color:var(--muted); font-size:11px; }
+.ddio-mapping-grid select { min-width:0; }
+.ddio-new-ip { display:block; margin-top:3px; color:#1d4ed8; font-size:11px; font-weight:700; }
+.ddio-new-ip u { text-decoration-thickness:2px; text-underline-offset:2px; }
+.ddio-highlight-cell { background:rgba(219,234,254,.42); }
+@media (max-width:900px) { .ddio-mapping-grid { grid-template-columns:1fr; }.ddio-panel-head { align-items:flex-start; flex-direction:column; } }

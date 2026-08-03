@@ -1,8 +1,13 @@
 # MAC Analyzer Pro
 
-MAC Analyzer Pro is a web application for MAC inventory analysis, two-file
+MAC Analyzer Pro is a web application for MAC inventory analysis, multi-file
 enrichment, OUI/vendor/model detection, history, comparisons, analytics,
 dashboards, topology, and export.
+
+An optional third DDIO export is kept outside normal enrichment. Reservation
+and lease MAC columns are matched independently; when a device moves to a
+different switch IP, DDIO can show an underlined candidate device IP in the
+results table. The hint never overwrites devices, history, snapshots, or exports.
 
 ## Primary autonomous mode
 

@@ -107,6 +107,7 @@ def _enrich_row_streams(
         return {"devices": [], "invalid": [], "progress": {"files": 0, "rows": 0, "valid": 0, "invalid": 0, "status": "completed", "percent": 100}}
     allow_new_from_secondary = strategy == "merge"
     by_mac: dict[str, dict[str, Any]] = {}
+    switch_state: dict[str, dict[str, str]] = {}
     invalid: list[dict[str, Any]] = []
     rows_processed = 0
     total_rows = 0
@@ -143,6 +144,12 @@ def _enrich_row_streams(
             existing = by_mac.get(current["mac"])
             if file_index == 0 or allow_new_from_secondary or existing:
                 by_mac[current["mac"]] = merge_device(existing or {}, current)
+                switch_ip = str(current.get("switchIp") or "").strip()
+                if switch_ip:
+                    if file_index == 0:
+                        switch_state[current["mac"]] = {"before": switch_ip, "after": switch_ip}
+                    elif existing and current["mac"] in switch_state:
+                        switch_state[current["mac"]]["after"] = switch_ip
             if progress_callback and (rows_processed % progress_interval == 0 or rows_processed == total_rows):
                 progress_callback({
                     "files": len(files),
@@ -156,9 +163,15 @@ def _enrich_row_streams(
                     "percent": round(rows_processed / total_rows * 100) if total_rows else 100,
                 })
     devices = sorted(by_mac.values(), key=lambda item: item["mac"])
+    switch_ip_changes = [
+        {"mac": mac, "before": values["before"], "after": values["after"]}
+        for mac, values in switch_state.items()
+        if values.get("before") and values.get("after") and values["before"] != values["after"]
+    ]
     return {
         "devices": devices,
         "invalid": invalid,
+        "switchIpChanges": switch_ip_changes,
         "progress": {
             "files": len(files),
             "rows": rows_processed,

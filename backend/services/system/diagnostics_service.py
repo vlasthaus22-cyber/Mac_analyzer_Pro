@@ -109,7 +109,9 @@ def build_system_diagnostics(root: Path, storage: Any, db_connection: Callable[[
         "frontend/file-readers.js",
         "frontend/state-persistence.js",
         "frontend/browser-snapshot-store.js",
+        "frontend/ddio-overlay.js",
         "frontend/guide.js",
+        "backend/services/workspace/ddio_overlay_service.py",
         "backend/services/detection/reference_data_service.py",
     )
     missing_files = [name for name in required_files if not (root / name).is_file()]

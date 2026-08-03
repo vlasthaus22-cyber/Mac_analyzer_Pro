@@ -2,13 +2,17 @@ import base64
 import json
 import threading
 import urllib.request
+import urllib.error
 from urllib.parse import quote
 from http.server import ThreadingHTTPServer
 from io import BytesIO
 
 from openpyxl import Workbook
 
-from server import AppHandler, WORKSPACE_FILE_CACHE, db_connection
+from server import AppHandler, WORKSPACE_FILE_CACHE, db_connection, init_database
+
+
+init_database()
 
 
 def workbook_bytes(headers, rows):
@@ -30,10 +34,14 @@ def post_json(base_url, path, payload):
         headers={"Content-Type": "application/json", "Origin": "null"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=10) as response:
-        assert response.status == 200
-        assert response.headers["Access-Control-Allow-Origin"] == "null"
-        return json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            assert response.status == 200
+            assert response.headers["Access-Control-Allow-Origin"] == "null"
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        details = error.read().decode("utf-8", errors="replace")
+        raise AssertionError(f"POST {path} failed with HTTP {error.code}: {details}") from error
 
 
 def post_binary_file(base_url, filename, content, preview_rows=100):
@@ -177,6 +185,99 @@ def test_two_xlsx_files_are_visible_and_enrich_matching_primary_mac():
         thread.join(timeout=5)
 
 
+def test_third_ddio_xlsx_returns_display_only_ip_hint_after_switch_change():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), AppHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    imported = []
+    try:
+        host, port = server.server_address
+        base_url = f"http://{host}:{port}"
+        main = post_binary_file(
+            base_url,
+            "main.xlsx",
+            workbook_bytes(
+                ["MAC Address", "IP Address", "Switch IP"],
+                [["00:11:22:33:44:55", "192.168.1.10", "10.0.0.1"]],
+            ),
+        )
+        enrichment = post_binary_file(
+            base_url,
+            "enrichment.xlsx",
+            workbook_bytes(
+                ["MAC Address", "Switch IP"],
+                [["00:11:22:33:44:55", "10.0.0.2"]],
+            ),
+        )
+        ddio = post_binary_file(
+            base_url,
+            "ddio.xlsx",
+            workbook_bytes(
+                ["IP Address", "Reservation MAC Address", "Lease MAC Address"],
+                [
+                    ["192.168.1.20", "00:11:22:33:44:55", ""],
+                    ["192.168.1.30", "", "00:11:22:33:44:55"],
+                ],
+            ),
+        )
+        imported.extend([main, enrichment, ddio])
+        result = post_json(
+            base_url,
+            "/api/enrichment/run",
+            {
+                "files": [
+                    {
+                        "id": "main",
+                        "name": "main.xlsx",
+                        "role": "primary",
+                        "fileToken": main["fileToken"],
+                        "rowCount": main["rowCount"],
+                        "mapping": {"mac": 0, "ip": 1, "switchIp": 2},
+                    },
+                    {
+                        "id": "enrichment",
+                        "name": "enrichment.xlsx",
+                        "role": "enrichment",
+                        "fileToken": enrichment["fileToken"],
+                        "rowCount": enrichment["rowCount"],
+                        "mapping": {"mac": 0, "switchIp": 1},
+                    },
+                ],
+                "ddioFile": {
+                    "id": "ddio",
+                    "name": "ddio.xlsx",
+                    "role": "ddio",
+                    "fileToken": ddio["fileToken"],
+                    "rowCount": ddio["rowCount"],
+                    "mapping": {"ip": 0, "reservationMac": 1, "leaseMac": 2},
+                },
+                "strategy": "primary",
+                "fields": {"ip": True, "switchIp": True},
+                "source": "main.xlsx",
+                "saveHistory": False,
+                "saveSnapshot": False,
+                "notify": False,
+            },
+        )
+        assert result["devices"][0]["ip"] == "192.168.1.10"
+        assert result["devices"][0]["switchIp"] == "10.0.0.2"
+        assert result["ddioOverlay"] == {
+            "001122334455": {
+                "ip": "192.168.1.30",
+                "match": "lease",
+                "previousSwitchIp": "10.0.0.1",
+                "currentSwitchIp": "10.0.0.2",
+            }
+        }
+        assert result["ddioSummary"] == {"loaded": True, "switchIpChanges": 1, "newIpHints": 1}
+    finally:
+        for item in imported:
+            WORKSPACE_FILE_CACHE.discard(item.get("fileToken", ""))
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 def test_compact_enrichment_keeps_full_result_in_sqlite_snapshot():
     server = ThreadingHTTPServer(("127.0.0.1", 0), AppHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -296,6 +397,7 @@ def test_large_binary_import_response_is_bounded_to_preview_rows():
 
 if __name__ == "__main__":
     test_two_xlsx_files_are_visible_and_enrich_matching_primary_mac()
+    test_third_ddio_xlsx_returns_display_only_ip_hint_after_switch_change()
     test_compact_enrichment_keeps_full_result_in_sqlite_snapshot()
     test_large_binary_import_response_is_bounded_to_preview_rows()
     print("xlsx enrichment API test passed")

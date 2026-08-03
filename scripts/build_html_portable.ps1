@@ -35,6 +35,7 @@ $scripts = @(
     "frontend/portable-database.js",
     "frontend/local-folder-store.js",
     "frontend/workspace-file-lifecycle.js",
+    "frontend/ddio-overlay.js",
     "frontend/guide.js",
     "app.js"
 )

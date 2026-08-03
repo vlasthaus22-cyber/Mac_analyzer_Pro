@@ -41,6 +41,7 @@ from backend.services.workspace.file_import_service import read_table
 from backend.services.detection.column_detector_service import detect as detect_columns
 from backend.services.exporting.export_manager_service import export_managed, supported_export_formats
 from backend.services.workspace.enrichment_service import enrich_files, enrich_workspace_files
+from backend.services.workspace.ddio_overlay_service import build_ddio_overlay
 from backend.services.detection.oui_service import format_oui_for_devices
 from backend.services.workspace.single_file_service import analyze_single_file, analyze_single_file_table, summarize_single_file
 from backend.services.comparison.comparison_service import compare_devices, compare_many_devices, compare_many_snapshots, compare_snapshots, export_comparison
@@ -73,7 +74,7 @@ from backend.services.system.engineering_service import (
     normalize_engineering_ttl,
 )
 from backend.services.system.storage_paths import initialize_storage
-from backend.services.workspace.workspace_cache_service import WorkspaceCacheMiss, WorkspaceFileCache, prepare_workspace_files, resolve_workspace_files
+from backend.services.workspace.workspace_cache_service import WorkspaceCacheMiss, WorkspaceFileCache, prepare_workspace_files, resolve_workspace_files, workspace_row_iterator
 
 ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 STORAGE, STORAGE_MIGRATION_REPORT = initialize_storage(ROOT)
@@ -5667,11 +5668,16 @@ class AppHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/enrichment/run":
                 started_at = time.perf_counter()
                 files = payload.get("files", [])
+                ddio_file_payload = payload.get("ddioFile")
                 if not isinstance(files, list) or len(files) > 10:
                     self.error_response("files must be an array up to 10 items")
                     return
+                if ddio_file_payload is not None and not isinstance(ddio_file_payload, dict):
+                    self.error_response("ddioFile must be an object")
+                    return
                 try:
                     files = prepare_workspace_files(files, WORKSPACE_FILE_CACHE)
+                    ddio_file = prepare_workspace_files([ddio_file_payload], WORKSPACE_FILE_CACHE)[0] if ddio_file_payload else None
                 except WorkspaceCacheMiss:
                     self.json_response(
                         {
@@ -5722,6 +5728,19 @@ class AppHandler(BaseHTTPRequestHandler):
                 for raw in merged["devices"]:
                     item = enrich_device(raw, context)
                     (valid if item["valid"] else invalid).append(item)
+                ddio_overlay: dict[str, dict[str, str]] = {}
+                if ddio_file:
+                    try:
+                        ddio_changed_macs = {item.get("mac") for item in merged.get("switchIpChanges") or [] if isinstance(item, dict)}
+                        ddio_overlay = build_ddio_overlay(
+                            workspace_row_iterator(ddio_file, WORKSPACE_FILE_CACHE),
+                            ddio_file.get("mapping") or {},
+                            merged.get("switchIpChanges") or [],
+                            {item["mac"]: item.get("ip", "") for item in valid if item.get("mac") in ddio_changed_macs},
+                        )
+                    except ValueError as error:
+                        self.error_response(str(error))
+                        return
                 for field in ["vendor", "model", "ip", "address", "room", "switchIp", "switchPort"]:
                     if fields.get(field, True) is False:
                         for item in valid:
@@ -5783,6 +5802,12 @@ class AppHandler(BaseHTTPRequestHandler):
                     "performance": {"durationMs": duration_ms, "context": context.get("statistics", {})},
                     "snapshot": snapshot,
                     "fileTokens": refreshed_file_tokens,
+                    "ddioOverlay": ddio_overlay,
+                    "ddioSummary": {
+                        "loaded": bool(ddio_file),
+                        "switchIpChanges": len(merged.get("switchIpChanges") or []),
+                        "newIpHints": len(ddio_overlay),
+                    },
                     "processedAt": utc_now(),
                 })
             elif parsed.path == "/api/analyze":

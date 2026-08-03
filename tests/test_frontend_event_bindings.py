@@ -8,6 +8,21 @@ def read_app_js():
     )
 
 
+def test_ddio_third_export_is_display_only_and_bound_in_primary_frontend():
+    html = read_index_html()
+    app = read_app_js()
+    ddio = Path("frontend/ddio-overlay.js").read_text(encoding="utf-8")
+    assert 'id="ddioFileInput"' in html
+    assert 'id="browseDdioFileButton"' in html
+    assert 'id="ddioMappingGrid"' in html
+    assert '<script src="frontend/ddio-overlay.js?v=20260802.1"></script>' in html
+    assert 'loadDdioFile(e.target.files,e.target)' in app
+    assert 'reservationMac' in ddio and 'leaseMac' in ddio
+    assert 'applyDdioOverlayToResults(body,columns)' in app
+    assert 'ddioFile:ddioFilePayload(true)' in app
+    assert 'state.ddioOverlay=serverResult.ddioOverlay||{}' in app
+
+
 def read_index_html():
     return Path("index.html").read_text(encoding="utf-8")
 
@@ -2380,6 +2395,7 @@ def test_browser_only_mode_uses_a_structured_local_folder():
 
 
 if __name__ == "__main__":
+    test_ddio_third_export_is_display_only_and_bound_in_primary_frontend()
     test_autonomous_file_database_is_streamed_and_connected_to_workspace_saves()
     test_primary_app_bootstrap_disables_duplicate_inline_fallback()
     test_portable_two_file_import_is_local_first_and_race_safe()

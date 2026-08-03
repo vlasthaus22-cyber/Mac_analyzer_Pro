@@ -1,0 +1,74 @@
+from copy import deepcopy
+
+from backend.services.workspace.ddio_overlay_service import build_ddio_overlay
+from backend.services.workspace.enrichment_service import enrich_files
+
+
+def test_ddio_uses_reservation_and_lease_mac_without_mutating_devices():
+    files = [
+        {
+            "name": "primary.xlsx",
+            "mapping": {"mac": 0, "ip": 1, "switchIp": 2},
+            "rows": [
+                ["MAC", "IP", "Switch IP"],
+                ["00:11:22:33:44:55", "192.168.1.10", "10.0.0.1"],
+                ["00:11:22:33:44:66", "192.168.1.11", "10.0.0.8"],
+            ],
+        },
+        {
+            "name": "enrichment.xlsx",
+            "mapping": {"mac": 0, "switchIp": 1},
+            "rows": [
+                ["MAC", "Switch IP"],
+                ["00:11:22:33:44:55", "10.0.0.2"],
+                ["00:11:22:33:44:66", "10.0.0.8"],
+            ],
+        },
+    ]
+    enriched = enrich_files(files)
+    assert enriched["switchIpChanges"] == [
+        {"mac": "001122334455", "before": "10.0.0.1", "after": "10.0.0.2"}
+    ]
+    devices_before = deepcopy(enriched["devices"])
+    rows = [
+        ["192.168.1.20", "00:11:22:33:44:55", ""],
+        ["192.168.1.30", "", "00:11:22:33:44:55"],
+        ["192.168.1.40", "00:11:22:33:44:66", ""],
+    ]
+    overlay = build_ddio_overlay(
+        rows,
+        {"ip": 0, "reservationMac": 1, "leaseMac": 2},
+        enriched["switchIpChanges"],
+        {"001122334455": "192.168.1.10"},
+    )
+    assert overlay == {
+        "001122334455": {
+            "ip": "192.168.1.30",
+            "match": "lease",
+            "previousSwitchIp": "10.0.0.1",
+            "currentSwitchIp": "10.0.0.2",
+        }
+    }
+    assert enriched["devices"] == devices_before
+
+
+def test_ddio_requires_ip_and_at_least_one_mac_column():
+    changes = [{"mac": "001122334455", "before": "10.0.0.1", "after": "10.0.0.2"}]
+    try:
+        build_ddio_overlay([], {"reservationMac": 0}, changes)
+    except ValueError as error:
+        assert "IP" in str(error)
+    else:
+        raise AssertionError("DDIO mapping without IP must fail")
+    try:
+        build_ddio_overlay([], {"ip": 0}, changes)
+    except ValueError as error:
+        assert "MAC" in str(error)
+    else:
+        raise AssertionError("DDIO mapping without MAC must fail")
+
+
+if __name__ == "__main__":
+    test_ddio_uses_reservation_and_lease_mac_without_mutating_devices()
+    test_ddio_requires_ip_and_at_least_one_mac_column()
+    print("DDIO overlay service test passed")
