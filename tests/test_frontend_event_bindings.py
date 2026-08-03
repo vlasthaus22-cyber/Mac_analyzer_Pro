@@ -2056,6 +2056,8 @@ def test_dashboard_change_period_snapshot_drilldown_is_wired_backend_and_local()
         'id="dashboardBaselineSnapshot"', 'id="dashboardComparisonSnapshot"',
         'id="dashboardChangesDialog"', 'id="dashboardCriticalCount"', 'id="dashboardChangesBody"',
         'id="dashboardChangeTypeFilter"', 'id="dashboardDynamicsDialog"', 'data-dashboard-change-type="added"',
+        'role="tablist" aria-label="Категории изменений"', 'id="dashboardChangesPanel" role="tabpanel"',
+        'frontend/dashboard-change-tabs.js?v=',
     ):
         assert marker in html
     for marker in (
@@ -2064,10 +2066,18 @@ def test_dashboard_change_period_snapshot_drilldown_is_wired_backend_and_local()
         "function finalDashboardSnapshots", "function selectLatestDashboardPair", "function loadBrowserDashboardCache",
         "BrowserSnapshots.compareSnapshots", "BrowserSnapshots.aggregateSeries", 'changeMode:"snapshots"',
         "function groupDashboardChanges", "function showDashboardDynamicsDialog",
+        "function selectDashboardChangeTab", "function syncDashboardChangeTabState",
+        "function handleDashboardChangeTabKeydown", "DashboardChangeTabs.filtersForTab",
     ):
         assert marker in app
+    for marker in (
+        "function selectFallbackDashboardChangeTab", "function syncFallbackDashboardChangeTabState",
+        "dashboardChangeTypeFilter\")?.addEventListener", "dashboardChangeMacSearch\")?.addEventListener",
+    ):
+        assert marker in html
     assert "function buildFallbackChangeAnalysis" in html
     assert ".severity-critical" in styles
+    assert '.dashboard-change-metrics .metric[aria-selected="true"]' in styles
     assert ".dashboard-changes-dialog[open] { display:flex; flex-direction:column; }" in styles
     assert "resize:both;" in styles
     assert ".dashboard-changes-table { flex:1 1 260px;" in styles

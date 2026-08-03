@@ -73,7 +73,8 @@ fieldset { border:1px solid var(--line); border-radius:5px; margin:14px 0; } leg
 .dashboard-changes-dialog[open] { display:flex; flex-direction:column; }
 .dashboard-change-metrics { grid-template-columns:repeat(5,minmax(0,1fr)); margin-top:14px; }
 .dashboard-change-metrics .metric { appearance:none; color:inherit; cursor:pointer; font:inherit; text-align:left; box-shadow:none; padding:11px; }
-.dashboard-change-metrics .metric:hover,.dashboard-change-metrics .metric.active-filter { border-color:var(--accent); }
+.dashboard-change-metrics .metric:hover,.dashboard-change-metrics .metric.active-filter { border-color:var(--accent); background:var(--surface-soft); box-shadow:inset 0 -3px 0 var(--accent); }
+.dashboard-change-metrics .metric[aria-selected="true"] { outline:2px solid color-mix(in srgb,var(--accent) 35%,transparent); outline-offset:1px; }
 .dashboard-change-metrics .change-critical { border-color:var(--danger); }
 .dashboard-change-metrics .change-critical strong { color:var(--danger); }
 .dashboard-change-filters { display:grid; grid-template-columns:200px 200px minmax(260px,1fr); gap:10px; margin:12px 0; }

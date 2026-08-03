@@ -36,6 +36,7 @@ $scripts = @(
     "frontend/local-folder-store.js",
     "frontend/workspace-file-lifecycle.js",
     "frontend/ddio-overlay.js",
+    "frontend/dashboard-change-tabs.js",
     "frontend/guide.js",
     "app.js"
 )
@@ -76,6 +77,7 @@ foreach ($marker in @(
     "window.MacAnalyzerLocalAnalytics",
     "window.MacAnalyzerLocalFolderStore",
     "window.MacAnalyzerWorkspaceFileLifecycle",
+    "window.MacAnalyzerDashboardChangeTabs",
     "xlsxWorksheetRows",
     "assertEnrichmentCapacity",
     "id=`"portableDatabaseButton`""

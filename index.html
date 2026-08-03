@@ -729,12 +729,12 @@
   </dialog>
   <dialog class="device-dialog dashboard-changes-dialog" id="dashboardChangesDialog">
     <div class="dialog-head"><div><h2>Изменения устройств</h2><p class="muted" id="dashboardChangesPeriodLabel">Изменения за выбранный период</p></div><button class="icon-button" id="closeDashboardChangesDialog" aria-label="Закрыть">×</button></div>
-    <section class="metrics dashboard-change-metrics">
-      <button type="button" class="metric" data-dashboard-change-type="all"><span>Всего MAC</span><strong id="dashboardChangeTotal">0</strong></button>
-      <button type="button" class="metric change-critical" data-dashboard-change-type="critical"><span>Критические</span><strong id="dashboardCriticalCount">0</strong></button>
-      <button type="button" class="metric" data-dashboard-change-type="added"><span>Добавлено</span><strong id="dashboardAddedCount">0</strong></button>
-      <button type="button" class="metric" data-dashboard-change-type="removed"><span>Отсутствует</span><strong id="dashboardRemovedCount">0</strong></button>
-      <button type="button" class="metric" data-dashboard-change-type="modified"><span>Изменено</span><strong id="dashboardModifiedCount">0</strong></button>
+    <section class="metrics dashboard-change-metrics" role="tablist" aria-label="Категории изменений">
+      <button type="button" class="metric active-filter" role="tab" aria-selected="true" aria-controls="dashboardChangesPanel" tabindex="0" data-dashboard-change-type="all"><span>Всего MAC</span><strong id="dashboardChangeTotal">0</strong></button>
+      <button type="button" class="metric change-critical" role="tab" aria-selected="false" aria-controls="dashboardChangesPanel" tabindex="-1" data-dashboard-change-type="critical"><span>Критические</span><strong id="dashboardCriticalCount">0</strong></button>
+      <button type="button" class="metric" role="tab" aria-selected="false" aria-controls="dashboardChangesPanel" tabindex="-1" data-dashboard-change-type="added"><span>Добавлено</span><strong id="dashboardAddedCount">0</strong></button>
+      <button type="button" class="metric" role="tab" aria-selected="false" aria-controls="dashboardChangesPanel" tabindex="-1" data-dashboard-change-type="removed"><span>Отсутствует</span><strong id="dashboardRemovedCount">0</strong></button>
+      <button type="button" class="metric" role="tab" aria-selected="false" aria-controls="dashboardChangesPanel" tabindex="-1" data-dashboard-change-type="modified"><span>Изменено</span><strong id="dashboardModifiedCount">0</strong></button>
     </section>
     <div class="dashboard-change-filters">
       <label>Важность<select id="dashboardChangeSeverityFilter"><option value="all">Все уровни</option><option value="critical">Критические</option><option value="high">Высокие</option><option value="medium">Средние</option><option value="low">Низкие</option></select></label>
@@ -742,7 +742,7 @@
       <label>MAC-адрес<input type="search" id="dashboardChangeMacSearch" placeholder="00:11:22:33:44:55"></label>
       <label>Поиск по данным<input type="search" id="dashboardChangeSearch" placeholder="Поле, значение, помещение"></label>
     </div>
-    <div class="table-wrap dashboard-changes-table"><table><thead><tr><th>Важность</th><th>Дата</th><th>MAC</th><th>Тип</th><th>Модель</th><th>Адрес помещения</th><th>Помещение</th><th>Что изменилось</th><th>Источник</th></tr></thead><tbody id="dashboardChangesBody"><tr><td colspan="9" class="empty-state">Изменений не найдено.</td></tr></tbody></table></div>
+    <div class="table-wrap dashboard-changes-table" id="dashboardChangesPanel" role="tabpanel"><table><thead><tr><th>Важность</th><th>Дата</th><th>MAC</th><th>Тип</th><th>Модель</th><th>Адрес помещения</th><th>Помещение</th><th>Что изменилось</th><th>Источник</th></tr></thead><tbody id="dashboardChangesBody"><tr><td colspan="9" class="empty-state">Изменений не найдено.</td></tr></tbody></table></div>
   </dialog>
   <dialog class="device-dialog dashboard-changes-dialog" id="dashboardDynamicsDialog">
     <div class="dialog-head"><div><h2>Динамика общего числа устройств</h2><p class="muted">Количество уникальных MAC в каждой финальной выгрузке.</p></div><button class="icon-button" id="closeDashboardDynamicsDialog" aria-label="Закрыть">×</button></div>
@@ -816,6 +816,7 @@
   <script src="frontend/local-folder-store.js?v=20260728.1"></script>
   <script src="frontend/workspace-file-lifecycle.js?v=20260722.7"></script>
   <script src="frontend/ddio-overlay.js?v=20260802.1"></script>
+  <script src="frontend/dashboard-change-tabs.js?v=20260803.1"></script>
   <script src="frontend/guide.js?v=20260722.7"></script>
   <script src="app.js?v=20260729.3"></script>
   <script>
@@ -1936,13 +1937,28 @@
       }
 
       let fallbackChangeAnalysis = { summary: {}, changes: [] };
+      function syncFallbackDashboardChangeTabState() {
+        const tabs = window.MacAnalyzerDashboardChangeTabs;
+        const active = tabs?.tabForFilters($("#dashboardChangeSeverityFilter")?.value, $("#dashboardChangeTypeFilter")?.value) || "";
+        $$('[data-dashboard-change-type]').forEach((button) => { const selected = Boolean(active) && button.dataset.dashboardChangeType === active; button.classList.toggle("active-filter", selected); button.setAttribute("aria-selected", String(selected)); button.tabIndex = selected ? 0 : -1; });
+        return active;
+      }
+      function selectFallbackDashboardChangeTab(type = "all", focus = false) {
+        const tabs = window.MacAnalyzerDashboardChangeTabs;
+        const tab = tabs?.normalizeTab(type) || "all", filters = tabs?.filtersForTab(tab) || { severity: "all", type: tab };
+        if ($("#dashboardChangeSeverityFilter")) $("#dashboardChangeSeverityFilter").value = filters.severity;
+        if ($("#dashboardChangeTypeFilter")) $("#dashboardChangeTypeFilter").value = filters.type;
+        syncFallbackDashboardChangeTabState(); renderFallbackChanges();
+        if (focus) $(`[data-dashboard-change-type="${tab}"]`)?.focus();
+      }
       function renderFallbackChanges() {
         fallbackChangeAnalysis = buildFallbackChangeAnalysis(); const summary = fallbackChangeAnalysis.summary, put = (id, value) => { if ($(id)) $(id).textContent = value || 0; };
         const settings = fallbackState.dashboardSettings, options = fallbackChangeAnalysis.snapshotOptions || []; if ($("#dashboardChangeMode")) $("#dashboardChangeMode").value = settings.changeMode || "snapshots"; if ($("#dashboardChangeDateFrom")) $("#dashboardChangeDateFrom").value = settings.changeDateFrom || ""; if ($("#dashboardChangeDateTo")) $("#dashboardChangeDateTo").value = settings.changeDateTo || ""; if ($("#dashboardPeriodControls")) $("#dashboardPeriodControls").hidden = settings.changeMode === "snapshots"; if ($("#dashboardSnapshotControls")) $("#dashboardSnapshotControls").hidden = settings.changeMode !== "snapshots";
         const fill = (selector, selected) => { if (!$(selector)) return; $(selector).innerHTML = options.length ? options.map((item) => `<option value="${esc(item.id)}"${item.id === selected ? " selected" : ""}>${esc(item.name)}${item.date ? ` · ${esc(item.date.slice(0, 10))}` : ""}</option>`).join("") : '<option value="">Нет сохранённых выгрузок</option>'; }; fill("#dashboardBaselineSnapshot", settings.baselineSnapshotId || options.at(-2)?.id || ""); fill("#dashboardComparisonSnapshot", settings.comparisonSnapshotId || options.at(-1)?.id || "");
         put("#dashboardChangeTotal", summary.total); put("#dashboardCriticalCount", summary.critical); put("#dashboardAddedCount", summary.added); put("#dashboardRemovedCount", summary.removed); put("#dashboardModifiedCount", summary.modified);
-        const severity = $("#dashboardChangeSeverityFilter")?.value || "all", query = ($("#dashboardChangeSearch")?.value || "").toLowerCase(), rows = fallbackChangeAnalysis.changes.filter((item) => (severity === "all" || item.severity === severity) && (!query || Object.values(item).some((value) => String(value).toLowerCase().includes(query))));
-        $("#dashboardChangesBody").innerHTML = rows.length ? rows.map((item) => `<tr><td><span class="severity-badge severity-${esc(item.severity)}">${esc(item.severity)}</span></td><td>${esc(item.date)}</td><td>${esc(item.macFormatted)}</td><td>${esc(item.typeLabel)}</td><td>${esc(item.fieldLabel)}</td><td>${esc(item.before)}</td><td>${esc(item.after)}</td><td>${esc(item.source)}</td></tr>`).join("") : '<tr><td colspan="8" class="empty-state">Изменений не найдено.</td></tr>';
+        const severity = $("#dashboardChangeSeverityFilter")?.value || "all", type = $("#dashboardChangeTypeFilter")?.value || "all", macQuery = ($("#dashboardChangeMacSearch")?.value || "").toUpperCase().replace(/[^0-9A-F]/g, ""), query = ($("#dashboardChangeSearch")?.value || "").toLowerCase(), rows = fallbackChangeAnalysis.changes.filter((item) => (severity === "all" || item.severity === severity) && (type === "all" || item.type === type) && (!macQuery || fallbackMacHex(item.macFormatted).includes(macQuery)) && (!query || Object.values(item).some((value) => String(value).toLowerCase().includes(query))));
+        syncFallbackDashboardChangeTabState();
+        $("#dashboardChangesBody").innerHTML = rows.length ? rows.map((item) => `<tr><td><span class="severity-badge severity-${esc(item.severity)}">${esc(item.severity)}</span></td><td>${esc(item.date)}</td><td>${esc(item.macFormatted)}</td><td>${esc(item.typeLabel)}</td><td>-</td><td>-</td><td>-</td><td>${esc(item.fieldLabel)}: ${esc(item.before)} → ${esc(item.after)}</td><td>${esc(item.source)}</td></tr>`).join("") : '<tr><td colspan="9" class="empty-state">Изменений не найдено.</td></tr>';
       }
 
       function applyFallbackDashboardVisibility(settings = fallbackState.dashboardSettings) {
@@ -2445,13 +2461,17 @@
       $$("[data-dashboard-status]").forEach((button) => button.addEventListener("click", () => {
         if ($("#dashboardStatusFilter")) $("#dashboardStatusFilter").value = button.dataset.dashboardStatus || "all";
         renderFallbackAnalytics();
-        if (button.dataset.dashboardStatus === "changed" && !$("#dashboardChangesDialog").open) $("#dashboardChangesDialog").showModal();
+        if (button.dataset.dashboardStatus === "changed") { selectFallbackDashboardChangeTab("modified"); if (!$("#dashboardChangesDialog").open) $("#dashboardChangesDialog").showModal(); }
       }));
       $("#dashboardChangeMode")?.addEventListener("change", () => { fallbackState.dashboardSettings.changeMode = $("#dashboardChangeMode").value; fallbackPersist("dashboard-change-mode"); renderFallbackChanges(); });
-      $("#applyDashboardChangeRangeButton")?.addEventListener("click", () => { fallbackState.dashboardSettings = normalizeFallbackDashboardSettings({ ...fallbackState.dashboardSettings, changeMode: $("#dashboardChangeMode").value, changeDateFrom: $("#dashboardChangeDateFrom").value, changeDateTo: $("#dashboardChangeDateTo").value, baselineSnapshotId: $("#dashboardBaselineSnapshot").value, comparisonSnapshotId: $("#dashboardComparisonSnapshot").value }); fallbackPersist("dashboard-change-range"); renderFallbackAnalytics(); if (!$("#dashboardChangesDialog").open) $("#dashboardChangesDialog").showModal(); });
-      $("#openDashboardChangesButton")?.addEventListener("click", () => { renderFallbackChanges(); if (!$("#dashboardChangesDialog").open) $("#dashboardChangesDialog").showModal(); });
-      $("#dashboardChangeSeverityFilter")?.addEventListener("change", renderFallbackChanges);
+      $("#applyDashboardChangeRangeButton")?.addEventListener("click", () => { fallbackState.dashboardSettings = normalizeFallbackDashboardSettings({ ...fallbackState.dashboardSettings, changeMode: $("#dashboardChangeMode").value, changeDateFrom: $("#dashboardChangeDateFrom").value, changeDateTo: $("#dashboardChangeDateTo").value, baselineSnapshotId: $("#dashboardBaselineSnapshot").value, comparisonSnapshotId: $("#dashboardComparisonSnapshot").value }); fallbackPersist("dashboard-change-range"); renderFallbackAnalytics(); selectFallbackDashboardChangeTab("all"); if (!$("#dashboardChangesDialog").open) $("#dashboardChangesDialog").showModal(); });
+      $("#openDashboardChangesButton")?.addEventListener("click", () => { selectFallbackDashboardChangeTab("all"); if (!$("#dashboardChangesDialog").open) $("#dashboardChangesDialog").showModal(); });
+      $("#dashboardChangeSeverityFilter")?.addEventListener("change", () => { syncFallbackDashboardChangeTabState(); renderFallbackChanges(); });
+      $("#dashboardChangeTypeFilter")?.addEventListener("change", () => { syncFallbackDashboardChangeTabState(); renderFallbackChanges(); });
+      $("#dashboardChangeMacSearch")?.addEventListener("input", renderFallbackChanges);
       $("#dashboardChangeSearch")?.addEventListener("input", renderFallbackChanges);
+      $$('[data-dashboard-change-type]').forEach((button) => button.addEventListener("click", () => selectFallbackDashboardChangeTab(button.dataset.dashboardChangeType || "all")));
+      $(".dashboard-change-metrics")?.addEventListener("keydown", (event) => { const button = event.target.closest("[data-dashboard-change-type]"); if (!button || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return; event.preventDefault(); selectFallbackDashboardChangeTab(window.MacAnalyzerDashboardChangeTabs.nextTab(button.dataset.dashboardChangeType, event.key), true); });
       $("#closeDashboardChangesDialog")?.addEventListener("click", () => $("#dashboardChangesDialog").close());
       $("#saveDashboardSettingsButton")?.addEventListener("click", showFallbackDashboardSettingsDialog);
       $$('[data-dashboard-settings-tab]').forEach((button) => button.addEventListener("click", () => selectFallbackDashboardSettingsTab(button.dataset.dashboardSettingsTab)));

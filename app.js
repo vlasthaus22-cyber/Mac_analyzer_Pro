@@ -25,6 +25,7 @@
   const LocalFolderStore = window.MacAnalyzerLocalFolderStore;
   const WorkspaceFileLifecycle = window.MacAnalyzerWorkspaceFileLifecycle;
   const DdioOverlay = window.MacAnalyzerDdioOverlay;
+  const DashboardChangeTabs = window.MacAnalyzerDashboardChangeTabs;
   if(!MemoryGuard)throw new Error("Модуль frontend/memory-guard.js не загружен");
   if(!XlsxExporter)throw new Error("Модуль frontend/xlsx-exporter.js не загружен");
   if(!FullXlsxReport)throw new Error("Модуль frontend/full-xlsx-report.js не загружен");
@@ -33,6 +34,7 @@
   if(!MacChronology)throw new Error("Модуль frontend/mac-chronology.js не загружен");
   if(!WorkspaceFileLifecycle)throw new Error("Модуль frontend/workspace-file-lifecycle.js не загружен");
   if(!DdioOverlay)throw new Error("Модуль frontend/ddio-overlay.js не загружен");
+  if(!DashboardChangeTabs)throw new Error("Модуль frontend/dashboard-change-tabs.js не загружен");
   if(!Guide)throw new Error("Модуль frontend/guide.js не загружен");
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -2153,9 +2155,23 @@
     const fill=(selector,selected)=>{const node=$(selector);if(!node)return;node.innerHTML=options.length?options.map((item)=>`<option value="${esc(item.id)}" ${item.id===selected?"selected":""}>${esc(item.name)}${item.date?` · ${esc(item.date.slice(0,10))}`:""}</option>`).join(""):'<option value="">Нет сохранённых выгрузок</option>';};fill("#dashboardBaselineSnapshot",settings.baselineSnapshotId||options.at(-2)?.id||"");fill("#dashboardComparisonSnapshot",settings.comparisonSnapshotId||options.at(-1)?.id||"");
   }
   function renderDashboardChanges(analysis={}){dashboardChangeAnalysis=analysis?.changes?analysis:localDashboardChangeAnalysis();dashboardChangeAnalysis.groups=groupDashboardChanges(dashboardChangeAnalysis.changes||[]);dashboardChangeAnalysis.summary=summarizeDashboardChanges(dashboardChangeAnalysis.changes||[]);const summary=dashboardChangeAnalysis.summary||{},set=(selector,value)=>{if($(selector))$(selector).textContent=String(value||0);};set("#dashboardChangeTotal",summary.total);set("#dashboardCriticalCount",summary.critical);set("#dashboardAddedCount",summary.added);set("#dashboardRemovedCount",summary.removed);set("#dashboardModifiedCount",summary.modified);set("#dashboardChangedRoomMetric",summary.changedRooms);const label=dashboardChangeAnalysis.mode==="snapshots"?`Выгрузки: ${dashboardChangeAnalysis.baselineSnapshotId||"-"} → ${dashboardChangeAnalysis.comparisonSnapshotId||"-"}`:`Период: ${dashboardChangeAnalysis.dateFrom||"-"} → ${dashboardChangeAnalysis.dateTo||"-"}`;if($("#dashboardChangesPeriodLabel"))$("#dashboardChangesPeriodLabel").textContent=label;syncDashboardChangeControls({...state.dashboardSettings,...dashboardChangeAnalysis},dashboardChangeAnalysis.snapshotOptions||dashboardSnapshotOptions());renderDashboardChangesTable();}
+  function syncDashboardChangeTabState(){
+    const active=DashboardChangeTabs.tabForFilters($("#dashboardChangeSeverityFilter")?.value,$("#dashboardChangeTypeFilter")?.value);
+    $$('[data-dashboard-change-type]').forEach((button)=>{const selected=Boolean(active)&&button.dataset.dashboardChangeType===active;button.classList.toggle("active-filter",selected);button.setAttribute("aria-selected",String(selected));button.tabIndex=selected?0:-1;});
+    return active;
+  }
+  function selectDashboardChangeTab(type="all",focus=false){
+    const tab=DashboardChangeTabs.normalizeTab(type),filters=DashboardChangeTabs.filtersForTab(tab),severity=$("#dashboardChangeSeverityFilter"),typeFilter=$("#dashboardChangeTypeFilter");
+    if(severity)severity.value=filters.severity;if(typeFilter)typeFilter.value=filters.type;dashboardChangeTypeFilter=filters.type;syncDashboardChangeTabState();renderDashboardChangesTable();
+    if(focus){const button=$(`[data-dashboard-change-type="${tab}"]`);if(button)button.focus();}
+  }
+  function handleDashboardChangeTabKeydown(event){
+    const button=event.target.closest("[data-dashboard-change-type]");if(!button||!["ArrowLeft","ArrowRight","Home","End"].includes(event.key))return;
+    event.preventDefault();selectDashboardChangeTab(DashboardChangeTabs.nextTab(button.dataset.dashboardChangeType,event.key),true);
+  }
   function renderDashboardChangesTable(){
     const severity=$("#dashboardChangeSeverityFilter")?.value||"all",type=$("#dashboardChangeTypeFilter")?.value||dashboardChangeTypeFilter||"all",query=($("#dashboardChangeSearch")?.value||"").trim().toLowerCase(),macQuery=String($("#dashboardChangeMacSearch")?.value||"").toUpperCase().replace(/[^0-9A-F]/g,""),labels={critical:"Критическое",high:"Высокое",medium:"Среднее",low:"Низкое"},typeLabels={added:"Добавлено",removed:"Отсутствует",modified:"Изменено"};
-    dashboardChangeTypeFilter=type;
+    dashboardChangeTypeFilter=type;syncDashboardChangeTabState();
     const groups=(dashboardChangeAnalysis.groups||groupDashboardChanges(dashboardChangeAnalysis.changes||[])).filter((group)=>(severity==="all"||group.severity===severity)&&(type==="all"||group.types.has(type))&&(!macQuery||String(group.mac||"").includes(macQuery))&&(!query||[group.macFormatted,group.device.vendor,group.device.model,group.device.ip,group.device.address,group.device.room,group.device.smartroomId,group.device.switchIp,group.source,...group.changes.flatMap((item)=>[item.fieldLabel,item.before,item.after])].some((value)=>String(value||"").toLowerCase().includes(query)))).slice(0,1000);
     $("#dashboardChangesBody").innerHTML=groups.length?groups.map((group,index)=>{
       const groupId=`dashboard-change-${index}`,device=group.device||{},fields=group.changes.map((item)=>item.fieldLabel).filter((value,index,all)=>all.indexOf(value)===index).join(", ");
@@ -2164,7 +2180,7 @@
       return parent+children;
     }).join(""):'<tr><td colspan="9" class="empty-state">Изменений по выбранным условиям не найдено.</td></tr>';
   }
-  function showDashboardChangesDialog(type="all"){dashboardChangeTypeFilter=type;const filter=$("#dashboardChangeTypeFilter");if(filter)filter.value=type;renderDashboardChangesTable();const dialog=$("#dashboardChangesDialog");if(dialog&&!dialog.open)dialog.showModal();}
+  function showDashboardChangesDialog(type="all"){selectDashboardChangeTab(type);const dialog=$("#dashboardChangesDialog");if(dialog&&!dialog.open)dialog.showModal();}
   function showDashboardDynamicsDialog(){
     const series=browserDashboardCache?.fleet?.series||dashboardSnapshotOptions().map((item)=>{const snapshot=finalDashboardSnapshots().find((entry,index)=>dashboardSnapshotId(entry,index)===item.id);return{...item,count:Number(snapshot?.deviceCount||(snapshot?.devices||[]).length||0)};});
     const body=$("#dashboardDynamicsBody");if(body)body.innerHTML=series.length?series.map((item,index)=>`<tr><td>${esc(String(item.date||item.savedAt||"-").replace("T"," ").slice(0,19))}</td><td>${esc(item.name||item.id)}</td><td>${Number(item.count||0)}</td><td class="${Number(item.delta||0)<0?"negative-delta":"positive-delta"}">${index?`${Number(item.delta||0)>0?"+":""}${Number(item.delta||0)}`:"-"}</td></tr>`).join(""):'<tr><td colspan="4" class="empty-state">Сохранённых выгрузок пока нет.</td></tr>';const dialog=$("#dashboardDynamicsDialog");if(dialog&&!dialog.open)dialog.showModal();
@@ -3488,12 +3504,13 @@
   $("#dashboardChangeMode").addEventListener("change",()=>{const settings=readDashboardChangeControls();syncDashboardChangeControls(settings);});
   $("#applyDashboardChangeRangeButton").addEventListener("click",async()=>{readDashboardChangeControls();await renderAnalytics();showDashboardChangesDialog();});
   $("#openDashboardChangesButton").addEventListener("click",()=>showDashboardChangesDialog("all"));
-  $("#dashboardChangeSeverityFilter").addEventListener("change",renderDashboardChangesTable);
-  $("#dashboardChangeTypeFilter").addEventListener("change",renderDashboardChangesTable);
+  $("#dashboardChangeSeverityFilter").addEventListener("change",()=>{syncDashboardChangeTabState();renderDashboardChangesTable();});
+  $("#dashboardChangeTypeFilter").addEventListener("change",()=>{syncDashboardChangeTabState();renderDashboardChangesTable();});
   $("#dashboardChangeSearch").addEventListener("input",debounce(renderDashboardChangesTable,180));
   $("#dashboardChangeMacSearch").addEventListener("input",debounce(renderDashboardChangesTable,120));
   $("#analyticsView").addEventListener("click",(event)=>{const expand=event.target.closest("[data-analytics-expand]"),collapse=event.target.closest("[data-analytics-collapse]");if(!expand&&!collapse)return;const panel=event.target.closest(".tool-panel");if(!panel)return;if(expand){panel.classList.toggle("analytics-panel-expanded");expand.setAttribute("aria-pressed",String(panel.classList.contains("analytics-panel-expanded")));}else{panel.classList.toggle("analytics-panel-collapsed");collapse.textContent=panel.classList.contains("analytics-panel-collapsed")?"+":"−";collapse.title=panel.classList.contains("analytics-panel-collapsed")?"Развернуть раздел":"Свернуть раздел";}});
-  $$("[data-dashboard-change-type]").forEach((button)=>button.addEventListener("click",()=>{const type=button.dataset.dashboardChangeType||"all";if(type==="critical"){$("#dashboardChangeSeverityFilter").value="critical";$("#dashboardChangeTypeFilter").value="all";dashboardChangeTypeFilter="all";}else{$("#dashboardChangeSeverityFilter").value="all";$("#dashboardChangeTypeFilter").value=type;dashboardChangeTypeFilter=type;}renderDashboardChangesTable();}));
+  $$("[data-dashboard-change-type]").forEach((button)=>button.addEventListener("click",()=>selectDashboardChangeTab(button.dataset.dashboardChangeType||"all")));
+  $(".dashboard-change-metrics").addEventListener("keydown",handleDashboardChangeTabKeydown);
   $("#dashboardChangesBody").addEventListener("click",(event)=>{const toggle=event.target.closest("[data-toggle-dashboard-change]");if(toggle){const id=toggle.dataset.toggleDashboardChange,expanded=toggle.getAttribute("aria-expanded")==="true";toggle.setAttribute("aria-expanded",expanded?"false":"true");toggle.textContent=expanded?"▸":"▾";$$(`[data-dashboard-change-child="${id}"]`).forEach((row)=>{row.hidden=expanded;});return;}const macButton=event.target.closest("[data-mac]");if(macButton)showDevice(macButton.dataset.mac);});
   $("#closeDashboardChangesDialog").addEventListener("click",()=>$("#dashboardChangesDialog").close());
   $("#closeDashboardDynamicsDialog").addEventListener("click",()=>$("#dashboardDynamicsDialog").close());

@@ -9,6 +9,10 @@ and lease MAC columns are matched independently; when a device moves to a
 different switch IP, DDIO can show an underlined candidate device IP in the
 results table. The hint never overwrites devices, history, snapshots, or exports.
 
+Analytics change tabs open the journal with an explicit active category for
+all, critical, added, missing, or modified devices. Reopening the journal
+clears stale category filters; the same behavior is available without backend.
+
 ## Primary autonomous mode
 
 In a downloaded GitHub Release, launch the root `MAC-Analyzer-Pro.html`. It
