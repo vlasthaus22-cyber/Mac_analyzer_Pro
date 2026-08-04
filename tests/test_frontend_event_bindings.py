@@ -2416,7 +2416,18 @@ def test_browser_only_mode_uses_a_structured_local_folder():
         assert marker in folder_store
 
 
+def test_ddio_switch_ip_hint_is_persisted_and_rendered_in_local_history():
+    app = Path("app.js").read_text(encoding="utf-8")
+    styles = Path("styles.css").read_text(encoding="utf-8")
+    assert "function attachDdioHistoryHint(item)" in app
+    assert "item.ddioCandidateIp=hint.ip" in app
+    assert "ddioHistoryBadge(item)" in app
+    assert 'class="ddio-history-warning"' in app
+    assert ".ddio-history-warning" in styles
+
+
 if __name__ == "__main__":
+    test_ddio_switch_ip_hint_is_persisted_and_rendered_in_local_history()
     test_ddio_third_export_is_display_only_and_bound_in_primary_frontend()
     test_autonomous_file_database_is_streamed_and_connected_to_workspace_saves()
     test_primary_app_bootstrap_disables_duplicate_inline_fallback()

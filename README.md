@@ -9,8 +9,10 @@ and lease MAC/IP pairs are mapped independently, including columns after H;
 the DDIO selectors always display Excel letters such as I, J, and AA. When a
 device moves to a different switch IP, DDIO can show an underlined candidate
 device IP in the results table. The hint never overwrites devices, history,
-snapshots, or exports. Legacy DDIO mappings with one shared IP column remain
-compatible.
+snapshots, or exports. A `?` warning beside the MAC in change history preserves
+the display-only DDIO candidate IP and explains that it appeared after a switch
+IP change; no device field is replaced. Legacy DDIO mappings with one shared IP
+column remain compatible.
 
 Analytics change tabs open the journal with an explicit active category for
 all, critical, added, missing, or modified devices. Reopening the journal

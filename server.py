@@ -563,6 +563,8 @@ def init_database() -> None:
                 field_name TEXT NOT NULL,
                 from_value TEXT,
                 to_value TEXT,
+                ddio_candidate_ip TEXT,
+                ddio_match TEXT,
                 source TEXT,
                 changed_at TEXT NOT NULL
             );
@@ -663,6 +665,11 @@ def init_database() -> None:
         history_columns = {row["name"] for row in conn.execute("PRAGMA table_info(mac_history)").fetchall()}
         if "smartroom_id" not in history_columns:
             conn.execute("ALTER TABLE mac_history ADD COLUMN smartroom_id TEXT")
+        movement_columns = {row["name"] for row in conn.execute("PRAGMA table_info(mac_movements)").fetchall()}
+        if "ddio_candidate_ip" not in movement_columns:
+            conn.execute("ALTER TABLE mac_movements ADD COLUMN ddio_candidate_ip TEXT")
+        if "ddio_match" not in movement_columns:
+            conn.execute("ALTER TABLE mac_movements ADD COLUMN ddio_match TEXT")
         for oui, vendor in BUILTIN_VENDORS.items():
             conn.execute(
                 "INSERT OR IGNORE INTO vendor_mappings (oui, vendor, source, updated_at) VALUES (?, ?, 'builtin', ?)",
@@ -1999,7 +2006,12 @@ def enrich_device(device: dict[str, Any], context: Optional[dict[str, Any]] = No
     }
 
 
-def save_history(devices: list[dict[str, Any]], source: str, recorded_at: str = "") -> None:
+def save_history(
+    devices: list[dict[str, Any]],
+    source: str,
+    recorded_at: str = "",
+    ddio_overlay: Optional[dict[str, dict[str, Any]]] = None,
+) -> None:
     timestamp = as_text(recorded_at) or utc_now()
     valid_devices = [device for device in devices if normalize_mac(device.get("mac") or device.get("macFormatted"))]
     macs = sorted({normalize_mac(device.get("mac") or device.get("macFormatted")) for device in valid_devices})
@@ -2033,14 +2045,19 @@ def save_history(devices: list[dict[str, Any]], source: str, recorded_at: str = 
                 for field, new_value in current_values.items():
                     old_value = as_text(previous.get({"smartroomId": "smartroom_id", "switchIp": "switch_ip", "switchPort": "switch_port"}.get(field, field)))
                     if new_value != old_value and (new_value or old_value):
-                        movement_rows.append((mac, field, old_value, new_value, source, timestamp))
+                        ddio_hint = (ddio_overlay or {}).get(mac, {}) if field == "switchIp" else {}
+                        movement_rows.append((
+                            mac, field, old_value, new_value,
+                            as_text(ddio_hint.get("ip")), as_text(ddio_hint.get("match")),
+                            source, timestamp,
+                        ))
         conn.executemany(
             "INSERT INTO mac_history (mac, mac_formatted, oui, vendor, model, ip, address, room, smartroom_id, switch_ip, switch_port, source, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             history_rows,
         )
         if movement_rows:
             conn.executemany(
-                "INSERT INTO mac_movements (mac, field_name, from_value, to_value, source, changed_at) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO mac_movements (mac, field_name, from_value, to_value, ddio_candidate_ip, ddio_match, source, changed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 movement_rows,
             )
     recorded = record_vendor_model_history(valid_devices, source, timestamp)
@@ -2727,6 +2744,19 @@ def enhanced_movement_history(filters: Optional[dict[str, Any]] = None, limit: i
     ordered_groups = sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0]))
     rows: list[str] = []
     type_counts = {"added": 0, "removed": 0, "modified": 0}
+
+    def ddio_badge(movement: dict[str, Any]) -> str:
+        candidate_ip = as_text(movement.get("ddio_candidate_ip"))
+        if not candidate_ip:
+            return ""
+        match_label = "резервация" if as_text(movement.get("ddio_match")) == "reservation" else "аренда"
+        title = (
+            f"DDIO: возможный новый IP устройства {candidate_ip} ({match_label}). "
+            "Подсказка показана из-за смены IP коммутатора; основные данные не изменены."
+        )
+        safe_title = html_lib.escape(title, quote=True)
+        return f' <span class="ddio-history-warning" title="{safe_title}" aria-label="{safe_title}">?</span>'
+
     for mac, movements in ordered_groups:
         for movement in movements:
             type_counts[movement["change_type"]] += 1
@@ -2735,8 +2765,9 @@ def enhanced_movement_history(filters: Optional[dict[str, Any]] = None, limit: i
         date_range = dates[0] if len(dates) == 1 else f"{dates[0]} — {dates[-1]}"
         group_counts = {kind: sum(1 for item in movements if item["change_type"] == kind) for kind in type_counts}
         safe_mac = html_lib.escape(mac, quote=True)
+        group_hint = next((ddio_badge(item) for item in movements if item.get("ddio_candidate_ip")), "")
         parent_values = {
-            "mac": f'<button class="movement-group-toggle" data-toggle-movement-group="{safe_mac}" aria-expanded="true" title="Свернуть группу">▾</button> {html_lib.escape(first["mac_formatted"])}',
+            "mac": f'<button class="movement-group-toggle" data-toggle-movement-group="{safe_mac}" aria-expanded="true" title="Свернуть группу">▾</button> {html_lib.escape(first["mac_formatted"])}{group_hint}',
             "count": str(len(movements)), "dates": html_lib.escape(date_range),
             "vendor": html_lib.escape(as_text(first.get("vendor")) or "Unknown"),
             "model": html_lib.escape(as_text(first.get("model"))), "address": html_lib.escape(as_text(first.get("address"))),
@@ -2750,7 +2781,7 @@ def enhanced_movement_history(filters: Optional[dict[str, Any]] = None, limit: i
         ))
         for movement in movements:
             child_values = {
-                "mac": "", "count": "", "dates": html_lib.escape(format_display_datetime(movement.get("changed_at"))),
+                "mac": ddio_badge(movement), "count": "", "dates": html_lib.escape(format_display_datetime(movement.get("changed_at"))),
                 "vendor": html_lib.escape(as_text(movement.get("vendor"))), "model": html_lib.escape(as_text(movement.get("model"))),
                 "address": html_lib.escape(as_text(movement.get("address"))), "room": html_lib.escape(as_text(movement.get("room"))),
                 "field": html_lib.escape(as_text(movement.get("field_name"))),
@@ -5779,7 +5810,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         for item in valid:
                             item[field] = "Не определено" if field == "vendor" else ""
                 if payload.get("saveHistory", True):
-                    save_history(valid, source, source_created_at)
+                    save_history(valid, source, source_created_at, ddio_overlay)
                 if payload.get("notify", True):
                     try:
                         notify_analysis_completed(valid, invalid, source)

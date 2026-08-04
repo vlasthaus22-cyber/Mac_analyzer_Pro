@@ -117,7 +117,31 @@ def test_enhanced_history_scoped_delete_and_column_settings():
     cleanup()
 
 
+def test_ddio_switch_change_persists_warning_next_to_mac():
+    init_database()
+    cleanup()
+    first = enrich_device({"mac": MAC, "switchIp": "10.10.10.1", "ip": "192.0.2.10"})
+    second = enrich_device({"mac": MAC, "switchIp": "10.10.20.1", "ip": "192.0.2.10"})
+    save_history([first], SOURCES[0], "2026-05-01T10:00:00Z")
+    save_history(
+        [second],
+        SOURCES[1],
+        "2026-05-02T11:30:00Z",
+        {MAC: {"ip": "192.0.2.99", "match": "lease"}},
+    )
+
+    result = enhanced_movement_history({"query": MAC})
+    switch_change = next(item for item in result["records"] if item["field_name"] == "switchIp")
+    assert switch_change["ddio_candidate_ip"] == "192.0.2.99"
+    assert switch_change["ddio_match"] == "lease"
+    assert 'class="ddio-history-warning"' in result["rowsHtml"]
+    assert "192.0.2.99" in result["rowsHtml"]
+    assert "основные данные не изменены" in result["rowsHtml"]
+    cleanup()
+
+
 if __name__ == "__main__":
     test_enhanced_history_grouping_filters_and_xlsx_export()
     test_enhanced_history_scoped_delete_and_column_settings()
+    test_ddio_switch_change_persists_warning_next_to_mac()
     print("enhanced history management test passed")

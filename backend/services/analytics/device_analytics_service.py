@@ -198,10 +198,23 @@ def build_device_analytics(
         "</tr>"
         for item in recent_history
     )
+
+    def movement_ddio_badge(item: dict[str, Any]) -> str:
+        candidate_ip = _text(item.get("ddio_candidate_ip"))
+        if not candidate_ip:
+            return ""
+        match_label = "резервация" if _text(item.get("ddio_match")) == "reservation" else "аренда"
+        title = (
+            f"DDIO: возможный новый IP устройства {candidate_ip} ({match_label}). "
+            "Подсказка показана из-за смены IP коммутатора; основные данные не изменены."
+        )
+        safe_title = html.escape(title, quote=True)
+        return f' <span class="ddio-history-warning" title="{safe_title}" aria-label="{safe_title}">?</span>'
+
     movement_rows_html = "".join(
         "<tr>"
         f"<td>{html.escape(_display_datetime(item.get('changed_at')))}</td>"
-        f"<td>{html.escape(_text(item.get('field_name'), '-'))}</td>"
+        f"<td>{html.escape(_text(item.get('field_name'), '-'))}{movement_ddio_badge(item)}</td>"
         f"<td>{html.escape(_text(item.get('from_value'), '-'))}</td>"
         f"<td>{html.escape(_text(item.get('to_value'), '-'))}</td>"
         f"<td>{html.escape(_source_name(item.get('source') or item.get('source_file')))}</td>"

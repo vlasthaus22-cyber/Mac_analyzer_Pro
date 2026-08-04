@@ -88,182 +88,182 @@
         "text": "Третья выгрузка DDIO изолирована в `frontend/ddio-overlay.js` и"
       },
       {
-        "line": 59,
+        "line": 60,
         "checked": true,
         "text": "Пакетное ускорение обогащения: правила, история vendor/model и IP-адреса"
       },
       {
-        "line": 64,
+        "line": 65,
         "checked": true,
         "text": "Повторное обогащение восстанавливает по точному MAC последнее непустое"
       },
       {
-        "line": 70,
+        "line": 71,
         "checked": true,
         "text": "ColumnManager: видимость, порядок, пользовательские столбцы, ручная ширина,"
       },
       {
-        "line": 72,
+        "line": 73,
         "checked": true,
         "text": "ExportManager: Excel, CSV, TXT, HTML, PDF, JSON, YAML. CSV, TXT,"
       },
       {
-        "line": 94,
+        "line": 95,
         "checked": true,
         "text": "Обогащение: основной/дополнительные файлы с явными ролями и раздельными"
       },
       {
-        "line": 103,
+        "line": 104,
         "checked": true,
         "text": "Сопоставление колонок, поля обогащения, OUI-форматы. Поле `Smartroom ID`"
       },
       {
-        "line": 107,
+        "line": 108,
         "checked": true,
         "text": "Поиск по БД, результаты, двойной клик по устройству."
       },
       {
-        "line": 108,
+        "line": 109,
         "checked": true,
         "text": "История MAC и расширенная история изменений: отдельные PyQt-таблицы"
       },
       {
-        "line": 116,
+        "line": 117,
         "checked": true,
         "text": "История производителей, моделей и загрузок."
       },
       {
-        "line": 117,
+        "line": 118,
         "checked": true,
         "text": "Управление SQLite-базой и удаление выгрузок: структурные фильтры истории по MAC, файлу, vendor/model, помещению и датам, выбор строк, удаление по ID и по фильтру; в истории загрузок можно выборочно удалить отмеченные выгрузки из SQLite и IndexedDB."
       },
       {
-        "line": 120,
+        "line": 121,
         "checked": true,
         "text": "Анализ одного файла."
       },
       {
-        "line": 124,
+        "line": 125,
         "checked": true,
         "text": "Сравнение двух файлов: added/removed/modified, Excel/CSV/TXT export."
       },
       {
-        "line": 125,
+        "line": 126,
         "checked": true,
         "text": "Сравнение нескольких файлов до 10 с отдельным mapping каждого файла."
       },
       {
-        "line": 126,
+        "line": 127,
         "checked": true,
         "text": "Временная статистика."
       },
       {
-        "line": 127,
+        "line": 128,
         "checked": true,
         "text": "Графики и диаграммы, отдельный текстовый AnalyticsDialog-отчёт с"
       },
       {
-        "line": 130,
+        "line": 131,
         "checked": true,
         "text": "DashboardWidget и DashboardSettingsDialog: сохранение настроек, фильтры производителя/помещения и статусов"
       },
       {
-        "line": 158,
+        "line": 159,
         "checked": true,
         "text": "Сетевая топология."
       },
       {
-        "line": 159,
+        "line": 160,
         "checked": true,
         "text": "Кластеризация."
       },
       {
-        "line": 160,
+        "line": 161,
         "checked": true,
         "text": "Автономная аналитика без backend вынесена в `frontend/local-analytics.js`:"
       },
       {
-        "line": 165,
+        "line": 166,
         "checked": true,
         "text": "Аналитика одного устройства и модели/префиксы: точный текстовый отчёт"
       },
       {
-        "line": 172,
+        "line": 173,
         "checked": true,
         "text": "Внешнее API-обогащение с выбором устройств и настройкой сервисов:"
       },
       {
-        "line": 175,
+        "line": 176,
         "checked": true,
         "text": "Уведомления: Email, Telegram, Slack, тесты и события анализа."
       },
       {
-        "line": 176,
+        "line": 177,
         "checked": true,
         "text": "Планировщик реальных задач и очереди файлов."
       },
       {
-        "line": 177,
+        "line": 178,
         "checked": true,
         "text": "AI-анализ качества данных."
       },
       {
-        "line": 178,
+        "line": 179,
         "checked": true,
         "text": "Быстрое обогащение больших XLSX: серверный кэш импортов с токенами,"
       },
       {
-        "line": 181,
+        "line": 182,
         "checked": true,
         "text": "Защита больших анализов от Out of Memory: результаты выводятся страницами по 25-1000 строк,"
       },
       {
-        "line": 227,
+        "line": 228,
         "checked": true,
         "text": "Светлая/тёмная тема: отдельный ThemeSelectionDialog, немедленное применение,"
       },
       {
-        "line": 229,
+        "line": 230,
         "checked": true,
         "text": "Инженерный/пользовательский режим как в PyQt: пользователь видит только безопасные"
       },
       {
-        "line": 234,
+        "line": 235,
         "checked": true,
         "text": "Контекстные действия таблиц: выбор строки, копирование MAC/строки/таблицы,"
       },
       {
-        "line": 236,
+        "line": 237,
         "checked": true,
         "text": "Полная справка и горячие клавиши PyQt: Ctrl+O/S/E/A/H/F,"
       },
       {
-        "line": 241,
+        "line": 242,
         "checked": true,
         "text": "Самодиагностика web-системы: read-only проверка файлов frontend/backend,"
       },
       {
-        "line": 245,
+        "line": 246,
         "checked": true,
         "text": "Переносимый Windows-backend: автономная PyInstaller-сборка с frontend,"
       },
       {
-        "line": 254,
+        "line": 255,
         "checked": true,
         "text": "Все пункты выше реализованы."
       },
       {
-        "line": 255,
+        "line": 256,
         "checked": true,
         "text": "Импортированы текущие SQLite-данные Python-версии."
       },
       {
-        "line": 256,
+        "line": 257,
         "checked": true,
         "text": "Все операции проверены через UI и REST API."
       },
       {
-        "line": 257,
+        "line": 258,
         "checked": true,
         "text": "Не осталось функций PyQt, для которых нет web-эквивалента."
       }

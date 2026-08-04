@@ -119,6 +119,7 @@ fieldset { border:1px solid var(--line); border-radius:5px; margin:14px 0; } leg
 #enhancedMovementHeader th { position:sticky; overflow:visible; }
 .movement-group-row td { background:var(--surface-soft); font-weight:700; border-top:2px solid var(--line); }
 .movement-group-toggle { width:25px; padding:1px; border:0; color:var(--accent); background:transparent; font-size:15px; }
+.ddio-history-warning { display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; margin-left:5px; border:2px solid #b45309; border-radius:50%; color:#92400e; background:#fef3c7; font-weight:800; font-size:12px; line-height:1; cursor:help; vertical-align:middle; }
 .movement-child-row td:first-child { border-left:3px solid var(--line); }
 .movement-child-row.movement-added td:first-child { border-left-color:#15803d; }
 .movement-child-row.movement-removed td:first-child { border-left-color:var(--danger); }
