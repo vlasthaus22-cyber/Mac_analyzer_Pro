@@ -117,7 +117,7 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert '<script src="frontend/memory-guard.js?v=20260722.9"></script>' in html
     assert '<script src="frontend/file-readers.js?v=20260722.8"></script>' in html
-    assert '<meta name="application-build" content="2026.07.29.3">' in html
+    assert '<meta name="application-build" content="2026.08.05.1">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -781,7 +781,7 @@ def test_bootstrap_sync_uses_backend_payload():
 def test_dashboard_settings_are_loaded_from_backend():
     app = read_app_js()
 
-    assert 'dashboardSettings:{vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:' in app
+    assert 'dashboardSettings:{query:"",vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:' in app
     assert 'async function loadDashboardSettings(){try{const result=await api("/dashboard/settings")' in app
     assert 'if(!browserOnlyMode){loadThemePreference();' in app
     assert 'loadDashboardSettings();' in app
@@ -2105,6 +2105,7 @@ def test_search_dashboard_smartroom_and_unified_exports_are_wired():
     for marker in (
         'id="globalSearchForm"', 'id="globalSearchInput"', 'id="exportMenu"',
         'id="exportFullJsonButton"', 'id="dashboardChangeMacSearch"',
+        'id="dashboardSearchInput"', 'id="databaseImportButton"', 'id="databaseImportInput"',
         'id="dashboardChangedRoomMetric"', 'data-field="smartroomId"',
         'data-dashboard-card-toggle="changedRooms"',
     ):
@@ -2115,6 +2116,8 @@ def test_search_dashboard_smartroom_and_unified_exports_are_wired():
         "BrowserSnapshots.aggregate(currentId,{limit:200,vendor:settings.vendor,room:settings.room",
         "async function exportFullJson()", "FullJsonReport.createReport({",
         "function initializeAnalyticsExpanders()",
+        "function inferSmartroomRoomMappings(", "function mergeDdioOverlayMovements(",
+        'api("/database/import"',
     ):
         assert marker in app
     assert "const vendorFilter = String(options.vendor || \"\").trim();" in snapshots

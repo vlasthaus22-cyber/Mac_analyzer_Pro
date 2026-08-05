@@ -780,10 +780,17 @@
     const room = String(device?.room || "").trim();
     const vendorFilter = String(options.vendor || "").trim();
     const roomFilter = String(options.room || "").trim();
+    const query = String(options.query || "").trim().toLowerCase();
+    const queryMac = query.replace(/[^0-9a-f]/gi, "").toUpperCase();
+    const deviceMac = String(device?.mac || device?.macFormatted || device?.mac_formatted || "").replace(/[^0-9a-f]/gi, "").toUpperCase();
+    const searchable = [device?.mac, device?.macFormatted, device?.vendor, device?.model, device?.ip, device?.address,
+      device?.room, device?.smartroomId, device?.smartroom_id, device?.switchIp, device?.switch_ip,
+      device?.switchPort, device?.switch_port, device?.source].map((value) => String(value || "")).join(" ").toLowerCase();
     const unknown = new Set(["", "unknown", "не определено", "неизвестный вендор", "unknown vendor"]);
     return (!vendorFilter || vendor === vendorFilter)
       && (!roomFilter || room === roomFilter)
-      && (options.showUnknown !== false || !unknown.has(vendor.toLowerCase()));
+      && (options.showUnknown !== false || !unknown.has(vendor.toLowerCase()))
+      && (!query || searchable.includes(query) || (queryMac && deviceMac.includes(queryMac)));
   }
 
   async function aggregate(id, options = {}) {

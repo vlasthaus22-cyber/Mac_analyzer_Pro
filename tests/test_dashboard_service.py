@@ -36,6 +36,11 @@ def test_dashboard_filters_metrics_and_export():
     assert "MAC Analyzer Dashboard" in exported["content"]
     assert "Metrics" in exported["content"]
 
+    query_settings = normalize_dashboard_settings({"query": "aabbcc:00:00:03"})
+    assert query_settings["query"] == "aabbcc:00:00:03"
+    assert [device["mac"] for device in filter_dashboard_devices(DEVICES, query_settings)] == ["AABBCC000003"]
+    assert [device["mac"] for device in filter_dashboard_devices(DEVICES, {"query": "102"})] == ["AABBCC000002"]
+
 
 def test_dashboard_metrics_payload_counts_known_and_invalid_records():
     payload = build_dashboard_metrics_payload(DEVICES, invalid=[{"row": 9}], snapshots=[], settings={})

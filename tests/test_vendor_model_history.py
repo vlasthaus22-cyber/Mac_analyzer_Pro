@@ -1,5 +1,6 @@
 from server import (
     db_connection,
+    build_enrichment_context,
     enrich_device,
     history_enrichment_settings,
     init_database,
@@ -36,6 +37,7 @@ def cleanup(*macs):
         conn.execute("DELETE FROM mac_history WHERE mac LIKE 'E1E2E4AA%'")
         conn.execute("DELETE FROM snapshots WHERE source IN (?, ?)", ("vendor-model-history-test", "vendor-model-history-upload-test"))
         conn.execute("DELETE FROM app_settings WHERE key = 'history_enrichment'")
+        conn.execute("DELETE FROM smartroom_room_mappings WHERE smartroom_id LIKE 'TEST-SR-%'")
 
 
 def test_vendor_model_history_and_learning():
@@ -247,6 +249,7 @@ def test_enrichment_restores_latest_non_empty_history_fields_and_switch_address(
     assert restored["room"] == "А-305"
     assert restored["smartroomId"] == "SR-305"
     assert restored["switchPort"] == "Gi1/0/7"
+    assert enrich_device({"mac": source_mac})["switchIp"] == switch_ip
 
     # The learned physical location also applies to another device observed
     # on the same switch IP, without requiring a manually imported mapping.
@@ -270,6 +273,60 @@ def test_enrichment_restores_latest_non_empty_history_fields_and_switch_address(
         conn.execute("DELETE FROM ip_address_mappings WHERE switch_ip = ?", (switch_ip,))
 
 
+def test_save_history_learns_switch_address_and_smartroom_room_mapping():
+    init_database()
+    source_mac = "F2E3D4C5B611"
+    target_mac = "F2E3D4C5B612"
+    switch_ip = "198.51.100.242"
+    smartroom_id = "TEST-SR-402"
+    cleanup(source_mac, target_mac)
+    with db_connection() as conn:
+        conn.execute("DELETE FROM ip_address_mappings WHERE switch_ip = ?", (switch_ip,))
+
+    save_history([enrich_device({
+        "mac": source_mac, "switchIp": switch_ip, "address": "Building B, floor 4",
+        "smartroomId": smartroom_id, "room": "B-402",
+    })], "mapping-learning-test")
+    enriched = enrich_device({"mac": target_mac, "switchIp": switch_ip, "smartroomId": smartroom_id})
+    assert enriched["address"] == "Building B, floor 4"
+    assert enriched["room"] == "B-402"
+
+    batch_context = build_enrichment_context([
+        {"mac": source_mac, "switchIp": "198.51.100.243", "address": "Building C", "smartroomId": "TEST-SR-403", "room": "C-403"},
+        {"mac": target_mac, "switchIp": "198.51.100.243", "smartroomId": "TEST-SR-403"},
+    ])
+    batch_enriched = enrich_device({"mac": target_mac, "switchIp": "198.51.100.243", "smartroomId": "TEST-SR-403"}, batch_context)
+    assert batch_enriched["address"] == "Building C"
+    assert batch_enriched["room"] == "C-403"
+
+    cleanup(source_mac, target_mac)
+    with db_connection() as conn:
+        conn.execute("DELETE FROM ip_address_mappings WHERE switch_ip = ?", (switch_ip,))
+
+
+def test_explicit_ddio_switch_change_uses_export_pair_instead_of_stale_database_state():
+    init_database()
+    mac = "F2E3D4C5B621"
+    cleanup(mac)
+    save_history([enrich_device({"mac": mac, "switchIp": "10.20.30.0"})], "older-database-state", "2026-08-04T10:00:00Z")
+    save_history(
+        [enrich_device({"mac": mac, "switchIp": "10.20.30.2"})],
+        "ddio-explicit-test", "2026-08-05T10:00:00Z",
+        {mac: {"ip": "192.0.2.77", "match": "reservation"}},
+        [{"mac": mac, "before": "10.20.30.1", "after": "10.20.30.2"}],
+    )
+    with db_connection() as conn:
+        movements = [dict(row) for row in conn.execute(
+            "SELECT field_name, from_value, to_value, ddio_candidate_ip, ddio_match FROM mac_movements WHERE mac = ? AND field_name = 'switchIp' ORDER BY id",
+            (mac,),
+        ).fetchall()]
+    assert movements == [{
+        "field_name": "switchIp", "from_value": "10.20.30.1", "to_value": "10.20.30.2",
+        "ddio_candidate_ip": "192.0.2.77", "ddio_match": "reservation",
+    }]
+    cleanup(mac)
+
+
 if __name__ == "__main__":
     test_vendor_model_history_and_learning()
     test_history_enricher_uses_vendor_model_history_without_mac_history()
@@ -277,4 +334,6 @@ if __name__ == "__main__":
     test_save_history_records_enrichment_before_after_even_when_value_is_cleared()
     test_save_history_uses_file_date_for_records_movements_and_vendor_model_history()
     test_enrichment_restores_latest_non_empty_history_fields_and_switch_address()
+    test_save_history_learns_switch_address_and_smartroom_room_mapping()
+    test_explicit_ddio_switch_change_uses_export_pair_instead_of_stale_database_state()
     print("vendor model history test passed")

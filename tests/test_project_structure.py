@@ -61,6 +61,7 @@ def test_project_structure_and_maintenance_commands_exist():
         "backend/services/exporting/pdf_service.py",
         "backend/services/system/__init__.py",
         "backend/services/system/engineering_service.py",
+        "backend/services/system/database_import_service.py",
         "backend/services/system/legacy_migration_service.py",
         "backend/services/system/parity_service.py",
         "backend/services/system/storage_paths.py",

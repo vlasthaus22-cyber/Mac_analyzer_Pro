@@ -26,6 +26,19 @@ never overwritten by historical values. The backend uses indexed SQLite
 lookups; autonomous mode keeps the exact device history in IndexedDB and
 processes it in bounded chunks.
 
+Version v1.0.40 also learns persistent Smartroom ID-to-room and switch
+IP-to-physical-address relationships during normal analysis. DDIO switch moves
+are recorded from the compared exports even when SQLite has no earlier row, so
+the candidate IP warning remains visible in results and change history. The
+analytics and movement-history searches update while typing and include MAC,
+model, address, Smartroom and DDIO candidate fields. Theme-aware foregrounds
+keep selected controls and severity badges readable in both themes.
+
+In backend mode, the Data screen can upload a `.db`, `.sqlite`, or `.sqlite3`
+file. The server verifies the SQLite header and integrity, stores the uploaded
+copy under `data/imports`, and additively merges supported MAC Analyzer tables;
+it never replaces or truncates the active user database.
+
 ## Primary autonomous mode
 
 In a downloaded GitHub Release, launch the root `MAC-Analyzer-Pro.html`. It

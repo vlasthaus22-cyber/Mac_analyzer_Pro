@@ -18,6 +18,8 @@
 - [x] MACHistoryDatabase: все операции поиска, фильтра, удаления и статистики.
 - [x] VendorModelHistory и HistoryEnricher: загрузки, обучение, статистика.
 - [x] IPToAddressMapper: импорт, автоопределение, ручные правила и экспорт.
+- [x] Постоянные связи IP коммутатора → физический адрес и Smartroom ID → помещение автоматически изучаются при анализе, применяются внутри текущего пакета и в последующих обогащениях; текущая выгрузка имеет приоритет.
+- [x] Загрузка SQLite из интерфейса проверяет формат и integrity, сохраняет исходный импорт и объединяет поддерживаемые таблицы без удаления или перезаписи активной базы.
 - [x] AutoColumnDetector, AIColumnDetector и ColumnConflictDialog: оценки уверенности, альтернативы, примеры данных, ручное подтверждение/отмена, автовыбор и обязательная колонка MAC.
 - [x] StatisticsDatabase: snapshots, trends, history, performance metrics.
 - [x] SettingsManager, AppLogger, AutoSaveManager, SignalHandler.

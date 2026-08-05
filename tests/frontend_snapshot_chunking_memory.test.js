@@ -19,6 +19,9 @@ assert.equal(snapshots.matchesDashboardFilter({ vendor: "Cisco", room: "101" }, 
 assert.equal(snapshots.matchesDashboardFilter({ vendor: "Cisco", room: "101" }, { room: "202" }), false);
 assert.equal(snapshots.matchesDashboardFilter({ vendor: "Cisco", room: "101" }, { vendor: "Cisco", room: "101" }), true);
 assert.equal(snapshots.matchesDashboardFilter({ vendor: "Unknown", room: "101" }, { showUnknown: false }), false);
+assert.equal(snapshots.matchesDashboardFilter({ mac: "AA:BB:CC:00:00:01", smartroomId: "SR-101", address: "Building A" }, { query: "sr-101" }), true);
+assert.equal(snapshots.matchesDashboardFilter({ mac: "AA:BB:CC:00:00:01", smartroomId: "SR-101" }, { query: "aabbcc000001" }), true);
+assert.equal(snapshots.matchesDashboardFilter({ mac: "AA:BB:CC:00:00:01", smartroomId: "SR-101" }, { query: "SR-999" }), false);
 
 const devices = Array.from({ length: 120_000 }, (_, index) => ({
   mac: `A1B2C3${index.toString(16).padStart(6, "0").toUpperCase()}`,

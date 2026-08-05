@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
-  <meta name="application-build" content="2026.07.29.3">
+  <meta name="application-build" content="2026.08.05.1">
   <link rel="stylesheet" href="styles.css?v=20260729.2">
 </head>
 <body>
@@ -285,6 +285,7 @@
 
       <section class="view" id="analyticsView" role="tabpanel">
         <div class="results-toolbar">
+          <input id="dashboardSearchInput" type="search" placeholder="MAC, модель, IP, адрес, Smartroom..." aria-label="Поиск в аналитике">
           <select id="dashboardStatusFilter" aria-label="Статус устройств">
             <option value="all">Все устройства</option>
             <option value="changed">Только изменённые</option>
@@ -506,6 +507,9 @@
             <div class="bar-list" id="databaseSummary"></div>
             <div class="mapping-list" id="databaseSearchResults"></div>
             <button class="button secondary" id="refreshDataButton">Обновить данные</button>
+            <button class="button secondary" id="databaseImportButton" data-engineering-permission="write:migration">Загрузить базу SQLite</button>
+            <input id="databaseImportInput" type="file" accept=".db,.sqlite,.sqlite3,application/vnd.sqlite3" hidden>
+            <p class="muted" id="databaseImportStatus">Загруженная база проверяется и безопасно объединяется с текущей без удаления существующих данных.</p>
             <button class="button secondary" id="clearDatabaseSnapshotsButton" data-engineering-permission="delete:snapshots">Удалить снимки SQLite</button>
             <button class="button secondary" id="clearDatabaseHistoryButton" data-engineering-permission="delete:history">Очистить историю SQLite</button>
             <button class="button secondary" id="databaseMaintenanceButton" data-engineering-permission="delete:snapshots">Проверить/оптимизировать SQLite</button>

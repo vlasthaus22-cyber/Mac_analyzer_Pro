@@ -29,6 +29,7 @@ def normalize_dashboard_settings(settings: dict[str, Any] | None = None) -> dict
     if change_mode not in {"period", "snapshots"}:
         change_mode = "snapshots"
     return {
+        "query": _text(settings.get("query")),
         "vendor": _text(settings.get("vendor")),
         "room": _text(settings.get("room")),
         "status": status,
@@ -286,6 +287,7 @@ def analyze_dashboard_changes(
 def filter_dashboard_devices(devices: list[dict[str, Any]], settings: dict[str, Any]) -> list[dict[str, Any]]:
     normalized = normalize_dashboard_settings(settings)
     result = []
+    query = normalized["query"].casefold()
     for device in devices:
         if not isinstance(device, dict):
             continue
@@ -297,6 +299,16 @@ def filter_dashboard_devices(devices: list[dict[str, Any]], settings: dict[str, 
             continue
         if not normalized["showUnknown"] and (not vendor or vendor == "Unknown"):
             continue
+        if query:
+            searchable = " ".join(_text(device.get(key)) for key in (
+                "mac", "macFormatted", "mac_formatted", "vendor", "model", "ip", "address",
+                "room", "smartroomId", "smartroom_id", "switchIp", "switch_ip", "switchPort",
+                "switch_port", "source",
+            )).casefold()
+            normalized_query_mac = re.sub(r"[^0-9A-F]", "", normalized["query"].upper())
+            normalized_device_mac = _mac(device)
+            if query not in searchable and (not normalized_query_mac or normalized_query_mac not in normalized_device_mac):
+                continue
         result.append(device)
     return result
 

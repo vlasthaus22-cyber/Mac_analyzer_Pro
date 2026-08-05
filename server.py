@@ -67,6 +67,7 @@ from backend.services.detection.reference_data_service import import_oui_referen
 from backend.services.system.legacy_migration_service import migrate_legacy_sqlite
 from backend.services.system.parity_service import build_parity_report, build_parity_status
 from backend.services.system.diagnostics_service import build_system_diagnostics
+from backend.services.system.database_import_service import inspect_and_merge_database
 from backend.services.system.engineering_service import (
     DEFAULT_ENGINEERING_PERMISSIONS,
     EngineeringSessionService,
@@ -620,6 +621,12 @@ def init_database() -> None:
                 switch_ip TEXT PRIMARY KEY,
                 physical_address TEXT NOT NULL,
                 source TEXT NOT NULL DEFAULT 'manual',
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS smartroom_room_mappings (
+                smartroom_id TEXT PRIMARY KEY,
+                room TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'auto',
                 updated_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS column_preferences (
@@ -1774,13 +1781,23 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
     macs = sorted({normalize_mac(item.get("mac") or item.get("macFormatted")) for item in normalized_devices} - {""})
     target_macs = set(macs)
     ouis = sorted({mac[:6] for mac in macs})
-    switch_ips = sorted({as_text(item.get("switchIp")) for item in normalized_devices} - {""})
+    switch_ips = sorted({as_text(item.get("switchIp") or item.get("switch_ip")) for item in normalized_devices} - {""})
+    smartroom_ids = sorted({as_text(item.get("smartroomId") or item.get("smartroom_id")) for item in normalized_devices} - {""})
     vendor_rules: list[dict[str, Any]] = []
     model_rules: list[dict[str, Any]] = []
     history_rows: list[dict[str, Any]] = []
     history_similarity_rows: list[dict[str, Any]] = []
     vendor_model_rows: list[dict[str, Any]] = []
-    ip_mappings: dict[str, str] = {}
+    ip_mappings: dict[str, str] = {
+        as_text(item.get("switchIp") or item.get("switch_ip")): as_text(item.get("address") or item.get("physicalAddress") or item.get("physical_address"))
+        for item in normalized_devices
+        if as_text(item.get("switchIp") or item.get("switch_ip")) and as_text(item.get("address") or item.get("physicalAddress") or item.get("physical_address"))
+    }
+    smartroom_mappings: dict[str, str] = {
+        as_text(item.get("smartroomId") or item.get("smartroom_id")): as_text(item.get("room"))
+        for item in normalized_devices
+        if as_text(item.get("smartroomId") or item.get("smartroom_id")) and as_text(item.get("room"))
+    }
     settings_rows: dict[str, str] = {}
     with db_connection() as conn:
         settings_rows = {
@@ -1877,7 +1894,7 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
                 f"SELECT switch_ip, physical_address FROM ip_address_mappings WHERE switch_ip IN ({placeholders})",
                 chunk,
             ).fetchall():
-                ip_mappings[row["switch_ip"]] = as_text(row["physical_address"])
+                ip_mappings.setdefault(row["switch_ip"], as_text(row["physical_address"]))
             for row in conn.execute(
                 f"""
                 SELECT history.switch_ip, history.address
@@ -1893,6 +1910,28 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
                 chunk,
             ).fetchall():
                 ip_mappings.setdefault(as_text(row["switch_ip"]), as_text(row["address"]))
+        for chunk in _chunks(smartroom_ids):
+            placeholders = ",".join("?" for _ in chunk)
+            for row in conn.execute(
+                f"SELECT smartroom_id, room FROM smartroom_room_mappings WHERE smartroom_id IN ({placeholders})",
+                chunk,
+            ).fetchall():
+                smartroom_mappings.setdefault(row["smartroom_id"], as_text(row["room"]))
+            for row in conn.execute(
+                f"""
+                SELECT history.smartroom_id, history.room
+                FROM mac_history AS history
+                JOIN (
+                    SELECT smartroom_id, MAX(id) AS latest_id
+                    FROM mac_history
+                    WHERE smartroom_id IN ({placeholders})
+                      AND TRIM(COALESCE(room, '')) != ''
+                    GROUP BY smartroom_id
+                ) AS latest ON latest.latest_id = history.id
+                """,
+                chunk,
+            ).fetchall():
+                smartroom_mappings.setdefault(as_text(row["smartroom_id"]), as_text(row["room"]))
     latest_history: dict[str, dict[str, Any]] = {}
     for row in history_rows:
         mac = normalize_mac(row.get("mac"))
@@ -1918,6 +1957,7 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
         "vendorModelHistoryIndex": build_vendor_model_history_index(vendor_model_rows),
         "similarityIndex": build_similarity_index(observations),
         "ipMappings": ip_mappings,
+        "smartroomMappings": smartroom_mappings,
         "detectorSettings": detector_settings,
         "historySettings": history_settings,
         "statistics": {
@@ -1930,6 +1970,7 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
             "vendorModelAggregates": len(vendor_model_rows),
             "similarityRequired": needs_similarity,
             "ipMappings": len(ip_mappings),
+            "smartroomMappings": len(smartroom_mappings),
         },
     }
 
@@ -1976,12 +2017,16 @@ def enrich_device(device: dict[str, Any], context: Optional[dict[str, Any]] = No
                 "confidence": vendor_model_suggestion.get("confidence", 0.0),
                 "matchedPrefix": vendor_model_suggestion.get("matchedPrefix", ""),
             }
-    switch_ip = as_text(device.get("switchIp"))
+    switch_ip = value("switchIp", "switch_ip")
     address = as_text(device.get("address"))
     if switch_ip and not address:
         address = as_text((batch.get("ipMappings") or {}).get(switch_ip))
     if not address:
         address = as_text(history.get("address"))
+    smartroom_id = value("smartroomId", "smartroom_id")
+    room = value("room")
+    if smartroom_id and not room:
+        room = as_text((batch.get("smartroomMappings") or {}).get(smartroom_id))
     return {
         "valid": True,
         "mac": mac,
@@ -1997,8 +2042,8 @@ def enrich_device(device: dict[str, Any], context: Optional[dict[str, Any]] = No
         "modelMatchedPrefix": model_detection.get("matchedPrefix", ""),
         "ip": value("ip"),
         "address": address,
-        "room": value("room"),
-        "smartroomId": value("smartroomId", "smartroom_id"),
+        "room": room,
+        "smartroomId": smartroom_id,
         "switchIp": switch_ip,
         "switchPort": value("switchPort", "switch_port"),
         "source": as_text(device.get("source")),
@@ -2011,6 +2056,7 @@ def save_history(
     source: str,
     recorded_at: str = "",
     ddio_overlay: Optional[dict[str, dict[str, Any]]] = None,
+    switch_ip_changes: Optional[list[dict[str, Any]]] = None,
 ) -> None:
     timestamp = as_text(recorded_at) or utc_now()
     valid_devices = [device for device in devices if normalize_mac(device.get("mac") or device.get("macFormatted"))]
@@ -2027,6 +2073,17 @@ def save_history(
                 previous_by_mac.setdefault(row["mac"], dict(row))
         history_rows = []
         movement_rows = []
+        recorded_switch_changes: set[tuple[str, str, str]] = set()
+        normalized_explicit_changes: list[tuple[str, str, str]] = []
+        for change in switch_ip_changes or []:
+            if not isinstance(change, dict):
+                continue
+            change_mac = normalize_mac(change.get("mac"))
+            change_before = as_text(change.get("before"))
+            change_after = as_text(change.get("after"))
+            if change_mac and change_before and change_after and change_before != change_after:
+                normalized_explicit_changes.append((change_mac, change_before, change_after))
+        explicit_switch_macs = {item[0] for item in normalized_explicit_changes}
         for device in valid_devices:
             mac = normalize_mac(device.get("mac") or device.get("macFormatted"))
             history_rows.append((
@@ -2045,12 +2102,26 @@ def save_history(
                 for field, new_value in current_values.items():
                     old_value = as_text(previous.get({"smartroomId": "smartroom_id", "switchIp": "switch_ip", "switchPort": "switch_port"}.get(field, field)))
                     if new_value != old_value and (new_value or old_value):
+                        if field == "switchIp" and mac in explicit_switch_macs:
+                            continue
                         ddio_hint = (ddio_overlay or {}).get(mac, {}) if field == "switchIp" else {}
                         movement_rows.append((
                             mac, field, old_value, new_value,
                             as_text(ddio_hint.get("ip")), as_text(ddio_hint.get("match")),
                             source, timestamp,
                         ))
+                        if field == "switchIp":
+                            recorded_switch_changes.add((mac, old_value, new_value))
+        for mac, before, after in normalized_explicit_changes:
+            if (mac, before, after) in recorded_switch_changes:
+                continue
+            ddio_hint = (ddio_overlay or {}).get(mac, {})
+            movement_rows.append((
+                mac, "switchIp", before, after,
+                as_text(ddio_hint.get("ip")), as_text(ddio_hint.get("match")),
+                source, timestamp,
+            ))
+            recorded_switch_changes.add((mac, before, after))
         conn.executemany(
             "INSERT INTO mac_history (mac, mac_formatted, oui, vendor, model, ip, address, room, smartroom_id, switch_ip, switch_port, source, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             history_rows,
@@ -2059,6 +2130,30 @@ def save_history(
             conn.executemany(
                 "INSERT INTO mac_movements (mac, field_name, from_value, to_value, ddio_candidate_ip, ddio_match, source, changed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 movement_rows,
+            )
+        switch_mapping_rows = []
+        smartroom_mapping_rows = []
+        for device in valid_devices:
+            switch_ip = as_text(device.get("switchIp") or device.get("switch_ip"))
+            address = as_text(device.get("address") or device.get("physicalAddress") or device.get("physical_address"))
+            smartroom_id = as_text(device.get("smartroomId") or device.get("smartroom_id"))
+            room = as_text(device.get("room"))
+            if valid_ipv4(switch_ip) and address:
+                switch_mapping_rows.append((switch_ip, address, source or "analysis", timestamp))
+            if smartroom_id and room:
+                smartroom_mapping_rows.append((smartroom_id, room, source or "analysis", timestamp))
+        if switch_mapping_rows:
+            conn.executemany(
+                "INSERT INTO ip_address_mappings (switch_ip, physical_address, source, updated_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(switch_ip) DO UPDATE SET physical_address=excluded.physical_address, source=excluded.source, updated_at=excluded.updated_at "
+                "WHERE ip_address_mappings.source != 'manual'",
+                switch_mapping_rows,
+            )
+        if smartroom_mapping_rows:
+            conn.executemany(
+                "INSERT INTO smartroom_room_mappings (smartroom_id, room, source, updated_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(smartroom_id) DO UPDATE SET room=excluded.room, source=excluded.source, updated_at=excluded.updated_at",
+                smartroom_mapping_rows,
             )
     recorded = record_vendor_model_history(valid_devices, source, timestamp)
     if recorded:
@@ -2577,7 +2672,7 @@ def movement_where_clause(query_text: str = "", date_from: str = "", date_to: st
     text_query = as_text(query_text)
     if text_query:
         like_value = f"%{text_query}%"
-        query_parts = ["mac LIKE ?", "field_name LIKE ?", "from_value LIKE ?", "to_value LIKE ?", "source LIKE ?"]
+        query_parts = ["mac LIKE ?", "field_name LIKE ?", "from_value LIKE ?", "to_value LIKE ?", "ddio_candidate_ip LIKE ?", "ddio_match LIKE ?", "source LIKE ?"]
         params.extend([like_value] * len(query_parts))
         if normalized_query:
             query_parts.append("mac LIKE ?")
@@ -2611,7 +2706,7 @@ def enhanced_movement_where_clause(filters: Optional[dict[str, Any]] = None) -> 
     if query_text:
         like_value = f"%{query_text}%"
         parts = [
-            "m.mac LIKE ?", "m.field_name LIKE ?", "m.from_value LIKE ?", "m.to_value LIKE ?", "m.source LIKE ?",
+            "m.mac LIKE ?", "m.field_name LIKE ?", "m.from_value LIKE ?", "m.to_value LIKE ?", "m.ddio_candidate_ip LIKE ?", "m.ddio_match LIKE ?", "m.source LIKE ?",
             "h.mac_formatted LIKE ?", "h.vendor LIKE ?", "h.model LIKE ?", "h.room LIKE ?", "h.address LIKE ?",
             "h.switch_ip LIKE ?", "h.switch_port LIKE ?",
         ]
@@ -5660,6 +5755,42 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/database/import":
+            if not self.require_engineering("write:migration"):
+                return
+            temporary: Optional[Path] = None
+            destination: Optional[Path] = None
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length <= 0:
+                    raise ValueError("Файл базы данных пуст")
+                if length > 1024 * 1024 * 1024:
+                    self.error_response("Файл базы превышает ограничение 1 ГБ", HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+                    return
+                filename = Path(unquote(as_text(self.headers.get("X-File-Name"))) or "mac-analyzer.sqlite3").name
+                if Path(filename).suffix.lower() not in {".db", ".sqlite", ".sqlite3"}:
+                    raise ValueError("Поддерживаются файлы .db, .sqlite и .sqlite3")
+                stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                destination = STORAGE.imports / f"{stamp}-{uuid.uuid4().hex[:8]}-{filename}"
+                temporary = destination.with_suffix(destination.suffix + ".part")
+                remaining = length
+                with temporary.open("wb") as output:
+                    while remaining:
+                        chunk = self.rfile.read(min(1024 * 1024, remaining))
+                        if not chunk:
+                            raise ValueError("Передача файла базы данных прервана")
+                        output.write(chunk)
+                        remaining -= len(chunk)
+                temporary.replace(destination)
+                init_database()
+                result = inspect_and_merge_database(destination, DATABASE_PATH)
+                result.update({"filename": destination.name, "storedIn": "data/imports"})
+                self.json_response(result, HTTPStatus.CREATED)
+            except (OSError, ValueError, sqlite3.DatabaseError) as error:
+                if temporary and temporary.exists():
+                    temporary.unlink(missing_ok=True)
+                self.error_response("Не удалось загрузить базу SQLite: " + str(error))
+            return
         if parsed.path == "/api/reference/oui/import":
             try:
                 length = int(self.headers.get("Content-Length", "0"))
@@ -5810,7 +5941,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         for item in valid:
                             item[field] = "Не определено" if field == "vendor" else ""
                 if payload.get("saveHistory", True):
-                    save_history(valid, source, source_created_at, ddio_overlay)
+                    save_history(valid, source, source_created_at, ddio_overlay, merged.get("switchIpChanges") or [])
                 if payload.get("notify", True):
                     try:
                         notify_analysis_completed(valid, invalid, source)
