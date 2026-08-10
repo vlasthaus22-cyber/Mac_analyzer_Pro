@@ -324,6 +324,92 @@
     }
   }
 
+  async function replaceSnapshotFromTemporary(snapshotId, temporaryId, mutation = {}) {
+    const targetId = String(snapshotId || "");
+    const sourceId = String(temporaryId || "");
+    if (!targetId || !sourceId || targetId === sourceId) throw new Error("Для замены снимка нужны разные исходный и временный id");
+    const [original, transformed] = await Promise.all([
+      loadSnapshotMetadata(targetId),
+      loadSnapshotMetadata(sourceId),
+    ]);
+    if (!original || !transformed?.complete) throw new Error("Не удалось подготовить безопасное обновление текущего снимка");
+    const metadata = {
+      ...transformed,
+      ...original,
+      id: targetId,
+      devices: [],
+      invalid: [],
+      chunked: true,
+      complete: true,
+      deviceChunks: Number(transformed.deviceChunks || 0),
+      invalidChunks: Number(transformed.invalidChunks || 0),
+      deviceCount: Number(transformed.deviceCount || 0),
+      invalidCount: Number(transformed.invalidCount || 0),
+      signature: "",
+      updatedAt: new Date().toISOString(),
+      lastMutationName: String(mutation.name || ""),
+      lastMutationSource: String(mutation.source || ""),
+    };
+    const database = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const current = database.transaction([snapshotStore, snapshotChunkStore], "readwrite");
+      const snapshots = current.objectStore(snapshotStore);
+      const chunks = current.objectStore(snapshotChunkStore);
+      const chunkIndex = chunks.index("snapshotId");
+      const removeCurrent = chunkIndex.openCursor(IDBKeyRange.only(targetId));
+      const fail = (error) => reject(error || new Error("Не удалось заменить текущий локальный снимок"));
+      removeCurrent.onerror = () => fail(removeCurrent.error);
+      removeCurrent.onsuccess = () => {
+        const cursor = removeCurrent.result;
+        if (cursor) {
+          cursor.delete();
+          cursor.continue();
+          return;
+        }
+        const moveTemporary = chunkIndex.openCursor(IDBKeyRange.only(sourceId));
+        moveTemporary.onerror = () => fail(moveTemporary.error);
+        moveTemporary.onsuccess = () => {
+          const temporaryCursor = moveTemporary.result;
+          if (!temporaryCursor) return;
+          const record = temporaryCursor.value;
+          chunks.put({
+            ...record,
+            key: `${targetId}:${record.kind}:${String(record.index).padStart(8, "0")}`,
+            snapshotId: targetId,
+          });
+          temporaryCursor.delete();
+          temporaryCursor.continue();
+        };
+      };
+      snapshots.put(metadata);
+      snapshots.delete(sourceId);
+      current.oncomplete = () => { database.close(); resolve(metadata); };
+      current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Ошибка обновления текущего локального снимка")); };
+      current.onabort = current.onerror;
+    });
+  }
+
+  async function updateSnapshotWithTransform(id, transform, onProgress = () => {}, mutation = {}) {
+    const snapshotId = String(id || "");
+    if (!snapshotId) throw new Error("Текущий локальный снимок не выбран");
+    const temporaryId = `${snapshotId}:update:${Date.now().toString(36)}:${Math.random().toString(36).slice(2)}`;
+    try {
+      const result = await copySnapshotWithTransform(snapshotId, {
+        id: temporaryId,
+        updatedAt: new Date().toISOString(),
+      }, transform, onProgress);
+      if (!result.changed) {
+        await removeSnapshot(temporaryId);
+        return { ...result, metadata: await loadSnapshotMetadata(snapshotId), updated: false };
+      }
+      const metadata = await replaceSnapshotFromTemporary(snapshotId, temporaryId, mutation);
+      return { ...result, metadata, updated: true };
+    } catch (error) {
+      await removeSnapshot(temporaryId).catch(() => false);
+      throw error;
+    }
+  }
+
   async function load(id) {
     const devices = [];
     const invalid = [];
@@ -1253,6 +1339,7 @@
     streamSnapshot,
     transformChunkRows,
     copySnapshotWithTransform,
+    updateSnapshotWithTransform,
     findDevice,
     page,
     aggregate,

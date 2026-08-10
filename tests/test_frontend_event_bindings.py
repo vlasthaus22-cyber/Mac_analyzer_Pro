@@ -117,7 +117,7 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert '<script src="frontend/memory-guard.js?v=20260722.9"></script>' in html
     assert '<script src="frontend/file-readers.js?v=20260722.8"></script>' in html
-    assert '<meta name="application-build" content="2026.08.10.2">' in html
+    assert '<meta name="application-build" content="2026.08.10.3">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -1005,7 +1005,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260810.1"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260810.2"></script>' in html
     assert '<script src="frontend/xlsx-exporter.js?v=20260727.5"></script>' in html
     assert '<script src="frontend/full-xlsx-report.js?v=20260729.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
@@ -1226,9 +1226,12 @@ def test_ip_mapping_import_uses_backend_base64_payload():
     assert 'async function importLocalIpMappings(file)' in app
     assert 'const result=await importLocalIpMappings(file);' in app
     assert 'async function applyLocalIpMappings()' in app
-    assert 'async function deriveCurrentBrowserSnapshot(' in app
-    assert 'BrowserSnapshots.copySnapshotWithTransform(sourceId' in app
-    assert 'await deriveCurrentBrowserSnapshot("Обогащение: IP-маппинг"' in app
+    assert 'async function updateCurrentBrowserSnapshot(' in app
+    assert 'BrowserSnapshots.updateSnapshotWithTransform(sourceId,transform' in app
+    assert 'await updateCurrentBrowserSnapshot("Обогащение: IP-маппинг"' in app
+    assert 'state.snapshots.unshift(metadata)' not in app[app.index('async function updateCurrentBrowserSnapshot('):app.index('function createLocalComparisonIndex')]
+    assert 'function isFinalDashboardSnapshot(snapshot={})' in app
+    assert '["ip-mapping-apply","local-ip-mapping","local-vendor-model-rules"].includes(source)' in app
     assert 'const result=await applyLocalIpMappings();' in app
     assert 'function exportLocalIpMappings()' in app
     assert 'function autodetectLocalIpMappings()' in app
@@ -1643,6 +1646,8 @@ def test_services_panel_uses_backend_aggregator():
 
 def test_local_vendor_model_rules_and_result_headers_work_without_backend():
     app = read_app_js()
+    html = read_index_html()
+    styles = read_styles_css()
 
     for marker in (
         'localVendorMappings:{}',
@@ -1678,6 +1683,11 @@ def test_local_vendor_model_rules_and_result_headers_work_without_backend():
         'function learnLocalVendorModelMappings(settings=vendorModelLearnSettings())',
         'state.localVendorMappings[oui]=name;',
         'state.localModelMappings[p]=name;',
+        'async function exportModelPrefixes()',
+        'download("mac-model-hex-prefixes.csv"',
+        '$("#exportModelPrefixesButton").addEventListener("click",exportModelPrefixes)',
+        'async function applyBackendDetectionToCurrentResult()',
+        'api("/detection/apply"',
         'delete state.localVendorMappings[lv];',
         'delete state.localModelMappings[lm];',
     ):
@@ -1787,6 +1797,10 @@ def test_analysis_tab_dashboard_and_mapping_learning_refresh_results():
         "state.localModelMappings[p]=name;",
     ):
         assert marker in app
+    assert 'id="exportModelPrefixesButton"' in html
+    assert 'публичный IEEE-реестр содержит производителей, но не модели устройств' in html
+    assert '.analytics-panel-actions .icon-button:hover' in styles
+    assert '.active-filter span,.active-filter small,.active-filter strong' in styles
     for marker in (
         "const oui3Rows = new Map();",
         "const oui4Rows = new Map();",
@@ -2334,8 +2348,10 @@ def test_oui_reference_import_and_safe_autodetection_are_wired_end_to_end():
     assert "resultBrowserSnapshotId" in app
     assert "MemoryGuard.assertStreamingEnrichmentCapacity(state.files,strategy);" in app
     assert "async function copySnapshotWithTransform(" in snapshot_store
+    assert "async function updateSnapshotWithTransform(" in snapshot_store
     assert "async function transformChunkRows(" in snapshot_store
     assert "copySnapshotWithTransform," in snapshot_store
+    assert "updateSnapshotWithTransform," in snapshot_store
     assert "window.MacAnalyzerMemoryGuard?.assertEnrichmentCapacity(fallbackState.files);" in html
 
 

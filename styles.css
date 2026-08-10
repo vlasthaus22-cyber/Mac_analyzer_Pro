@@ -292,6 +292,7 @@ table tbody tr.selected-row td { background:rgba(15,118,110,.12); box-shadow:ins
 .legacy-export-trigger { display:none !important; }
 #exportComparisonExcelButton,#exportComparisonCsvButton,#exportComparisonTxtButton,#exportChartsSvgButton,#exportParityReportButton,#exportIpMappingsButton { display:none !important; }
 .analytics-panel-actions { display:flex; gap:4px; margin-left:auto; }
+.analytics-panel-actions .icon-button:hover,.analytics-panel-actions .icon-button:focus-visible { color:var(--on-accent); background:var(--accent-hover); border-color:var(--accent-hover); outline:2px solid color-mix(in srgb,var(--accent) 30%,transparent); outline-offset:1px; }
 .analytics-panel-collapsed > :not(.panel-head) { display:none !important; }
 .analytics-panel-expanded { position:fixed; z-index:1100; inset:14px; display:flex; flex-direction:column; overflow:auto; background:var(--surface); }
 .analytics-panel-expanded > .bar-list,.analytics-panel-expanded > .topology-list,.analytics-panel-expanded > pre { flex:1; max-height:none; overflow:auto; }
@@ -320,6 +321,7 @@ table tbody tr.selected-row td { background:rgba(15,118,110,.12); box-shadow:ins
 
 /* Theme-aware foregrounds for selected controls and status highlights. */
 .file-group-head span,.button.primary,.active-filter,.button.active-theme { color:var(--on-accent) !important; }
+.active-filter span,.active-filter small,.active-filter strong,.button.primary span,.button.primary small,.button.primary strong { color:var(--on-accent) !important; }
 .severity-critical { color:var(--severity-critical-text); background:var(--severity-critical-bg); }
 .severity-high { color:var(--severity-high-text); background:var(--severity-high-bg); }
 .severity-medium { color:var(--severity-medium-text); background:var(--severity-medium-bg); }

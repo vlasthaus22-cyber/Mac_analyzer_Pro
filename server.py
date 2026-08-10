@@ -64,6 +64,7 @@ from backend.services.detection.detection_index_service import (
     similarity_detection,
 )
 from backend.services.detection.reference_data_service import import_oui_reference, reference_status
+from backend.services.detection.result_application_service import apply_missing_detection_fields
 from backend.services.detection.ieee_registry_service import lookup_ieee_vendor, ieee_registry_status
 from backend.services.detection.smartroom_service import normalized_room_name, smartroom_identity, synchronize_smartroom_device
 from backend.services.system.legacy_migration_service import migrate_legacy_sqlite
@@ -1464,9 +1465,15 @@ def hydrate_snapshot_devices(snapshots: Any) -> list[dict[str, Any]]:
 def is_final_enrichment_snapshot(item: Any) -> bool:
     if not isinstance(item, dict):
         return False
+    source = as_text(item.get("source")).casefold()
+    name = as_text(item.get("name")).casefold()
+    if source in {"ip-mapping-apply", "local-ip-mapping", "local-vendor-model-rules"}:
+        return False
+    if name in {"ip-маппинг", "обогащение: ip-маппинг", "автоопределение производителей и моделей"}:
+        return False
     return (
         as_text(item.get("kind")).casefold() == "analysis"
-        or as_text(item.get("name")).casefold().startswith(("анализ:", "analysis:"))
+        or name.startswith(("анализ:", "analysis:"))
     )
 
 
@@ -2678,6 +2685,15 @@ def apply_ip_mappings_to_devices(devices: list[dict[str, Any]]) -> dict[str, Any
             "coverage": round(matched / max(1, len([device for device in updated_devices if as_text(device.get("switchIp") or device.get("switch_ip"))])) * 100, 2),
         },
     }
+
+
+def apply_detection_to_devices(devices: list[dict[str, Any]]) -> dict[str, Any]:
+    """Compatibility wrapper for applying the shared detection service."""
+    if not isinstance(devices, list):
+        raise ValueError("devices must be an array")
+    source_devices = [dict(item) if isinstance(item, dict) else {} for item in devices]
+    context = build_enrichment_context(source_devices)
+    return apply_missing_detection_fields(source_devices, lambda item: enrich_device(item, context))
 
 
 def autodetect_ip_mappings(devices: list[dict[str, Any]]) -> dict[str, Any]:
@@ -6389,7 +6405,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 mapping_key = re.sub(r"[^0-9A-F]", "", as_text(payload.get("key")).upper())
                 value = as_text(payload.get("value"))
                 minimum = 6
-                if len(mapping_key) < minimum or not value:
+                if len(mapping_key) < minimum or len(mapping_key) > 10 or not value:
                     self.error_response("Укажите корректный префикс и значение")
                     return
                 table, field, value_field = ("vendor_mappings", "oui", "vendor") if is_vendor else ("model_mappings", "prefix", "model")
@@ -6450,14 +6466,24 @@ class AppHandler(BaseHTTPRequestHandler):
                     self.error_response("devices must be an array")
                     return
                 result = apply_ip_mappings_to_devices(devices)
-                if payload.get("compactResult") is True:
+                current_snapshot_id = as_text(payload.get("snapshotId") or payload.get("resultSnapshotId"))
+                if payload.get("compactResult") is True and current_snapshot_id:
                     full_devices = result["devices"]
                     result_summary = result_dataset_summary(full_devices, [])
+                    with db_connection() as conn:
+                        current_snapshot = conn.execute(
+                            "SELECT name, source, created_at FROM snapshots WHERE id = ?",
+                            (current_snapshot_id,),
+                        ).fetchone()
+                    if current_snapshot is None:
+                        self.error_response("Current snapshot not found", HTTPStatus.NOT_FOUND)
+                        return
                     snapshot = save_statistics_snapshot(
                         full_devices,
-                        "IP-маппинг",
-                        "ip-mapping-apply",
-                        created_at=as_text(payload.get("createdAt")) or utc_now(),
+                        as_text(current_snapshot["name"]),
+                        as_text(current_snapshot["source"]),
+                        snapshot_id=current_snapshot_id,
+                        created_at=as_text(current_snapshot["created_at"]),
                     )
                     try:
                         page_size = max(25, min(int(payload.get("resultPageSize") or 250), 1000))
@@ -6473,6 +6499,45 @@ class AppHandler(BaseHTTPRequestHandler):
                         "pageSize": page_size,
                     }
                     result["resultSummary"] = result_summary
+                self.json_response({"ok": True, **result})
+            elif parsed.path == "/api/detection/apply":
+                devices = resolve_payload_devices(payload)
+                if not isinstance(devices, list):
+                    self.error_response("devices must be an array")
+                    return
+                result = apply_detection_to_devices(devices)
+                current_snapshot_id = as_text(payload.get("snapshotId") or payload.get("resultSnapshotId"))
+                if payload.get("compactResult") is True and current_snapshot_id:
+                    full_devices = result["devices"]
+                    with db_connection() as conn:
+                        current_snapshot = conn.execute(
+                            "SELECT name, source, created_at FROM snapshots WHERE id = ?",
+                            (current_snapshot_id,),
+                        ).fetchone()
+                    if current_snapshot is None:
+                        self.error_response("Current snapshot not found", HTTPStatus.NOT_FOUND)
+                        return
+                    snapshot = save_statistics_snapshot(
+                        full_devices,
+                        as_text(current_snapshot["name"]),
+                        as_text(current_snapshot["source"]),
+                        snapshot_id=current_snapshot_id,
+                        created_at=as_text(current_snapshot["created_at"]),
+                    )
+                    try:
+                        page_size = max(25, min(int(payload.get("resultPageSize") or 250), 1000))
+                    except (TypeError, ValueError):
+                        page_size = 250
+                    result["devices"] = full_devices[:page_size]
+                    result["snapshot"] = snapshot
+                    result["compactResult"] = True
+                    result["resultReference"] = {
+                        "snapshotId": current_snapshot_id,
+                        "deviceCount": len(full_devices),
+                        "invalidCount": 0,
+                        "pageSize": page_size,
+                    }
+                    result["resultSummary"] = result_dataset_summary(full_devices, [])
                 self.json_response({"ok": True, **result})
             elif parsed.path == "/api/ip-mappings":
                 switch_ip, address = as_text(payload.get("switchIp")), as_text(payload.get("address"))

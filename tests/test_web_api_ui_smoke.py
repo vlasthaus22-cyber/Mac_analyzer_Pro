@@ -770,9 +770,15 @@ def test_rest_api_and_ui_controls_smoke():
         assert stored_metadata["deviceCount"] == 1
         assert stored_metadata["backendStored"] is True
 
-        status, snapshot_options = request_json(app.base_url, "POST", "/api/snapshots/options", {"snapshots": snapshots["snapshots"]})
+        status, snapshot_options = request_json(app.base_url, "POST", "/api/snapshots/options", {"snapshots": [
+            *snapshots["snapshots"],
+            {"id": "legacy-ip-mapping", "kind": "analysis", "name": "Обогащение: IP-маппинг", "source": "local-ip-mapping"},
+            {"id": "legacy-model-mapping", "kind": "analysis", "name": "Автоопределение производителей и моделей", "source": "local-vendor-model-rules"},
+        ]})
         assert status == 200
         assert SNAPSHOT_ID in snapshot_options["optionsHtml"]
+        assert "legacy-ip-mapping" not in snapshot_options["optionsHtml"]
+        assert "legacy-model-mapping" not in snapshot_options["optionsHtml"]
         assert snapshot_options["count"] >= 1
 
         status, opened_snapshot = request_json(app.base_url, "POST", "/api/snapshots/open", {"id": SNAPSHOT_ID, "snapshots": []})
@@ -1195,6 +1201,7 @@ def test_rest_api_and_ui_controls_smoke():
         assert applied_ip_mapping["summary"]["matched"] == 1
         assert applied_ip_mapping["devices"][0]["address"] == "Smoke rack"
         assert applied_ip_mapping["resultReference"]["deviceCount"] == 1
+        assert applied_ip_mapping["resultReference"]["snapshotId"] == SNAPSHOT_ID
         EXTERNAL_SNAPSHOT_IDS.add(applied_ip_mapping["resultReference"]["snapshotId"])
 
         status, autodetected_ip_mapping = request_json(
@@ -1357,6 +1364,16 @@ def test_rest_api_and_ui_controls_smoke():
         )
         assert status == 200
         assert model_mapping["ok"] is True
+
+        status, reapplied_detection = request_json(
+            app.base_url,
+            "POST",
+            "/api/detection/apply",
+            {"snapshotId": SNAPSHOT_ID, "devices": [], "compactResult": True, "resultPageSize": 25},
+        )
+        assert status == 200
+        assert reapplied_detection["resultReference"]["snapshotId"] == SNAPSHOT_ID
+        assert reapplied_detection["resultReference"]["deviceCount"] == 1
 
         status, vendors = request_json(app.base_url, "GET", "/api/mappings/vendors")
         assert status == 200

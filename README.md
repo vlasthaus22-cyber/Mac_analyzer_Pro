@@ -62,6 +62,17 @@ mapping files no longer replace the primary filename on resulting devices;
 Analytics, History, and comparison selectors show only completed final
 enrichments and select the previous/latest pair by default.
 
+Version v1.0.43 applies switch-IP/address and vendor/model rules directly to
+the current final result. Its snapshot identifier, source filename, timestamp,
+and position in Analytics remain unchanged, so applying a mapping no longer
+creates a separate analytical upload. Autonomous IndexedDB uses a temporary
+chunked copy and an atomic key swap to keep large results bounded and
+recoverable; SQLite updates the same snapshot ID. Enrichment continues to fill
+only missing address, vendor, and model values and preserves explicit data from
+the current file. Learned 3–5-byte model prefixes can now be downloaded as CSV.
+Analytics expand/collapse controls and selected-card labels use theme-aware
+foreground colors on hover and in both themes.
+
 In backend mode, the Data screen can upload a `.db`, `.sqlite`, or `.sqlite3`
 file. The server verifies the SQLite header and integrity, stores the uploaded
 copy under `data/imports`, and additively merges supported MAC Analyzer tables;

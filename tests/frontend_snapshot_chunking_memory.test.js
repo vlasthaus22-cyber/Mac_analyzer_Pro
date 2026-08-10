@@ -13,6 +13,7 @@ assert.equal(typeof snapshots.beginStreamedSnapshot, "function");
 assert.equal(typeof snapshots.appendStreamedSnapshotChunk, "function");
 assert.equal(typeof snapshots.finishStreamedSnapshot, "function");
 assert.equal(typeof snapshots.copySnapshotWithTransform, "function");
+assert.equal(typeof snapshots.updateSnapshotWithTransform, "function");
 assert.equal(typeof snapshots.transformChunkRows, "function");
 assert.equal(typeof snapshots.matchesDashboardFilter, "function");
 assert.equal(snapshots.matchesDashboardFilter({ vendor: "Cisco", room: "101" }, { room: "101" }), true);

@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
-  <meta name="application-build" content="2026.08.10.2">
-  <link rel="stylesheet" href="styles.css?v=20260810.1">
+  <meta name="application-build" content="2026.08.10.3">
+  <link rel="stylesheet" href="styles.css?v=20260810.2">
 </head>
 <body>
   <div class="app-shell">
@@ -409,8 +409,9 @@
           </div>
           <div class="tool-panel">
             <h2>Справочник моделей</h2>
-            <p class="muted">Префикс MAC до 10 символов.</p>
+            <p class="muted">Префикс MAC 3–5 байт (6–10 HEX). Модели автоматически изучаются из прошлых финальных выгрузок; публичный IEEE-реестр содержит производителей, но не модели устройств.</p>
             <div class="inline-form"><input id="modelPrefixInput" maxlength="10" placeholder="00112233"><input id="modelNameInput" placeholder="Название модели"><button class="button primary" id="addModelButton">Добавить</button></div>
+            <button class="button secondary" id="exportModelPrefixesButton" type="button">Выгрузить HEX моделей CSV</button>
             <div class="mapping-list" id="modelMappingList"></div>
           </div>
           <div class="tool-panel">
@@ -812,7 +813,7 @@
   <script src="frontend/memory-guard.js?v=20260722.9"></script>
   <script src="frontend/file-readers.js?v=20260722.8"></script>
   <script src="frontend/state-persistence.js?v=20260722.7"></script>
-  <script src="frontend/browser-snapshot-store.js?v=20260810.1"></script>
+  <script src="frontend/browser-snapshot-store.js?v=20260810.2"></script>
   <script src="frontend/mac-chronology.js?v=20260729.1"></script>
   <script src="frontend/local-analytics.js?v=20260729.3"></script>
   <script src="frontend/xlsx-exporter.js?v=20260727.5"></script>
@@ -824,7 +825,7 @@
   <script src="frontend/ddio-overlay.js?v=20260810.1"></script>
   <script src="frontend/dashboard-change-tabs.js?v=20260803.1"></script>
   <script src="frontend/guide.js?v=20260722.7"></script>
-  <script src="app.js?v=20260810.2"></script>
+  <script src="app.js?v=20260810.3"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;

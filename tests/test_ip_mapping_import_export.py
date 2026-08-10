@@ -1,4 +1,5 @@
 from server import (
+    apply_detection_to_devices,
     apply_ip_mappings_to_devices,
     autodetect_ip_mappings,
     db_connection,
@@ -16,6 +17,8 @@ def cleanup():
     with db_connection() as conn:
         for switch_ip in TEST_IPS:
             conn.execute("DELETE FROM ip_address_mappings WHERE switch_ip = ?", (switch_ip,))
+        conn.execute("DELETE FROM vendor_mappings WHERE oui = 'A1B2C3'")
+        conn.execute("DELETE FROM model_mappings WHERE prefix = 'A1B2C3D4E5'")
 
 
 def mapping_address(switch_ip):
@@ -67,6 +70,25 @@ def test_ip_mapping_import_export_and_autodetect():
     assert applied["summary"]["matched"] == 2
     assert applied["summary"]["filled"] == 1
     assert applied["summary"]["missingSwitches"] == ["203.0.113.99"]
+
+    with db_connection() as conn:
+        conn.execute(
+            "INSERT INTO vendor_mappings (oui, vendor, source, updated_at) VALUES ('A1B2C3', 'Detected Vendor', 'test', '2026-08-10T00:00:00Z')"
+        )
+        conn.execute(
+            "INSERT INTO model_mappings (prefix, model, source, updated_at) VALUES ('A1B2C3D4E5', 'Detected Model', 'test', '2026-08-10T00:00:00Z')"
+        )
+    detected = apply_detection_to_devices([
+        {"mac": "A1:B2:C3:D4:E5:F6", "switchIp": "203.0.113.10", "address": "", "vendor": "Unknown", "model": ""},
+        {"mac": "A1:B2:C3:D4:E5:01", "switchIp": "", "address": "Manual room", "vendor": "Manual Vendor", "model": "Manual Model"},
+    ])
+    assert detected["devices"][0]["address"] == "Server room"
+    assert detected["devices"][0]["vendor"] == "Detected Vendor"
+    assert detected["devices"][0]["model"] == "Detected Model"
+    assert detected["summary"] == {"devices": 2, "changedDevices": 1, "address": 1, "vendor": 1, "model": 1}
+    assert detected["devices"][1]["address"] == "Manual room"
+    assert detected["devices"][1]["vendor"] == "Manual Vendor"
+    assert detected["devices"][1]["model"] == "Manual Model"
 
     stats = ip_mapping_statistics(applied["devices"])
     assert stats["totalMappings"] >= 3
