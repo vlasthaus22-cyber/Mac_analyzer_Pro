@@ -132,6 +132,11 @@ fieldset { border:1px solid var(--line); border-radius:5px; margin:14px 0; } leg
 .movement-column-control { display:grid; grid-template-columns:auto minmax(100px,1fr) 82px; gap:7px; align-items:center; margin:0; padding:6px 0; border-bottom:1px solid var(--line); }
 .movement-column-control input[type="number"] { width:82px; }
 #resultsHeader th { padding-right:17px; }
+.sortable-column { cursor:pointer; user-select:none; transition:color .12s ease,background .12s ease; }
+.sortable-column:hover,.sortable-column:focus-visible,.sortable-column.sorted { color:var(--text); background:color-mix(in srgb,var(--accent) 14%,var(--surface-soft)); outline:none; }
+.sortable-column:focus-visible { box-shadow:inset 0 0 0 2px var(--accent); }
+.sort-indicator { display:inline-block; min-width:12px; margin-left:6px; color:var(--muted); font-size:10px; text-align:center; }
+.sortable-column.sorted .sort-indicator { color:var(--accent); }
 .column-resize-handle { position:absolute; top:0; right:-3px; width:8px; height:100%; cursor:col-resize; touch-action:none; user-select:none; z-index:3; }
 .column-resize-handle::after { content:""; position:absolute; top:20%; bottom:20%; left:3px; width:1px; background:var(--line); }
 .column-resize-handle:hover::after,.column-resize-handle.active::after { width:2px; background:var(--accent); }

@@ -47,7 +47,8 @@
   const backendCandidates = browserOnlyMode ? [] : [location.origin + "/api"];
   let backendBase = backendCandidates[0];
   let backendAvailable = false;
-  let resultPage=1,resultPageSize=250,resultRenderRevision=0;
+  let resultPage=1,resultPageSize=250,resultRenderRevision=0,resultSortField="",resultSortDirection="asc",resultRequestController=null,resultStateRevision=0;
+  const resultResponseCache=new Map(),deviceDialogCache=new Map(),localSearchTextCache=new WeakMap();
   let snapshotMutationPromise=Promise.resolve();
   const engineeringPermissionList=["delete:history","delete:snapshots","delete:mappings","delete:tasks","delete:ip-mappings","delete:api-cache","write:settings","write:migration"];
   const engineeringPermissionLabels={"delete:history":"Удаление истории","delete:snapshots":"Удаление снимков","delete:mappings":"Удаление справочников","delete:tasks":"Управление задачами","delete:ip-mappings":"Удаление IP-маппинга","delete:api-cache":"Очистка API-кэша","write:settings":"Изменение настроек","write:migration":"Миграция Python/SQLite"};
@@ -392,6 +393,7 @@
     return attachLocalFolder(handle,{request:false,preferBrowserState}).catch((error)=>{localFolderStatus(error.message,"error");return false;});
   }
   const save = (options={}) => {
+    resultStateRevision+=1;
     const savedAt=new Date().toISOString();
     let localCopy=true;
     try{localStorage.setItem(key,JSON.stringify(compactBrowserState(state)));}
@@ -1017,7 +1019,8 @@
       await BrowserSnapshots.clearEnrichment(jobId).catch(()=>false);
     }
   }
-  function renderLocalResultsHeader(){const columns=(state.visibleColumns||empty().visibleColumns).filter(Boolean);$("#resultsHeader").innerHTML=columns.map(column=>`<th>${esc(labels[column]||column)}</th>`).join("");return columns;}
+  function resultHeaderHtml(columns){return columns.map((column)=>{const active=column===resultSortField,direction=active?(resultSortDirection==="desc"?"descending":"ascending"):"none";return `<th class="sortable-column${active?" sorted":""}" data-sort-field="${esc(column)}" data-sort-direction="${active?resultSortDirection:""}" tabindex="0" role="button" aria-sort="${direction}" title="Сортировать по столбцу">${esc(labels[column]||column)}<span class="sort-indicator" aria-hidden="true">${active?(resultSortDirection==="desc"?"▼":"▲"):"↕"}</span></th>`;}).join("");}
+  function renderLocalResultsHeader(){const columns=(state.visibleColumns||empty().visibleColumns).filter(Boolean);$("#resultsHeader").innerHTML=resultHeaderHtml(columns);return columns;}
   function updateResultPager(total=0,page=1,pages=1){const status=$("#resultPageStatus"),previous=$("#resultPreviousPageButton"),next=$("#resultNextPageButton"),size=$("#resultPageSizeSelect");if(status)status.textContent=`${page} / ${pages}`;if(previous)previous.disabled=page<=1;if(next)next.disabled=page>=pages;if(size)size.value=String(resultPageSize);resultPage=Math.max(1,Math.min(page,pages));}
   function localResultPageRows(items,columns){return(items||[]).length?(items||[]).map((item)=>item?.invalid||item?.valid===false?`<tr><td colspan="${Math.max(1,columns.length)}"><strong>Ошибка:</strong> строка ${esc(item.row||"")} в ${esc(item.source||"")}: ${esc(item.raw||"")}</td></tr>`:`<tr data-mac="${esc(item.mac||normalize(item.macFormatted)||"")}">${columns.map((column)=>`<td>${esc(column==="oui"?formatOuiValue(item.mac||item.macFormatted||item.oui):item[column]||"")}</td>`).join("")}</tr>`).join(""):'<tr><td colspan="'+Math.max(1,columns.length)+'" class="empty-state">Нет записей.</td></tr>';}
   function applyDdioOverlayToResults(root,columns){
@@ -1035,7 +1038,14 @@
     }
     return applied;
   }
-  function localResultsTable(){const columns=renderLocalResultsHeader(),query=$("#searchInput")?.value.trim().toLowerCase()||"",vendor=$("#vendorFilter")?.value||"",vendors=new Set();for(const item of state.devices||[]){if(item.vendor)vendors.add(item.vendor);}const pageData=MemoryGuard.collectPage(state.devices,item=>(!vendor||item.vendor===vendor)&&(!query||Object.values(item).join(" ").toLowerCase().includes(query)),resultPage,resultPageSize);resultPage=pageData.page;$("#vendorFilter").innerHTML='<option value="">Все вендоры</option>'+Array.from(vendors).sort().map(v=>`<option value="${esc(v)}" ${v===vendor?"selected":""}>${esc(v)}</option>`).join("");$("#resultCount").textContent=pageData.total+" записей";updateResultPager(pageData.total,pageData.page,pageData.pages);return pageData.items.length?pageData.items.map(item=>`<tr data-mac="${esc(item.mac||normalize(item.macFormatted)||"")}">${columns.map(column=>`<td>${esc(column==="oui"?formatOuiValue(item.mac||item.macFormatted||item.oui):item[column]||"")}</td>`).join("")}</tr>`).join(""):'<tr><td colspan="'+columns.length+'" class="empty-state">Нет записей.</td></tr>';}
+  function localSearchText(item){if(!item||typeof item!=="object")return "";if(localSearchTextCache.has(item))return localSearchTextCache.get(item);const text=[item.mac,item.macFormatted,item.vendor,item.model,item.ip,item.address,item.room,item.smartroomId,item.switchIp,item.switchPort,item.source].map((value)=>String(value||"")).join(" ").toLowerCase();localSearchTextCache.set(item,text);return text;}
+  function localResultsTable(){
+    const columns=renderLocalResultsHeader(),query=$("#searchInput")?.value.trim().toLowerCase()||"",vendor=$("#vendorFilter")?.value||"",vendors=new Set(),filtered=[];
+    for(const item of state.devices||[]){if(item.vendor)vendors.add(item.vendor);if((!vendor||item.vendor===vendor)&&(!query||localSearchText(item).includes(query)))filtered.push(item);}
+    if(resultSortField){const direction=resultSortDirection==="desc"?-1:1,compare=window.MacAnalyzerTableSorter?.compareValues||((a,b)=>String(a||"").localeCompare(String(b||""),"ru",{numeric:true}));filtered.sort((a,b)=>{const left=a?.[resultSortField],right=b?.[resultSortField],emptyLeft=!String(left??"").trim(),emptyRight=!String(right??"").trim();return emptyLeft!==emptyRight?(emptyLeft?1:-1):direction*compare(left,right);});}
+    const total=filtered.length,pages=Math.max(1,Math.ceil(total/resultPageSize));resultPage=Math.max(1,Math.min(resultPage,pages));const items=filtered.slice((resultPage-1)*resultPageSize,resultPage*resultPageSize);
+    $("#vendorFilter").innerHTML='<option value="">Все вендоры</option>'+Array.from(vendors).sort().map(v=>`<option value="${esc(v)}" ${v===vendor?"selected":""}>${esc(v)}</option>`).join("");$("#resultCount").textContent=total+" записей";updateResultPager(total,resultPage,pages);return localResultPageRows(items,columns);
+  }
   function devicesSignature(devices=[]){return MemoryGuard.datasetSignature(devices,["vendor","model","ip","address","room","smartroomId","switchIp","switchPort"],normalize);}
   async function storeLocalSnapshot(name,source,devices,invalid=[],createdAt=new Date().toISOString(),kind="analysis"){
     const rows=Array.isArray(devices)?devices:[],snapshotId=crypto.randomUUID(),signature=devicesSignature(rows),savedAt=new Date().toISOString();
@@ -1567,7 +1577,7 @@
   }
   function currentDeviceCount(){return state.resultSnapshotId||state.resultBrowserSnapshotId?Number(state.resultDeviceCount||0):(state.devices||[]).length;}
   function currentDevicePayload(extra={}){return state.resultSnapshotId?{...extra,snapshotId:state.resultSnapshotId,devices:[]}:{...extra,devices:state.devices||[]};}
-  function clearResultReference(){state.resultSnapshotId="";state.resultBrowserSnapshotId="";state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=0;state.resultInvalidCount=0;state.resultSummary=null;browserDashboardCache=null;localAnalyticsCache=null;}
+  function clearResultReference(){state.resultSnapshotId="";state.resultBrowserSnapshotId="";state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=0;state.resultInvalidCount=0;state.resultSummary=null;browserDashboardCache=null;localAnalyticsCache=null;resultResponseCache.clear();deviceDialogCache.clear();}
   function applyRefreshedFileTokens(fileTokens=[]){
     (Array.isArray(fileTokens)?fileTokens:[]).forEach((item)=>{const file=analysisFileRecords().find((entry)=>entry.id===item.id);if(file&&item.fileToken)file.fileToken=item.fileToken;});
   }
@@ -1696,25 +1706,25 @@
     save({immediate:true});await flushBrowserStateSave().catch(()=>{});await flushPortableDatabaseSave().catch(()=>{});persistAutosave("enrichment-analysis").catch(()=>{});renderAll();toast("Анализ завершён: "+currentDeviceCount()+" устройств.");
     finishProcess(processId,"Обогащение завершено: "+currentDeviceCount()+" устройств");
   }
-  async function loadFilteredResults() {
-    const filters={query:$("#searchInput").value.trim(),vendor:$("#vendorFilter").value,validity:$("#validityFilter").value,ouiLength:state.ouiLength,ouiStyle:state.ouiStyle,offset:(resultPage-1)*resultPageSize,limit:resultPageSize};
+  async function loadFilteredResults(signal=null) {
+    const filters={query:$("#searchInput").value.trim(),vendor:$("#vendorFilter").value,validity:$("#validityFilter").value,ouiLength:state.ouiLength,ouiStyle:state.ouiStyle,offset:(resultPage-1)*resultPageSize,limit:resultPageSize,sortField:resultSortField,sortDirection:resultSortDirection};
     const columns=(state.visibleColumns||empty().visibleColumns).filter(Boolean);
     const labelMap=Object.fromEntries(columns.map((column)=>[column,labels[column]||column]));
-    return api("/results/filter",{method:"POST",body:JSON.stringify(currentDevicePayload({invalid:state.invalid,filters,columns,labels:labelMap}))});
+    const cacheKey=[resultStateRevision,state.resultSnapshotId,state.resultBrowserSnapshotId,state.lastAnalysis,currentDeviceCount(),JSON.stringify(filters),columns.join(",")].join("|");
+    const cached=resultResponseCache.get(cacheKey);if(cached&&Date.now()-cached.at<30000)return cached.data;
+    const data=await api("/results/filter",{method:"POST",signal,body:JSON.stringify(currentDevicePayload({invalid:state.invalid,filters,columns,labels:labelMap}))});
+    resultResponseCache.set(cacheKey,{at:Date.now(),data});while(resultResponseCache.size>20)resultResponseCache.delete(resultResponseCache.keys().next().value);return data;
   }
   async function renderResults() {
     const renderRevision=++resultRenderRevision;
     const body=$("#resultsBody");
     const columns=(state.visibleColumns||empty().visibleColumns).filter(Boolean);
-    const labelMap=Object.fromEntries(columns.map((column)=>[column,labels[column]||column]));
+    renderLocalResultsHeader();
+    resultRequestController?.abort();resultRequestController=new AbortController();
     try{
-      const header=await api("/results/header",{method:"POST",body:JSON.stringify({columns,labels:labelMap})});
-      $("#resultsHeader").innerHTML=header.headerHtml||"";
-    }catch{renderLocalResultsHeader();}
-    try{
-      const data=await loadFilteredResults();
+      const data=await loadFilteredResults(resultRequestController.signal);
       if(renderRevision!==resultRenderRevision)return;
-      $("#resultsHeader").innerHTML=data.headerHtml||"";
+      $("#resultsHeader").innerHTML=data.headerHtml||resultHeaderHtml(columns);
       body.innerHTML=data.tableRowsHtml||data.emptyTableRowsHtml||'<tr><td colspan="'+columns.length+'" class="empty-state">Нет записей по заданному фильтру.</td></tr>';
       $("#vendorFilter").innerHTML=data.vendorOptionsHtml||'<option value="">Все вендоры</option>';
       $("#resultCount").textContent=data.summaryText||"0 записей";
@@ -1722,7 +1732,7 @@
     }catch(error){
       if(state.resultBrowserSnapshotId&&BrowserSnapshots?.page&&networkUnavailable(error)){
         const selectedVendor=$("#vendorFilter")?.value||"";
-        const localPage=await BrowserSnapshots.page(state.resultBrowserSnapshotId,{query:$("#searchInput")?.value||"",vendor:selectedVendor,validity:$("#validityFilter")?.value||"",offset:(resultPage-1)*resultPageSize,limit:resultPageSize});
+        const localPage=await BrowserSnapshots.page(state.resultBrowserSnapshotId,{query:$("#searchInput")?.value||"",vendor:selectedVendor,validity:$("#validityFilter")?.value||"",offset:(resultPage-1)*resultPageSize,limit:resultPageSize,sortField:resultSortField,sortDirection:resultSortDirection});
         if(renderRevision!==resultRenderRevision)return;
         const items=localPage?.items||[];
         renderLocalResultsHeader();
@@ -1731,7 +1741,8 @@
         $("#resultCount").textContent=(localPage?.pagination?.total||0)+" записей";
         updateResultPager(localPage?.pagination?.total||0,localPage?.pagination?.page||1,localPage?.pagination?.pages||1);
         state.devices=items.filter((item)=>item?.valid!==false&&!item?.invalid);state.invalid=items.filter((item)=>item?.valid===false||item?.invalid);state.resultSummary=localPage?.summary||state.resultSummary;
-      }else if(state.devices.length&&networkUnavailable(error)){
+      }else if(error?.name==="AbortError")return;
+      else if(state.devices.length&&networkUnavailable(error)){
         body.innerHTML=localResultsTable();
       }else{
         renderLocalResultsHeader();
@@ -1818,7 +1829,12 @@
   async function showDevice(mac){
     const normalized=normalize(mac);
     if(!normalized){toast("MAC не найден.");return;}
+    const cacheKey=[resultStateRevision,state.resultSnapshotId,state.resultBrowserSnapshotId,state.lastAnalysis,normalized].join("|");
+    const cached=deviceDialogCache.get(cacheKey);
+    if(cached&&Date.now()-cached.at<30000){showDeviceLoading(normalized);renderDeviceDialog(cached.analytics,cached.local,normalized);return;}
     showDeviceLoading(normalized);
+    const quick=(state.devices||[]).find((item)=>normalize(item.mac||item.macFormatted)===normalized);
+    if(quick)renderDeviceDialog(null,{mac:normalized,current:quick,appearances:[],movements:[]},normalized);
     const [backendResult,localResult]=await Promise.allSettled([
       api("/device/analytics",{method:"POST",body:JSON.stringify(currentDevicePayload({mac:normalized,snapshots:state.snapshots}))}),
       collectLocalMacContext(normalized),
@@ -1826,6 +1842,7 @@
     const analytics=backendResult.status==="fulfilled"?backendResult.value:null;
     const local=localResult.status==="fulfilled"?localResult.value:{mac:normalized,current:{},appearances:[],movements:[]};
     renderDeviceDialog(analytics,local,normalized);
+    deviceDialogCache.set(cacheKey,{analytics,local,at:Date.now()});while(deviceDialogCache.size>50)deviceDialogCache.delete(deviceDialogCache.keys().next().value);
     if(!analytics&&!local.appearances.length&&!Object.keys(local.current||{}).length)toast("Для этого MAC не найдены сохранённые данные.");
   }
   async function showLocalDevice(mac){
@@ -2463,7 +2480,7 @@
   }
   async function renderAnalytics(){
     const signature=[state.resultBrowserSnapshotId,state.resultSnapshotId,currentDeviceCount(),state.lastAnalysis,JSON.stringify(dashboardSettings())].join("|");
-    if(analyticsRenderCache.signature===signature&&Date.now()-analyticsRenderCache.at<5000)return;
+    if(analyticsRenderCache.signature===signature&&Date.now()-analyticsRenderCache.at<30000)return;
     analyticsRenderCache={signature,at:Date.now()};
     const revision=++analyticsRenderRevision;
     initializeAnalyticsExpanders();
@@ -2496,7 +2513,7 @@
     const query=($("#historySearchInput")?.value||"").trim();
     const from=$("#historyDateFrom").value,to=$("#historyDateTo").value;
     const signature=[query,from,to,state.snapshots?.length,state.movementHistory?.length,state.lastAnalysis].join("|");
-    if(historyRenderCache.signature===signature&&Date.now()-historyRenderCache.at<3000)return;
+    if(historyRenderCache.signature===signature&&Date.now()-historyRenderCache.at<15000)return;
     historyRenderCache={signature,at:Date.now()};
     historyPanelPromise=loadHistoryPanel(query, from, to);
     renderSnapshotHistory(query, from, to);
@@ -3299,7 +3316,9 @@
   function normalizeViewName(name){return Object.prototype.hasOwnProperty.call(viewConfig,name)?name:"workspace";}
   function viewFromHash(){return normalizeViewName((location.hash||"").replace(/^#/,""));}
   function renderViewContent(name){if(name==="workspace"){renderFiles();renderMapping();renderMetrics();renderResults();return;}if(name==="data"){renderServices();loadDatabaseHistoryManagement();}else if(name==="automation")renderServices();if(name==="settings")renderParityStatus();if(name==="analytics")renderAnalytics();if(name==="history")renderHistory();if(name==="single")renderSingleMappingGrid();if(name==="compare")renderSnapshots();if(name==="guide"){Guide.syncMode(engineeringSessionActive(),state.engineeringExpiresAt,document);if(!$("#systemDiagnosticsSummary")?.dataset.loaded)runSystemDiagnostics();}}
-  function activateView(name,{updateHash=true,render=true}={}){name=normalizeViewName(name);if(!engineeringSessionActive()&&engineeringOnlyViews.has(name))name="history";$$(".nav-item").forEach((b)=>{const active=b.dataset.view===name;b.classList.toggle("active",active);b.setAttribute("aria-selected",active?"true":"false");});$$(".view").forEach((panel)=>{const active=panel.id===name+"View";panel.classList.toggle("active",active);panel.hidden=!active;});const title=viewConfig[name];$("#viewTitle").textContent=title[0];$("#viewSubtitle").textContent=title[1];if(updateHash&&location.hash!=="#"+name)history.pushState(null,"","#"+name);if(render)renderViewContent(name);return name;}
+  let viewRenderRevision=0;
+  function scheduleViewContent(name){const revision=++viewRenderRevision;(window.requestAnimationFrame||((callback)=>setTimeout(callback,0)))(()=>{if(revision===viewRenderRevision&&activeViewName()===name)renderViewContent(name);});}
+  function activateView(name,{updateHash=true,render=true}={}){name=normalizeViewName(name);if(!engineeringSessionActive()&&engineeringOnlyViews.has(name))name="history";$$(".nav-item").forEach((b)=>{const active=b.dataset.view===name;b.classList.toggle("active",active);b.setAttribute("aria-selected",active?"true":"false");});$$(".view").forEach((panel)=>{const active=panel.id===name+"View";panel.classList.toggle("active",active);panel.hidden=!active;});const title=viewConfig[name];$("#viewTitle").textContent=title[0];$("#viewSubtitle").textContent=title[1];if(updateHash&&location.hash!=="#"+name)history.pushState(null,"","#"+name);if(render)scheduleViewContent(name);return name;}
   function view(name,options={}){return activateView(name,options);}
   let lastComparisonResult=null;
   function comparisonPayload(exportFormat=""){
@@ -3480,7 +3499,7 @@
   $("#cancelConflictColumnsButton").addEventListener("click",()=>resolveColumnConflict(null));
   $("#closeColumnConflictDialog").addEventListener("click",()=>resolveColumnConflict(null));
   $("#columnConflictDialog").addEventListener("cancel",(event)=>{event.preventDefault();resolveColumnConflict(null);});
-  $("#analyzeButton").addEventListener("click",analyze);["#searchInput","#vendorFilter","#validityFilter"].forEach((s)=>$(s).addEventListener("input",()=>{resultPage=1;renderResults();}));$("#exportExcelButton").addEventListener("click",()=>exportData("spreadsheetml"));$("#exportCsvButton").addEventListener("click",()=>exportData("csv"));$("#exportTxtButton").addEventListener("click",()=>exportData("txt"));$("#exportYamlButton").addEventListener("click",()=>exportData("yaml"));$("#exportJsonButton").addEventListener("click",()=>exportData("json"));$("#exportHtmlButton").addEventListener("click",()=>exportData("html"));$("#compareButton").addEventListener("click",compare);
+  $("#analyzeButton").addEventListener("click",analyze);const renderSearchResults=debounce(()=>{resultPage=1;renderResults();},180);$("#searchInput").addEventListener("input",renderSearchResults);["#vendorFilter","#validityFilter"].forEach((s)=>$(s).addEventListener("change",()=>{resultPage=1;renderResults();}));$("#resultsTable").addEventListener("table-sort-change",(event)=>{const field=String(event.detail?.field||"");if(!field)return;resultSortField=field;resultSortDirection=event.detail?.direction==="desc"?"desc":"asc";resultPage=1;renderResults();});$("#exportExcelButton").addEventListener("click",()=>exportData("spreadsheetml"));$("#exportCsvButton").addEventListener("click",()=>exportData("csv"));$("#exportTxtButton").addEventListener("click",()=>exportData("txt"));$("#exportYamlButton").addEventListener("click",()=>exportData("yaml"));$("#exportJsonButton").addEventListener("click",()=>exportData("json"));$("#exportHtmlButton").addEventListener("click",()=>exportData("html"));$("#compareButton").addEventListener("click",compare);
   $("#resultPreviousPageButton").addEventListener("click",()=>{if(resultPage>1){resultPage--;renderResults();}});
   $("#resultNextPageButton").addEventListener("click",()=>{resultPage++;renderResults();});
   $("#resultPageSizeSelect").addEventListener("change",(event)=>{resultPageSize=Math.max(25,Math.min(Number(event.target.value)||250,1000));resultPage=1;renderResults();});

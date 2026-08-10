@@ -117,7 +117,7 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert '<script src="frontend/memory-guard.js?v=20260722.9"></script>' in html
     assert '<script src="frontend/file-readers.js?v=20260722.8"></script>' in html
-    assert '<meta name="application-build" content="2026.08.10.4">' in html
+    assert '<meta name="application-build" content="2026.08.10.5">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -334,7 +334,8 @@ def test_workspace_navigation_renders_compact_results():
 
     assert 'function renderViewContent(name){if(name==="workspace"){renderFiles();renderMapping();renderMetrics();renderResults();return;}' in app
     assert 'function activateView(name,{updateHash=true,render=true}={})' in app
-    assert 'if(render)renderViewContent(name);return name;' in app
+    assert 'if(render)scheduleViewContent(name);return name;' in app
+    assert 'function scheduleViewContent(name)' in app
 
 
 def test_excel_files_are_selectable_in_main_import():
@@ -974,7 +975,8 @@ def test_browser_mode_enrichment_keeps_basic_workflow_alive():
     assert 'else{sourceFilesById.delete(fileRecord.id);fileRecord.sourceStorageId="";}' in app
     assert "async function hydrateWorkspaceFilesForBrowser(onProgress=()=>{})" not in app
     assert "await hydrateWorkspaceFilesForBrowser(" not in app
-    assert "MemoryGuard.collectPage(state.devices" in app
+    assert "const items=filtered.slice((resultPage-1)*resultPageSize,resultPage*resultPageSize);" in app
+    assert "function localSearchText(item)" in app
     assert "file.rows.slice(1).forEach" not in app
     assert "Автономная локальная база" in app
     assert 'await storeLocalSnapshot("Анализ: "+source,source,state.devices,state.invalid,sourceCreatedAt,"analysis")' in app
@@ -1005,7 +1007,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260810.2"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260810.3"></script>' in html
     assert '<script src="frontend/xlsx-exporter.js?v=20260727.5"></script>' in html
     assert '<script src="frontend/full-xlsx-report.js?v=20260729.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
@@ -1677,7 +1679,8 @@ def test_local_vendor_model_rules_and_result_headers_work_without_backend():
         'localVendorFromText(model,pick("name"),row.join(" "))',
         'function applyLocalVendorModelMappings(devices=state.devices)',
         'function renderLocalResultsHeader()',
-        'catch{renderLocalResultsHeader();}',
+        'renderLocalResultsHeader();',
+        'function resultHeaderHtml(columns)',
         'renderLocalMappings();',
         'function vendorModelLearnSettings()',
         'function learnLocalVendorModelMappings(settings=vendorModelLearnSettings())',
@@ -1876,13 +1879,13 @@ def test_parity_status_uses_backend_html_payload():
 def test_result_table_filters_use_backend_service():
     app = read_app_js()
 
-    assert 'async function loadFilteredResults()' in app
+    assert 'async function loadFilteredResults(signal=null)' in app
     assert 'ouiLength:state.ouiLength,ouiStyle:state.ouiStyle' in app
     assert 'const labelMap=Object.fromEntries(columns.map((column)=>[column,labels[column]||column]));' in app
-    assert 'api("/results/header",{method:"POST",body:JSON.stringify({columns,labels:labelMap})})' in app
+    assert 'renderLocalResultsHeader();' in app
     assert 'offset:(resultPage-1)*resultPageSize,limit:resultPageSize' in app
-    assert 'api("/results/filter",{method:"POST",body:JSON.stringify(currentDevicePayload({invalid:state.invalid,filters,columns,labels:labelMap}))})' in app
-    assert '$("#resultsHeader").innerHTML=header.headerHtml||"";' in app
+    assert 'api("/results/filter",{method:"POST",signal,body:JSON.stringify(currentDevicePayload({invalid:state.invalid,filters,columns,labels:labelMap}))})' in app
+    assert '$("#resultsHeader").innerHTML=data.headerHtml||resultHeaderHtml(columns);' in app
     assert 'body.innerHTML=data.tableRowsHtml||data.emptyTableRowsHtml' in app
     assert '$("#vendorFilter").innerHTML=data.vendorOptionsHtml' in app
     assert '$("#resultCount").textContent=data.summaryText||"0 записей";' in app

@@ -14,7 +14,8 @@ def test_result_filter_handles_query_vendor_and_validity():
     assert cisco["items"][0]["oui"] == "AA-BB-CC-00"
     assert cisco["items"][0]["valid"] is True
     assert cisco["vendors"] == ["Apple", "Cisco"]
-    assert cisco["headerHtml"] == "<th>MAC</th><th>OUI</th><th>Производитель</th><th>Модель</th><th>IP</th><th>Адрес</th><th>Помещение</th><th>Smartroom ID</th><th>IP коммутатора</th><th>Порт</th><th>Источник</th>"
+    assert 'data-sort-field="macFormatted"' in cisco["headerHtml"]
+    assert 'aria-sort="none"' in cisco["headerHtml"]
     assert 'data-mac="AABBCC000001"' in cisco["tableRowsHtml"]
     assert "<td>AA:BB:CC:00:00:01</td>" in cisco["tableRowsHtml"]
     assert "<td>AA-BB-CC-00</td>" in cisco["tableRowsHtml"]
@@ -38,7 +39,26 @@ def test_result_filter_handles_query_vendor_and_validity():
         {"customRack": "Стойка"},
     )
     assert custom["columns"] == ["macFormatted", "vendor", "customRack"]
-    assert custom["headerHtml"] == "<th>MAC</th><th>Производитель</th><th>Стойка</th>"
+    assert 'data-sort-field="customRack"' in custom["headerHtml"]
+    assert "Стойка" in custom["headerHtml"]
+
+    sorted_devices = filter_result_devices(
+        devices,
+        [],
+        {"sortField": "room", "sortDirection": "desc"},
+        ["macFormatted", "room"],
+    )
+    assert [item["room"] for item in sorted_devices["items"]] == ["202", "101"]
+    assert 'data-sort-field="room"' in sorted_devices["headerHtml"]
+    assert 'aria-sort="descending"' in sorted_devices["headerHtml"]
+
+    with_empty = filter_result_devices(
+        devices + [{"mac": "001122000003", "vendor": "Empty", "room": ""}],
+        [],
+        {"sortField": "room", "sortDirection": "desc"},
+        ["macFormatted", "room"],
+    )
+    assert [item["room"] for item in with_empty["items"]] == ["202", "101", ""]
 
 
 def test_result_filter_paginates_large_sets_without_rendering_every_row():

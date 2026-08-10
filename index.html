@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
-  <meta name="application-build" content="2026.08.10.4">
+  <meta name="application-build" content="2026.08.10.5">
   <link rel="stylesheet" href="styles.css?v=20260810.2">
 </head>
 <body>
@@ -180,7 +180,7 @@
             <button class="button secondary" id="copyResultsMacButton">Копировать MAC</button>
           </div>
           <div class="table-wrap">
-            <table id="resultsTable">
+            <table id="resultsTable" data-remote-sort="true">
               <thead><tr id="resultsHeader"></tr></thead>
               <tbody id="resultsBody"><tr><td colspan="10" class="empty-state">Загрузите файл, чтобы начать анализ.</td></tr></tbody>
             </table>
@@ -619,6 +619,7 @@
             <article class="guide-value"><strong>Автоопределение</strong><p>Сначала используются точные 5- и 4-байтовые правила модели, затем OUI производителя и накопленная история.</p></article>
             <article class="guide-value"><strong>Сохранность</strong><p>SQLite хранит снимки и историю; автономный HTML сохраняет рабочее состояние в хранилище браузера.</p></article>
           </div>
+          <aside class="guide-callout"><strong>Быстрый поиск и сортировка</strong><p>Введите запрос — обработка начнётся после короткой паузы и отменит устаревший поиск. Нажмите заголовок любого обычного столбца для сортировки по возрастанию, нажмите повторно — по убыванию. С клавиатуры используйте Tab, затем Enter или пробел.</p></aside>
           <h3>Рабочий цикл</h3>
           <ol class="guide-flow">
             <li><span>1</span><div><strong>Загрузить</strong><p>Основной XLSX/CSV и при необходимости один или несколько файлов обогащения.</p></div></li>
@@ -813,7 +814,7 @@
   <script src="frontend/memory-guard.js?v=20260722.9"></script>
   <script src="frontend/file-readers.js?v=20260722.8"></script>
   <script src="frontend/state-persistence.js?v=20260722.7"></script>
-  <script src="frontend/browser-snapshot-store.js?v=20260810.2"></script>
+  <script src="frontend/browser-snapshot-store.js?v=20260810.3"></script>
   <script src="frontend/mac-chronology.js?v=20260729.1"></script>
   <script src="frontend/local-analytics.js?v=20260729.3"></script>
   <script src="frontend/xlsx-exporter.js?v=20260727.5"></script>
@@ -825,7 +826,8 @@
   <script src="frontend/ddio-overlay.js?v=20260810.1"></script>
   <script src="frontend/dashboard-change-tabs.js?v=20260803.1"></script>
   <script src="frontend/guide.js?v=20260722.7"></script>
-  <script src="app.js?v=20260810.3"></script>
+  <script src="frontend/table-sorter.js?v=20260810.1"></script>
+  <script src="app.js?v=20260810.4"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;

@@ -112,6 +112,7 @@ def build_system_diagnostics(root: Path, storage: Any, db_connection: Callable[[
         "frontend/ddio-overlay.js",
         "frontend/dashboard-change-tabs.js",
         "frontend/guide.js",
+        "frontend/table-sorter.js",
         "backend/services/workspace/ddio_overlay_service.py",
         "backend/services/detection/reference_data_service.py",
     )
@@ -154,6 +155,7 @@ def build_system_diagnostics(root: Path, storage: Any, db_connection: Callable[[
     file_readers = _read(root / "frontend" / "file-readers.js")
     app_text = _read(root / "app.js")
     snapshot_store = _read(root / "frontend" / "browser-snapshot-store.js")
+    table_sorter = _read(root / "frontend" / "table-sorter.js")
     workspace_cache = _read(root / "backend" / "services" / "workspace" / "workspace_cache_service.py")
     standalone_text = _read(root / "mac_analyzer_standalone.html")
     memory_markers = (
@@ -179,6 +181,8 @@ def build_system_diagnostics(root: Path, storage: Any, db_connection: Callable[[
         ("BrowserSnapshots.page", app_text),
         ("state.devices.length=0;state.invalid.length=0", app_text),
         ("function createPageCollector", snapshot_store),
+        ("function sortTable", table_sorter),
+        ("sortWindowLimit = 100_000", snapshot_store),
         ("mergeEnrichmentRows", snapshot_store),
         ("saveEnrichmentSnapshot", snapshot_store),
         ("resultBrowserSnapshotId", app_text),

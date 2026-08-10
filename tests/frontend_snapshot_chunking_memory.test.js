@@ -54,6 +54,13 @@ assert.equal(page.summary.devices, 120_000);
 assert.equal(page.summary.vendors, 1);
 assert.ok(page.items.length < devices.length / 100);
 
+const sortedCollector = snapshots.createPageCollector({ offset: 0, limit: 25, query: "stress vendor", sortField: "model", sortDirection: "desc" });
+for (const chunk of snapshots.chunkRows(devices)) sortedCollector.accept("device", chunk.rows);
+const sortedPage = sortedCollector.result();
+assert.equal(sortedPage.items.length, 25);
+assert.equal(sortedPage.pagination.sortWindowLimit, 100_000);
+assert.ok(sortedPage.items.every((item) => item.model === "Model 19"));
+
 (async () => {
   const chunk = devices.slice(0, 1_000);
   const changed = await snapshots.transformChunkRows(chunk, (device) => {

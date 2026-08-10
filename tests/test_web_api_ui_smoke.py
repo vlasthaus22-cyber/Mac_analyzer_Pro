@@ -493,7 +493,8 @@ def test_rest_api_and_ui_controls_smoke():
             {"columns": ["macFormatted", "oui", "vendor"], "labels": {"macFormatted": "MAC", "oui": "OUI", "vendor": "Vendor"}},
         )
         assert status == 200
-        assert result_header["headerHtml"] == "<th>MAC</th><th>OUI</th><th>Vendor</th>"
+        assert 'data-sort-field="macFormatted"' in result_header["headerHtml"]
+        assert "Vendor" in result_header["headerHtml"]
         assert result_header["columnCount"] == 3
         assert 'colspan="3"' in result_header["emptyTableRowsHtml"]
 
@@ -516,7 +517,8 @@ def test_rest_api_and_ui_controls_smoke():
         assert filtered_results["items"][0]["oui"] == "AA-BB-CC-00"
         assert filtered_results["items"][0]["valid"] is True
         assert filtered_results["vendors"] == ["SmokeVendor"]
-        assert filtered_results["headerHtml"] == "<th>MAC</th><th>OUI</th><th>Производитель</th><th>Модель</th>"
+        assert 'data-sort-field="vendor"' in filtered_results["headerHtml"]
+        assert "Производитель" in filtered_results["headerHtml"]
         assert 'data-mac="AABBCC000009"' in filtered_results["tableRowsHtml"]
         assert "<td>AA-BB-CC-00</td>" in filtered_results["tableRowsHtml"]
         assert '<option value="SmokeVendor" selected>SmokeVendor</option>' in filtered_results["vendorOptionsHtml"]

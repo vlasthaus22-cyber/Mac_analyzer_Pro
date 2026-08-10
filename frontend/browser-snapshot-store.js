@@ -858,6 +858,10 @@
     const validity = String(options.validity || "").toLowerCase();
     const limit = Math.max(25, Math.min(Number(options.limit || options.pageSize || 250), 1000));
     const offset = Math.max(0, Number(options.offset || 0));
+    const sortField = String(options.sortField || "");
+    const sortDirection = String(options.sortDirection || "").toLowerCase() === "desc" ? "desc" : "asc";
+    const sortWindowLimit = 100_000;
+    const retainedLimit = Math.min(sortWindowLimit, offset + limit);
     const items = [];
     const vendors = new Set();
     let total = 0;
@@ -865,10 +869,39 @@
     let invalidCount = 0;
     let deviceCount = 0;
     let knownCount = 0;
+    let sequence = 0;
+    const collator = new Intl.Collator("ru", { numeric: true, sensitivity: "base" });
+    const valueForSort = (row) => {
+      if (sortField === "macFormatted") return row?.macFormatted || row?.mac || "";
+      if (sortField === "oui") return String(row?.oui || row?.mac || row?.macFormatted || "").replace(/[^0-9a-f]/gi, "");
+      return row?.[sortField] ?? "";
+    };
+    const compareEntries = (left, right) => {
+      const a = String(valueForSort(left.row) ?? "").trim(), b = String(valueForSort(right.row) ?? "").trim();
+      if (!a || !b) return (!a && !b ? 0 : (!a ? 1 : -1)) || left.sequence - right.sequence;
+      let compared = collator.compare(a, b);
+      if (sortDirection === "desc") compared = -compared;
+      return compared || left.sequence - right.sequence;
+    };
+    const siftWorstUp = (index) => {
+      while (index > 0) { const parent = (index - 1) >>> 1; if (compareEntries(items[parent], items[index]) >= 0) break; [items[parent], items[index]] = [items[index], items[parent]]; index = parent; }
+    };
+    const siftWorstDown = (index) => {
+      for (;;) { const left = index * 2 + 1, right = left + 1; if (left >= items.length) break; let worst = left; if (right < items.length && compareEntries(items[right], items[left]) > 0) worst = right; if (compareEntries(items[index], items[worst]) >= 0) break; [items[index], items[worst]] = [items[worst], items[index]]; index = worst; }
+    };
+    const retainSorted = (row) => {
+      const entry = { row, sequence: sequence++ };
+      if (items.length < retainedLimit) { items.push(entry); siftWorstUp(items.length - 1); }
+      else if (items.length && compareEntries(entry, items[0]) < 0) { items[0] = entry; siftWorstDown(0); }
+    };
     const matches = (row) => {
       if (vendor && String(row?.vendor || "") !== vendor) return false;
       if (!query) return true;
-      return Object.values(row || {}).join(" ").toLowerCase().includes(query);
+      const searchable = [row?.mac, row?.macFormatted, row?.vendor, row?.model, row?.ip, row?.address, row?.room,
+        row?.smartroomId, row?.smartroom_id, row?.switchIp, row?.switch_ip, row?.switchPort, row?.switch_port,
+        row?.source, row?.raw, row?.row].map((value) => String(value || "")).join(" ").toLowerCase();
+      const queryMac = query.replace(/[^0-9a-f]/gi, ""), rowMac = String(row?.mac || row?.macFormatted || "").replace(/[^0-9a-f]/gi, "").toLowerCase();
+      return searchable.includes(query) || (queryMac && rowMac.includes(queryMac));
     };
     return {
       accept(kind, rows) {
@@ -885,7 +918,8 @@
           if (!matches(row)) continue;
           if (isValid) validCount += 1;
           else invalidCount += 1;
-          if (total >= offset && items.length < limit) items.push(row);
+          if (sortField) retainSorted(row);
+          else if (total >= offset && items.length < limit) items.push(row);
           total += 1;
         }
       },
@@ -893,9 +927,9 @@
         const pages = Math.max(1, Math.ceil(total / limit));
         const page = Math.max(1, Math.min(Math.floor(offset / limit) + 1, pages));
         return {
-          items,
+          items: sortField ? items.slice().sort(compareEntries).slice(Math.min(offset, items.length), Math.min(offset + limit, items.length)).map((entry) => entry.row) : items,
           vendors: Array.from(vendors).sort(),
-          pagination: { total, page, pages, limit, offset },
+          pagination: { total, page, pages, limit, offset, sortWindowLimit: sortField ? sortWindowLimit : 0 },
           summary: {
             devices: deviceCount,
             valid: validCount,

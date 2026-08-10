@@ -789,12 +789,20 @@ def result_cell_value(row: dict[str, Any], column: str) -> str:
     return as_text(value) or "—"
 
 
-def result_header_html(columns: list[str], labels: Any) -> str:
+def result_header_html(columns: list[str], labels: Any, sort_field: str = "", sort_direction: str = "asc") -> str:
     label_map = {**DEFAULT_RESULT_LABELS, **(labels if isinstance(labels, dict) else {})}
-    return "".join(
-        f"<th>{html_lib.escape(as_text(label_map.get(column)) or column)}</th>"
-        for column in columns
-    )
+    rendered: list[str] = []
+    for column in columns:
+        active = column == sort_field
+        aria_sort = ("descending" if sort_direction == "desc" else "ascending") if active else "none"
+        indicator = ("▼" if sort_direction == "desc" else "▲") if active else "↕"
+        rendered.append(
+            f'<th class="sortable-column{" sorted" if active else ""}" data-sort-field="{html_lib.escape(column)}" '
+            f'data-sort-direction="{sort_direction if active else ""}" tabindex="0" role="button" aria-sort="{aria_sort}" '
+            f'title="Сортировать по столбцу">{html_lib.escape(as_text(label_map.get(column)) or column)}'
+            f'<span class="sort-indicator" aria-hidden="true">{indicator}</span></th>'
+        )
+    return "".join(rendered)
 
 
 def result_table_rows_html(rows: list[dict[str, Any]], columns: list[str]) -> str:
@@ -842,6 +850,10 @@ def filter_result_devices(
     except (TypeError, ValueError):
         oui_length = 3
     oui_style = as_text(filters.get("ouiStyle")) or "plain"
+    normalized_columns = normalize_result_columns(columns)
+    requested_sort_field = as_text(filters.get("sortField"))
+    sort_field = requested_sort_field if requested_sort_field in normalized_columns else ""
+    sort_direction = "desc" if as_text(filters.get("sortDirection")).lower() == "desc" else "asc"
 
     try:
         limit = max(25, min(int(filters.get("limit") or 250), 1000))
@@ -861,6 +873,16 @@ def filter_result_devices(
                 return False
         return True
 
+    def natural_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
+        value = row.get(sort_field)
+        if sort_field == "macFormatted" and not as_text(value):
+            value = format_mac(normalize_mac(row.get("mac")))
+        if sort_field == "oui" and not as_text(value):
+            value = normalize_mac(row.get("mac"))
+        text = as_text(value).strip()
+        parts = tuple((0, int(part)) if part.isdigit() else (1, part.casefold()) for part in re.split(r"(\d+)", text) if part)
+        return (not bool(text), parts)
+
     page_rows: list[dict[str, Any]] = []
     total = 0
     valid_count = 0
@@ -870,17 +892,32 @@ def filter_result_devices(
         sources.append((devices, True))
     if validity != "valid":
         sources.append((invalid, False))
-    for source_rows, is_valid in sources:
-        for raw_row in source_rows:
-            if not isinstance(raw_row, dict) or not matches(raw_row):
-                continue
-            if total >= offset and len(page_rows) < limit:
-                page_rows.append({**raw_row, "valid": is_valid})
-            total += 1
-            if is_valid:
-                valid_count += 1
-            else:
-                invalid_count += 1
+    if sort_field:
+        matched_rows: list[dict[str, Any]] = []
+        for source_rows, is_valid in sources:
+            for raw_row in source_rows:
+                if not isinstance(raw_row, dict) or not matches(raw_row):
+                    continue
+                matched_rows.append({**raw_row, "valid": is_valid})
+                if is_valid: valid_count += 1
+                else: invalid_count += 1
+        matched_rows.sort(key=natural_sort_key, reverse=sort_direction == "desc")
+        if sort_direction == "desc":
+            first_value = next((index for index, row in enumerate(matched_rows) if as_text(row.get(sort_field)).strip()), len(matched_rows))
+            if first_value:
+                matched_rows = matched_rows[first_value:] + matched_rows[:first_value]
+        total = len(matched_rows)
+        page_rows = matched_rows[offset:offset + limit]
+    else:
+        for source_rows, is_valid in sources:
+            for raw_row in source_rows:
+                if not isinstance(raw_row, dict) or not matches(raw_row):
+                    continue
+                if total >= offset and len(page_rows) < limit:
+                    page_rows.append({**raw_row, "valid": is_valid})
+                total += 1
+                if is_valid: valid_count += 1
+                else: invalid_count += 1
 
     formatted_ouis = format_oui_for_devices(page_rows, oui_length, oui_style)
     enriched_rows = [
@@ -892,7 +929,6 @@ def filter_result_devices(
         for device in devices
         if as_text(device.get("vendor"))
     })
-    normalized_columns = normalize_result_columns(columns)
     table_rows_html = result_table_rows_html(enriched_rows, normalized_columns)
     pages = max(1, (total + limit - 1) // limit)
     page = min(pages, offset // limit + 1)
@@ -900,7 +936,7 @@ def filter_result_devices(
         "items": enriched_rows,
         "vendors": vendors,
         "columns": normalized_columns,
-        "headerHtml": result_header_html(normalized_columns, labels),
+        "headerHtml": result_header_html(normalized_columns, labels, sort_field, sort_direction),
         "tableRowsHtml": table_rows_html,
         "emptyTableRowsHtml": result_table_rows_html([], normalized_columns),
         "vendorOptionsHtml": result_vendor_options_html(vendors, vendor),

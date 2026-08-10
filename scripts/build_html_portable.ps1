@@ -39,6 +39,7 @@ $scripts = @(
     "frontend/ddio-overlay.js",
     "frontend/dashboard-change-tabs.js",
     "frontend/guide.js",
+    "frontend/table-sorter.js",
     "app.js"
 )
 foreach ($relativePath in $scripts) {
@@ -80,6 +81,7 @@ foreach ($marker in @(
     "window.MacAnalyzerLocalFolderStore",
     "window.MacAnalyzerWorkspaceFileLifecycle",
     "window.MacAnalyzerDashboardChangeTabs",
+    "window.MacAnalyzerTableSorter",
     "xlsxWorksheetRows",
     "assertEnrichmentCapacity",
     "id=`"portableDatabaseButton`""

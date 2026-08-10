@@ -81,6 +81,16 @@ from the latest upload. MAC chronology merges browser and SQLite evidence
 without allowing a sparse duplicate to erase values present in an older final
 export; matching history rows repair legacy snapshot persistence gaps.
 
+Version v1.0.45 makes every ordinary table header interactive: click once for
+ascending order and again for descending order. The main result table sorts
+the complete backend snapshot; autonomous IndexedDB scans chunks and retains a
+fixed 100,000-row sort window instead of copying the full database into memory.
+Search input is debounced, obsolete requests are cancelled, recent result
+pages and analytics are cached, and heavy view rendering begins after the new
+screen is visible. Device dialogs show the current row immediately and cache
+the completed chronology for fast reopening. Empty values are placed last and
+numbers, IP-like values, and dates use natural ordering.
+
 In backend mode, the Data screen can upload a `.db`, `.sqlite`, or `.sqlite3`
 file. The server verifies the SQLite header and integrity, stores the uploaded
 copy under `data/imports`, and additively merges supported MAC Analyzer tables;
