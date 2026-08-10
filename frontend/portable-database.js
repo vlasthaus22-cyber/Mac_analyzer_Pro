@@ -93,6 +93,7 @@
       deviceCount: Math.max(0, Number(payload.deviceCount ?? payload.devices?.length ?? 0) || 0),
       invalidCount: Math.max(0, Number(payload.invalidCount ?? payload.invalid?.length ?? 0) || 0),
       currentResultStreamer: typeof payload.currentResultStreamer === "function" ? payload.currentResultStreamer : null,
+      inventoryStreamer: typeof payload.inventoryStreamer === "function" ? payload.inventoryStreamer : null,
       movements: Array.isArray(payload.movements) ? payload.movements : [],
       snapshotMetadata: (Array.isArray(payload.snapshotMetadata) ? payload.snapshotMetadata : []).filter((item) => item?.id),
       snapshotLoader: typeof payload.snapshotLoader === "function" ? payload.snapshotLoader : null,
@@ -178,6 +179,11 @@
       await writeRows(write, "device", data.devices, onProgress, completed, total);
       await writeRows(write, "invalid", data.invalid, onProgress, completed, total);
     }
+    if (data.inventoryStreamer) {
+      await data.inventoryStreamer(async (rows) => {
+        await writeRows(write, "inventory", Array.isArray(rows) ? rows : [], () => {}, { value: 0 }, 0);
+      });
+    }
     await writeRows(write, "movement", data.movements, onProgress, completed, total);
     onProgress(100, `Файловая база сохранена: ${data.deviceCount.toLocaleString("ru-RU")} устройств`);
     return { savedAt, counts: headerFor(data, savedAt).counts };
@@ -238,6 +244,7 @@
     const previewLimit = retainRows ? Number.POSITIVE_INFINITY : Math.max(0, Number(options.previewLimit ?? 250));
     const streamSnapshots = typeof options.onSnapshotStart === "function" && typeof options.onSnapshotChunk === "function" && typeof options.onSnapshotEnd === "function";
     const restoreBatchRows = Math.max(100, Math.min(2000, Number(options.batchRows || 500)));
+    const inventoryBatch = [];
     let deviceCount = 0;
     let invalidCount = 0;
     let activeSnapshot = null;
@@ -345,7 +352,12 @@
         if (currentSnapshot) await appendSnapshotRow(currentSnapshot, "invalid", record.value);
       }
       else if (record.type === "movement") movements.push(record.value);
+      else if (record.type === "inventory" && typeof options.onInventoryChunk === "function") {
+        inventoryBatch.push(record.value);
+        if (inventoryBatch.length >= restoreBatchRows) await options.onInventoryChunk(inventoryBatch.splice(0, inventoryBatch.length));
+      }
     }, onProgress);
+    if (inventoryBatch.length && typeof options.onInventoryChunk === "function") await options.onInventoryChunk(inventoryBatch.splice(0, inventoryBatch.length));
     if (!header || !state) throw new Error("Файл базы повреждён: отсутствует заголовок или состояние");
     if (activeSnapshot) throw new Error("Файл базы повреждён: снимок не завершён");
     if (currentSnapshot) await finishSnapshot(currentSnapshot);

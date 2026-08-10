@@ -328,3 +328,5 @@ table tbody tr.selected-row td { background:rgba(15,118,110,.12); box-shadow:ins
 .ddio-history-warning { color:var(--ddio-text); background:var(--ddio-bg); border-color:var(--ddio-border); }
 .ddio-new-ip { color:var(--info-text); }
 .ddio-highlight-cell { background:var(--info-bg); }
+body.dark .import-error { color:#fecaca; background:rgba(127,29,29,.28); border-color:#ef4444; }
+body.dark .import-error span { color:#fca5a5; }

@@ -563,6 +563,83 @@
     });
   }
 
+  async function readDeviceHistoryPage(afterMac = "", limit = snapshotChunkRows) {
+    const database = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const current = database.transaction(deviceHistoryStore, "readonly");
+      const store = current.objectStore(deviceHistoryStore);
+      const range = afterMac ? IDBKeyRange.lowerBound(afterMac, true) : undefined;
+      const request = store.openCursor(range);
+      const rows = [];
+      let lastMac = "";
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor || rows.length >= Math.max(1, Number(limit) || snapshotChunkRows)) return;
+        lastMac = String(cursor.key || "");
+        if (lastMac !== "__snapshot_backfill__") rows.push(cursor.value);
+        cursor.continue();
+      };
+      request.onerror = () => reject(request.error || new Error("Unable to read device inventory"));
+      current.oncomplete = () => { database.close(); resolve({ rows, lastMac }); };
+      current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Device inventory read failed")); };
+    });
+  }
+
+  async function streamDeviceHistory(onChunk, chunkSize = snapshotChunkRows) {
+    let afterMac = "";
+    let total = 0;
+    while (true) {
+      const page = await readDeviceHistoryPage(afterMac, chunkSize);
+      if (!page.rows.length) break;
+      await onChunk(page.rows, total);
+      total += page.rows.length;
+      afterMac = page.lastMac;
+      if (!afterMac || page.rows.length < Math.max(1, Number(chunkSize) || snapshotChunkRows)) break;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return total;
+  }
+
+  async function countDeviceHistory() {
+    const database = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const current = database.transaction(deviceHistoryStore, "readonly");
+      const store = current.objectStore(deviceHistoryStore);
+      const countRequest = store.count();
+      const sentinelRequest = store.get("__snapshot_backfill__");
+      let count = 0;
+      let sentinel = false;
+      countRequest.onsuccess = () => { count = Number(countRequest.result || 0); };
+      sentinelRequest.onsuccess = () => { sentinel = Boolean(sentinelRequest.result); };
+      current.oncomplete = () => { database.close(); resolve(Math.max(0, count - (sentinel ? 1 : 0))); };
+      current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Device inventory count failed")); };
+    });
+  }
+
+  async function switchChangesFromHistory(rows) {
+    const devices = Array.isArray(rows) ? rows : [];
+    const changes = new Map();
+    if (!devices.length) return changes;
+    const database = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const current = database.transaction(deviceHistoryStore, "readonly");
+      const store = current.objectStore(deviceHistoryStore);
+      for (const device of devices) {
+        const mac = String(device?.mac || device?.macFormatted || "").toUpperCase().replace(/[^0-9A-F]/g, "");
+        const after = String(device?.switchIp || device?.switch_ip || "").trim();
+        if (mac.length !== 12 || !after) continue;
+        const request = store.get(mac);
+        request.onsuccess = () => {
+          const before = String(request.result?.switchIp || "").trim();
+          if (before && before !== after) changes.set(mac, { before, after, currentIp: String(device?.ip || "").trim() });
+        };
+        request.onerror = () => reject(request.error || new Error("Unable to compare switch history"));
+      }
+      current.oncomplete = () => { database.close(); resolve(changes); };
+      current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Switch history comparison failed")); };
+    });
+  }
+
   async function enrichDevicesFromHistory(rows) {
     const devices = Array.isArray(rows) ? rows : [];
     if (!devices.length) return 0;
@@ -1191,6 +1268,9 @@
     enrichEnrichmentRowsFromHistory,
     enrichDevicesFromHistory,
     mergeDeviceHistoryRows,
+    streamDeviceHistory,
+    countDeviceHistory,
+    switchChangesFromHistory,
     backfillDeviceHistory,
     saveEnrichmentSnapshot,
     snapshotChunkRows,

@@ -64,6 +64,7 @@ from backend.services.detection.detection_index_service import (
     similarity_detection,
 )
 from backend.services.detection.reference_data_service import import_oui_reference, reference_status
+from backend.services.detection.ieee_registry_service import lookup_ieee_vendor, ieee_registry_status
 from backend.services.system.legacy_migration_service import migrate_legacy_sqlite
 from backend.services.system.parity_service import build_parity_report, build_parity_status
 from backend.services.system.diagnostics_service import build_system_diagnostics
@@ -558,6 +559,23 @@ def init_database() -> None:
             CREATE INDEX IF NOT EXISTS idx_mac_history_oui ON mac_history(oui);
             CREATE INDEX IF NOT EXISTS idx_mac_history_switch_ip ON mac_history(switch_ip);
             CREATE INDEX IF NOT EXISTS idx_mac_history_recorded_at ON mac_history(recorded_at);
+            CREATE TABLE IF NOT EXISTS device_inventory (
+                mac TEXT PRIMARY KEY,
+                mac_formatted TEXT NOT NULL,
+                vendor TEXT,
+                model TEXT,
+                ip TEXT,
+                address TEXT,
+                room TEXT,
+                smartroom_id TEXT,
+                switch_ip TEXT,
+                switch_port TEXT,
+                source TEXT,
+                first_seen TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                seen_count INTEGER NOT NULL DEFAULT 1
+            );
+            CREATE INDEX IF NOT EXISTS idx_device_inventory_updated ON device_inventory(updated_at);
             CREATE TABLE IF NOT EXISTS mac_movements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 mac TEXT NOT NULL,
@@ -677,16 +695,25 @@ def init_database() -> None:
             conn.execute("ALTER TABLE mac_movements ADD COLUMN ddio_candidate_ip TEXT")
         if "ddio_match" not in movement_columns:
             conn.execute("ALTER TABLE mac_movements ADD COLUMN ddio_match TEXT")
-        for oui, vendor in BUILTIN_VENDORS.items():
+        inventory_count = int(conn.execute("SELECT COUNT(*) FROM device_inventory").fetchone()[0])
+        if not inventory_count:
             conn.execute(
-                "INSERT OR IGNORE INTO vendor_mappings (oui, vendor, source, updated_at) VALUES (?, ?, 'builtin', ?)",
-                (oui, vendor, utc_now()),
+                """
+                INSERT OR IGNORE INTO device_inventory
+                    (mac, mac_formatted, vendor, model, ip, address, room, smartroom_id, switch_ip, switch_port, source, first_seen, updated_at, seen_count)
+                SELECT history.mac, history.mac_formatted, history.vendor, history.model, history.ip, history.address,
+                       history.room, history.smartroom_id, history.switch_ip, history.switch_port, history.source,
+                       first_seen.first_seen, history.recorded_at, first_seen.seen_count
+                FROM mac_history AS history
+                JOIN (SELECT mac, MAX(id) AS latest_id, MIN(recorded_at) AS first_seen, COUNT(*) AS seen_count FROM mac_history GROUP BY mac) AS first_seen
+                  ON first_seen.latest_id = history.id
+                """
             )
-        for prefix, model in BUILTIN_MODELS.items():
-            conn.execute(
-                "INSERT OR IGNORE INTO model_mappings (prefix, model, source, updated_at) VALUES (?, ?, 'builtin', ?)",
-                (prefix, model, utc_now()),
-            )
+        # Versions before v1.0.41 seeded illustrative vendor/model examples as
+        # if they were authoritative. Remove only those synthetic rows; user,
+        # learned, and imported reference rules are never touched.
+        conn.execute("DELETE FROM vendor_mappings WHERE source = 'builtin'")
+        conn.execute("DELETE FROM model_mappings WHERE source = 'builtin'")
         for reference_path in (STORAGE.reference / "oui.csv", STORAGE.reference / "oui.txt"):
             if not reference_path.is_file():
                 continue
@@ -1671,14 +1698,14 @@ def move_column_preference(view_name: str, column: str, direction: str) -> dict[
 def mappings(kind: str) -> dict[str, str]:
     table, key, value = ("vendor_mappings", "oui", "vendor") if kind == "vendors" else ("model_mappings", "prefix", "model")
     with db_connection() as conn:
-        rows = conn.execute(f"SELECT {key}, {value} FROM {table} ORDER BY {key}").fetchall()
+        rows = conn.execute(f"SELECT {key}, {value} FROM {table} WHERE source != 'builtin' ORDER BY {key}").fetchall()
     return {row[key]: row[value] for row in rows}
 
 
 def mapping_rules(kind: str) -> list[dict[str, Any]]:
     table, key, value = ("vendor_mappings", "oui", "vendor") if kind == "vendors" else ("model_mappings", "prefix", "model")
     with db_connection() as conn:
-        rows = conn.execute(f"SELECT {key}, {value}, source, updated_at FROM {table} ORDER BY LENGTH({key}) DESC, {key}").fetchall()
+        rows = conn.execute(f"SELECT {key}, {value}, source, updated_at FROM {table} WHERE source != 'builtin' ORDER BY LENGTH({key}) DESC, {key}").fetchall()
     return [dict(row) for row in rows]
 
 
@@ -1712,11 +1739,12 @@ def mappings_panel_payload() -> dict[str, Any]:
             else ("model_mappings", "prefix", "model")
         )
         with db_connection() as conn:
-            total = int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+            total = int(conn.execute(f"SELECT COUNT(*) FROM {table} WHERE source != 'builtin'").fetchone()[0])
             rows = conn.execute(
                 f"""
                 SELECT {key}, {value}, source, updated_at
                 FROM {table}
+                WHERE source != 'builtin'
                 ORDER BY CASE WHEN source IN ('reference', 'builtin') THEN 1 ELSE 0 END,
                          updated_at DESC, LENGTH({key}) DESC, {key}
                 LIMIT ?
@@ -1806,20 +1834,20 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
                 "SELECT key, value FROM app_settings WHERE key IN ('vendor_detector', 'history_enrichment')"
             ).fetchall()
         }
-        candidate_prefixes = sorted({mac[:length] for mac in macs for length in (6, 8, 10)})
+        candidate_prefixes = sorted({mac[:length] for mac in macs for length in (6, 7, 8, 9, 10)})
         for chunk in _chunks(candidate_prefixes):
             placeholders = ",".join("?" for _ in chunk)
             vendor_rules.extend(dict(row) for row in conn.execute(
                 f"""
                 SELECT oui, vendor, source, updated_at
                 FROM vendor_mappings
-                WHERE oui IN ({placeholders})
+                WHERE oui IN ({placeholders}) AND source != 'builtin'
                 ORDER BY LENGTH(oui) DESC, oui
                 """,
                 chunk,
             ).fetchall())
         model_rules = [dict(row) for row in conn.execute(
-            "SELECT prefix, model, source, updated_at FROM model_mappings ORDER BY LENGTH(prefix) DESC, prefix"
+            "SELECT prefix, model, source, updated_at FROM model_mappings WHERE source != 'builtin' ORDER BY LENGTH(prefix) DESC, prefix"
         ).fetchall()]
         for chunk in _chunks(macs):
             placeholders = ",".join("?" for _ in chunk)
@@ -1932,6 +1960,12 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
                 chunk,
             ).fetchall():
                 smartroom_mappings.setdefault(as_text(row["smartroom_id"]), as_text(row["room"]))
+    existing_vendor_prefixes = {as_text(item.get("oui")) for item in vendor_rules}
+    for mac in macs:
+        ieee = lookup_ieee_vendor(ROOT, mac)
+        if ieee and ieee["prefix"] not in existing_vendor_prefixes:
+            vendor_rules.append({"oui": ieee["prefix"], "vendor": ieee["vendor"], "source": "ieee", "updated_at": ""})
+            existing_vendor_prefixes.add(ieee["prefix"])
     latest_history: dict[str, dict[str, Any]] = {}
     for row in history_rows:
         mac = normalize_mac(row.get("mac"))
@@ -2125,6 +2159,30 @@ def save_history(
         conn.executemany(
             "INSERT INTO mac_history (mac, mac_formatted, oui, vendor, model, ip, address, room, smartroom_id, switch_ip, switch_port, source, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             history_rows,
+        )
+        conn.executemany(
+            """
+            INSERT INTO device_inventory
+                (mac, mac_formatted, vendor, model, ip, address, room, smartroom_id, switch_ip, switch_port, source, first_seen, updated_at, seen_count)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+            ON CONFLICT(mac) DO UPDATE SET
+                mac_formatted=excluded.mac_formatted,
+                vendor=COALESCE(NULLIF(excluded.vendor, ''), device_inventory.vendor),
+                model=COALESCE(NULLIF(excluded.model, ''), device_inventory.model),
+                ip=COALESCE(NULLIF(excluded.ip, ''), device_inventory.ip),
+                address=COALESCE(NULLIF(excluded.address, ''), device_inventory.address),
+                room=COALESCE(NULLIF(excluded.room, ''), device_inventory.room),
+                smartroom_id=COALESCE(NULLIF(excluded.smartroom_id, ''), device_inventory.smartroom_id),
+                switch_ip=COALESCE(NULLIF(excluded.switch_ip, ''), device_inventory.switch_ip),
+                switch_port=COALESCE(NULLIF(excluded.switch_port, ''), device_inventory.switch_port),
+                source=excluded.source, updated_at=excluded.updated_at, seen_count=device_inventory.seen_count+1
+            """,
+            [(
+                mac, device.get("macFormatted") or format_mac(mac), as_text(device.get("vendor")), as_text(device.get("model")),
+                as_text(device.get("ip")), as_text(device.get("address")), as_text(device.get("room")),
+                as_text(device.get("smartroomId") or device.get("smartroom_id")), as_text(device.get("switchIp") or device.get("switch_ip")),
+                as_text(device.get("switchPort") or device.get("switch_port")), source or as_text(device.get("source")), timestamp, timestamp,
+            ) for device in valid_devices for mac in [normalize_mac(device.get("mac") or device.get("macFormatted"))]],
         )
         if movement_rows:
             conn.executemany(
@@ -2429,7 +2487,7 @@ def learn_vendor_model_mappings(min_count: int = 2, source: str = "") -> dict[st
             HAVING total >= ?
             ORDER BY total DESC
             """,
-            (*source_params, threshold),
+            (*source_params, 1),
         ).fetchall()
         for row in model_rows:
             exists = conn.execute("SELECT 1 FROM model_mappings WHERE prefix = ?", (row["prefix"],)).fetchone()
@@ -3599,6 +3657,7 @@ def delete_snapshots(source: str = "", before: str = "", ids: Optional[list[Any]
 
 def database_summary() -> dict[str, Any]:
     table_queries = {
+        "devices": "SELECT COUNT(*) FROM device_inventory",
         "history": "SELECT COUNT(*) FROM mac_history",
         "movements": "SELECT COUNT(*) FROM mac_movements",
         "vendorModelHistory": "SELECT COUNT(*) FROM vendor_model_history",
@@ -3710,6 +3769,94 @@ def save_statistics_snapshot(
         "snapshotOrder": snapshot_order,
         "kind": "analysis" if normalized_name.casefold().startswith("анализ:") else "snapshot",
     }
+
+
+def merge_switch_ip_changes_with_history(
+    devices: list[dict[str, Any]],
+    context: dict[str, Any],
+    current_changes: Optional[list[dict[str, Any]]] = None,
+) -> list[dict[str, str]]:
+    """Add switch moves against the stored exact-MAC baseline before saving it."""
+    merged: dict[str, dict[str, str]] = {}
+    for item in current_changes or []:
+        if not isinstance(item, dict):
+            continue
+        mac = normalize_mac(item.get("mac"))
+        before, after = as_text(item.get("before")), as_text(item.get("after"))
+        if mac and before and after and before != after:
+            merged[mac] = {"mac": mac, "before": before, "after": after}
+    latest = context.get("latestHistory") or {}
+    for device in devices:
+        mac = normalize_mac(device.get("mac") or device.get("macFormatted"))
+        before = as_text((latest.get(mac) or {}).get("switch_ip"))
+        after = as_text(device.get("switchIp") or device.get("switch_ip"))
+        if mac and before and after and before != after:
+            merged[mac] = {"mac": mac, "before": before, "after": after}
+    return list(merged.values())
+
+
+def all_devices_page(offset: Any = 0, limit: Any = 1000) -> dict[str, Any]:
+    safe_offset = max(0, int(offset or 0))
+    safe_limit = max(1, min(5000, int(limit or 1000)))
+    with db_connection() as conn:
+        total = int(conn.execute("SELECT COUNT(*) FROM device_inventory").fetchone()[0])
+        rows = conn.execute(
+            """
+            SELECT mac, mac_formatted AS macFormatted, vendor, model, ip, address, room,
+                   smartroom_id AS smartroomId, switch_ip AS switchIp, switch_port AS switchPort,
+                   source, first_seen AS firstSeen, updated_at AS updatedAt, seen_count AS seenCount
+            FROM device_inventory ORDER BY mac LIMIT ? OFFSET ?
+            """,
+            (safe_limit, safe_offset),
+        ).fetchall()
+    next_offset = safe_offset + len(rows)
+    return {
+        "items": [dict(row) for row in rows],
+        "total": total,
+        "offset": safe_offset,
+        "limit": safe_limit,
+        "nextOffset": next_offset if next_offset < total else None,
+    }
+
+
+def synchronize_device_inventory() -> int:
+    """Refresh the cumulative inventory after an additive SQLite import."""
+    updated = 0
+    with db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT history.mac, history.mac_formatted, history.vendor, history.model, history.ip, history.address,
+                   history.room, history.smartroom_id, history.switch_ip, history.switch_port, history.source,
+                   grouped.first_seen, history.recorded_at, grouped.seen_count
+            FROM mac_history AS history
+            JOIN (SELECT mac, MAX(id) AS latest_id, MIN(recorded_at) AS first_seen, COUNT(*) AS seen_count FROM mac_history GROUP BY mac) AS grouped
+              ON grouped.latest_id = history.id
+            ORDER BY history.mac
+            """
+        )
+        sql = """
+            INSERT INTO device_inventory
+                (mac, mac_formatted, vendor, model, ip, address, room, smartroom_id, switch_ip, switch_port, source, first_seen, updated_at, seen_count)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(mac) DO UPDATE SET
+                mac_formatted=excluded.mac_formatted,
+                vendor=COALESCE(NULLIF(excluded.vendor, ''), device_inventory.vendor),
+                model=COALESCE(NULLIF(excluded.model, ''), device_inventory.model),
+                ip=COALESCE(NULLIF(excluded.ip, ''), device_inventory.ip),
+                address=COALESCE(NULLIF(excluded.address, ''), device_inventory.address),
+                room=COALESCE(NULLIF(excluded.room, ''), device_inventory.room),
+                smartroom_id=COALESCE(NULLIF(excluded.smartroom_id, ''), device_inventory.smartroom_id),
+                switch_ip=COALESCE(NULLIF(excluded.switch_ip, ''), device_inventory.switch_ip),
+                switch_port=COALESCE(NULLIF(excluded.switch_port, ''), device_inventory.switch_port),
+                source=excluded.source, first_seen=excluded.first_seen, updated_at=excluded.updated_at, seen_count=excluded.seen_count
+        """
+        while True:
+            rows = cursor.fetchmany(1000)
+            if not rows:
+                break
+            conn.executemany(sql, [tuple(row) for row in rows])
+            updated += len(rows)
+    return updated
 
 
 def save_performance_metric(operation: str, duration_ms: Any, details: str = "", created_at: str = "") -> dict[str, Any]:
@@ -5554,7 +5701,7 @@ class AppHandler(BaseHTTPRequestHandler):
             self.json_response({"settings": external_api_settings(), "providers": external_api_provider_options()})
         elif parsed.path == "/api/reference/oui/status":
             with db_connection() as conn:
-                self.json_response(reference_status(conn, STORAGE.reference))
+                self.json_response({**reference_status(conn, STORAGE.reference), "ieee": ieee_registry_status(ROOT)})
         elif parsed.path == "/api/oui/settings":
             self.json_response({"settings": oui_settings()})
         elif parsed.path == "/api/vendor-detector/settings":
@@ -5563,6 +5710,8 @@ class AppHandler(BaseHTTPRequestHandler):
             self.json_response({"settings": history_enrichment_settings()})
         elif parsed.path == "/api/database/summary":
             self.json_response(database_summary())
+        elif parsed.path == "/api/database/devices/all":
+            self.json_response(all_devices_page(query.get("offset", ["0"])[0], query.get("limit", ["1000"])[0]))
         elif parsed.path == "/api/legacy/import/status":
             self.json_response(legacy_migration_status(dry_run=True))
         elif parsed.path == "/api/parity/status":
@@ -5784,6 +5933,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 temporary.replace(destination)
                 init_database()
                 result = inspect_and_merge_database(destination, DATABASE_PATH)
+                result["inventoryDevices"] = synchronize_device_inventory()
                 result.update({"filename": destination.name, "storedIn": "data/imports"})
                 self.json_response(result, HTTPStatus.CREATED)
             except (OSError, ValueError, sqlite3.DatabaseError) as error:
@@ -5923,14 +6073,15 @@ class AppHandler(BaseHTTPRequestHandler):
                 for raw in merged["devices"]:
                     item = enrich_device(raw, context)
                     (valid if item["valid"] else invalid).append(item)
+                switch_ip_changes = merge_switch_ip_changes_with_history(valid, context, merged.get("switchIpChanges") or [])
                 ddio_overlay: dict[str, dict[str, str]] = {}
                 if ddio_file:
                     try:
-                        ddio_changed_macs = {item.get("mac") for item in merged.get("switchIpChanges") or [] if isinstance(item, dict)}
+                        ddio_changed_macs = {item.get("mac") for item in switch_ip_changes if isinstance(item, dict)}
                         ddio_overlay = build_ddio_overlay(
                             workspace_row_iterator(ddio_file, WORKSPACE_FILE_CACHE),
                             ddio_file.get("mapping") or {},
-                            merged.get("switchIpChanges") or [],
+                            switch_ip_changes,
                             {item["mac"]: item.get("ip", "") for item in valid if item.get("mac") in ddio_changed_macs},
                         )
                     except ValueError as error:
@@ -5941,7 +6092,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         for item in valid:
                             item[field] = "Не определено" if field == "vendor" else ""
                 if payload.get("saveHistory", True):
-                    save_history(valid, source, source_created_at, ddio_overlay, merged.get("switchIpChanges") or [])
+                    save_history(valid, source, source_created_at, ddio_overlay, switch_ip_changes)
                 if payload.get("notify", True):
                     try:
                         notify_analysis_completed(valid, invalid, source)

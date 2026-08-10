@@ -36,11 +36,12 @@ def test_clean_release_database_has_complete_schema_and_no_user_rows():
         assert completed.returncode == 0, completed.stderr
         report = json.loads(completed.stdout.strip())
         assert report["integrity"] == "ok"
-        assert report["tables"] >= report["requiredTables"] == 18
+        assert report["tables"] >= report["requiredTables"] == 20
         assert report["userDataRows"] == 0
         assert report["vendorMappings"] > 1_000
-        assert report["modelMappings"] > 0
+        assert report["modelMappings"] == 0
         assert report["ouiReferenceIncluded"] is True
+        assert report["ieeeRegistryIncluded"] is True
         assert report["workspaceCacheIncluded"] is False
 
         database = data_root / "databases" / "mac_analyzer_web.db"

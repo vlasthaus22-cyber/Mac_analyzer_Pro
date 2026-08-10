@@ -57,8 +57,9 @@ def test_html_portable_builder_outputs_one_self_contained_html_file():
         assert "window.MacAnalyzerFallbackReady = true;" not in html
         assert "xlsxWorksheetRows" in html
         assert "assertEnrichmentCapacity" in html
-        assert 'const autonomousHtmlMode = browserOnlyMode || location.protocol === "file:";' in html
-        assert "const backendCandidates = [];" in html
+        assert 'const browserOnlyMode = location.protocol === "file:";' in html
+        assert 'const autonomousHtmlMode = browserOnlyMode;' in html
+        assert 'const backendCandidates = browserOnlyMode ? [] : [location.origin + "/api"];' in html
 
 
 if __name__ == "__main__":

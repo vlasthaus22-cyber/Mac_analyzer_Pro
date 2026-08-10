@@ -36,6 +36,10 @@ DDIO.observeSwitch(tracker, 1, "00:11:22:33:44:66", "10.0.0.8", true);
 const changes = DDIO.switchChanges(tracker);
 assert.strictEqual(changes.size, 1, "only a real switch-IP change is eligible");
 
+const historicalTracker = DDIO.createSwitchTracker();
+assert.strictEqual(DDIO.seedSwitchChange(historicalTracker, "00:11:22:33:44:55", "10.0.0.1", "10.0.0.9", "192.168.1.10"), true);
+assert.deepStrictEqual(DDIO.switchChanges(historicalTracker).get("001122334455"), { before: "10.0.0.1", after: "10.0.0.9" });
+
 const candidates = new Map();
 DDIO.collectCandidate(["192.168.1.20", "00-11-22-33-44-55", ""], mapping, changes, candidates);
 DDIO.collectCandidate(["192.168.1.30", "", "00:11:22:33:44:55"], mapping, changes, candidates);

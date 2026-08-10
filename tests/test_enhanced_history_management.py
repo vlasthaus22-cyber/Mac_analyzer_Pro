@@ -21,6 +21,9 @@ def cleanup():
         conn.execute("DELETE FROM mac_movements WHERE mac = ?", (MAC,))
         conn.execute("DELETE FROM mac_history WHERE mac = ?", (MAC,))
         conn.execute("DELETE FROM vendor_model_history WHERE mac = ?", (MAC,))
+        conn.execute("DELETE FROM vendor_mappings WHERE source = 'learned' AND oui IN (?, ?, ?)", (MAC[:6], MAC[:8], MAC[:10]))
+        conn.execute("DELETE FROM model_mappings WHERE source = 'learned' AND prefix = ?", (MAC[:10],))
+        conn.execute("DELETE FROM device_inventory WHERE mac = ?", (MAC,))
         conn.execute("DELETE FROM app_logs WHERE action = ?", ("Delete filtered movements",))
 
 

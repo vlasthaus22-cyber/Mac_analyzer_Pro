@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
-  <meta name="application-build" content="2026.08.05.1">
-  <link rel="stylesheet" href="styles.css?v=20260729.2">
+  <meta name="application-build" content="2026.08.10.1">
+  <link rel="stylesheet" href="styles.css?v=20260810.1">
 </head>
 <body>
   <div class="app-shell">
@@ -56,6 +56,7 @@
               <button type="button" data-export-action="exportPdfButton">PDF / печать</button>
               <strong>Полный архив данных</strong>
               <button type="button" data-export-action="exportFullXlsxButton">Всё в одном XLSX</button>
+              <button type="button" id="exportAllDevicesButton">Все устройства XLSX</button>
               <button type="button" id="exportFullJsonButton">Всё в одном JSON</button>
               <strong>Аналитика и история</strong>
               <button type="button" data-export-action="exportDashboardButton">Dashboard PNG</button>
@@ -807,22 +808,23 @@
     <div class="shortcut-grid"><kbd>Ctrl+O</kbd><span>выбрать файлы</span><kbd>Ctrl+S</kbd><span>экспорт XLSX</span><kbd>Ctrl+E</kbd><span>экспорт CSV</span><kbd>Ctrl+A</kbd><span>аналитика</span><kbd>Ctrl+H</kbd><span>история</span><kbd>Ctrl+F</kbd><span>поиск в результатах</span><kbd>F5</kbd><span>запустить анализ</span><kbd>F6</kbd><span>сравнение двух снимков</span><kbd>F7</kbd><span>графики</span><kbd>F8</kbd><span>топология</span><kbd>F9</kbd><span>массовое сравнение</span><kbd>F1</kbd><span>справка</span><kbd>Esc</kbd><span>отмена или закрытие окна</span></div>
     <div class="dialog-actions"><span></span><button class="button primary" id="openGuideFromHelpButton" type="button">Открыть полное руководство</button></div>
   </dialog>
+  <script src="frontend/ieee-vendor-registry.js?v=20260810.1"></script>
   <script src="frontend/memory-guard.js?v=20260722.9"></script>
   <script src="frontend/file-readers.js?v=20260722.8"></script>
   <script src="frontend/state-persistence.js?v=20260722.7"></script>
-  <script src="frontend/browser-snapshot-store.js?v=20260803.1"></script>
+  <script src="frontend/browser-snapshot-store.js?v=20260810.1"></script>
   <script src="frontend/mac-chronology.js?v=20260729.1"></script>
   <script src="frontend/local-analytics.js?v=20260729.3"></script>
   <script src="frontend/xlsx-exporter.js?v=20260727.5"></script>
   <script src="frontend/full-xlsx-report.js?v=20260729.1"></script>
   <script src="frontend/full-json-report.js?v=20260729.1"></script>
-  <script src="frontend/portable-database.js?v=20260728.1"></script>
+  <script src="frontend/portable-database.js?v=20260810.1"></script>
   <script src="frontend/local-folder-store.js?v=20260728.1"></script>
   <script src="frontend/workspace-file-lifecycle.js?v=20260722.7"></script>
-  <script src="frontend/ddio-overlay.js?v=20260803.2"></script>
+  <script src="frontend/ddio-overlay.js?v=20260810.1"></script>
   <script src="frontend/dashboard-change-tabs.js?v=20260803.1"></script>
   <script src="frontend/guide.js?v=20260722.7"></script>
-  <script src="app.js?v=20260729.3"></script>
+  <script src="app.js?v=20260810.1"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;

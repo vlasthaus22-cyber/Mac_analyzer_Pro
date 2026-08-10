@@ -19,6 +19,7 @@ REQUIRED_TABLES = {
     "app_settings",
     "column_preferences",
     "data_quality_reports",
+    "device_inventory",
     "engineering_sessions",
     "ip_address_mappings",
     "mac_history",
@@ -28,6 +29,7 @@ REQUIRED_TABLES = {
     "performance_metrics",
     "scheduled_tasks",
     "snapshots",
+    "smartroom_room_mappings",
     "task_file_queue",
     "vendor_mappings",
     "vendor_model_history",
@@ -38,6 +40,7 @@ USER_DATA_TABLES = {
     "app_autosaves",
     "column_preferences",
     "data_quality_reports",
+    "device_inventory",
     "engineering_sessions",
     "ip_address_mappings",
     "mac_history",
@@ -46,6 +49,7 @@ USER_DATA_TABLES = {
     "performance_metrics",
     "scheduled_tasks",
     "snapshots",
+    "smartroom_room_mappings",
     "task_file_queue",
     "vendor_model_history",
 }
@@ -60,10 +64,13 @@ def create_clean_database(application_root: Path, data_root: Path) -> dict[str, 
 
     reference_directory = data_root / "reference"
     reference_directory.mkdir(parents=True, exist_ok=True)
-    packaged_reference = reference_directory / "oui.csv"
-    source_reference = application_root / "data" / "reference" / "oui.csv"
-    if not packaged_reference.is_file() and source_reference.is_file():
-        shutil.copy2(source_reference, packaged_reference)
+    reference_names = ("oui.csv", "ieee_registry.json.gz", "IEEE_REGISTRY_INFO.json")
+    packaged_references = {name: reference_directory / name for name in reference_names}
+    for name, packaged_reference in packaged_references.items():
+        source_reference = application_root / "data" / "reference" / name
+        if not packaged_reference.is_file() and source_reference.is_file():
+            shutil.copy2(source_reference, packaged_reference)
+    packaged_reference = packaged_references["oui.csv"]
 
     database = data_root / "databases" / "mac_analyzer_web.db"
     database.parent.mkdir(parents=True, exist_ok=True)
@@ -73,7 +80,7 @@ def create_clean_database(application_root: Path, data_root: Path) -> dict[str, 
         path
         for path in data_root.rglob("*")
         if path.is_file()
-        and path.resolve() != packaged_reference.resolve()
+        and path.resolve() not in {item.resolve() for item in packaged_references.values()}
         and path.name != ".gitkeep"
     ]
     if unexpected_files:
@@ -144,6 +151,7 @@ def create_clean_database(application_root: Path, data_root: Path) -> dict[str, 
         "vendorMappings": vendor_mappings,
         "modelMappings": model_mappings,
         "ouiReferenceIncluded": packaged_reference.is_file(),
+        "ieeeRegistryIncluded": packaged_references["ieee_registry.json.gz"].is_file(),
         "workspaceCacheIncluded": workspace_cache.exists(),
     }
 

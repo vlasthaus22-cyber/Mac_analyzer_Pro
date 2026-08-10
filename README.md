@@ -34,6 +34,25 @@ analytics and movement-history searches update while typing and include MAC,
 model, address, Smartroom and DDIO candidate fields. Theme-aware foregrounds
 keep selected controls and severity badges readable in both themes.
 
+Version v1.0.41 bundles the complete public IEEE Registration Authority
+catalogue for MA-L, MA-M, MA-S, IAB, and CID: 58,361 HEX assignments at build
+time. Vendor lookup uses the valid 24-, 28-, and 36-bit MAC assignment sizes;
+CID remains visible in the catalogue but is not misused as a MAC manufacturer.
+The update utility `tools/update_ieee_registry.py` refreshes both the compressed
+backend catalogue and the offline browser module from the official IEEE CSVs.
+
+Every observed device is now retained in a cumulative inventory in SQLite and
+IndexedDB. The **All devices XLSX** export streams the entire inventory instead
+of exporting only the newest upload. The portable MADB carries the inventory,
+learned vendor/model mappings, switch-IP/address mappings, Smartroom mappings,
+snapshots, and movements to another computer. When the project is launched by
+`START_MAC_ANALYZER.cmd`, the browser automatically connects to the database
+from the program folder; a directly opened autonomous HTML remains backend-free.
+DDIO also compares a new upload with the stored device history, so a switch-IP
+change is detected even when the previous export is not loaded in the current
+workspace. IndexedDB version alignment and short-lived analytics/history render
+caches improve tab opening and repeated navigation.
+
 In backend mode, the Data screen can upload a `.db`, `.sqlite`, or `.sqlite3`
 file. The server verifies the SQLite header and integrity, stores the uploaded
 copy under `data/imports`, and additively merges supported MAC Analyzer tables;

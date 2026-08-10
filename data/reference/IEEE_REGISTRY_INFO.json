@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-10T06:02:45Z",
+  "sources": [
+    {
+      "registry": "MA-L",
+      "url": "https://standards-oui.ieee.org/oui/oui.csv",
+      "count": 39909,
+      "bytes": 3811832,
+      "sha256": "6b87680b25c677a3ffc2de1e4f1836c37d1fa6b88f9297feb18e7f7ee789fe93"
+    },
+    {
+      "registry": "MA-M",
+      "url": "https://standards-oui.ieee.org/oui28/mam.csv",
+      "count": 6533,
+      "bytes": 744759,
+      "sha256": "4621d6913e9fa89ba8e29be77cded8370c963903d4c39102cfc6555a50e70e4d"
+    },
+    {
+      "registry": "MA-S",
+      "url": "https://standards-oui.ieee.org/oui36/oui36.csv",
+      "count": 7126,
+      "bytes": 660990,
+      "sha256": "bb1b9c273ca365ce96d4939072e7afe0042024d4c726baa429716f29b42aa127"
+    },
+    {
+      "registry": "IAB",
+      "url": "https://standards-oui.ieee.org/iab/iab.csv",
+      "count": 4575,
+      "bytes": 381117,
+      "sha256": "6e71aa3d47f00f19d09cb3b31ce1038de1834703420f0ce4ce111da586f1a533"
+    },
+    {
+      "registry": "CID",
+      "url": "https://standards-oui.ieee.org/cid/cid.csv",
+      "count": 218,
+      "bytes": 20027,
+      "sha256": "f62fdacf0be86098ac1acb3d0b775ebd7edacf3f4d488dcf418916a93c06ad0f"
+    }
+  ],
+  "counts": {
+    "MA-L": 39909,
+    "MA-M": 6533,
+    "MA-S": 7126,
+    "IAB": 4575,
+    "CID": 218
+  },
+  "total": 58361
+}

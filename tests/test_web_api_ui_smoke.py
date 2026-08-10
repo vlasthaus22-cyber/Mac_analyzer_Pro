@@ -1418,7 +1418,7 @@ def test_rest_api_and_ui_controls_smoke():
         )
         assert status == 200
         assert learned_rules["learned"]["vendors"] == 3
-        assert learned_rules["learned"]["models"] == 1
+        assert learned_rules["learned"]["models"] == 0
 
         status, learned_vendors = request_json(app.base_url, "GET", "/api/mappings/vendors")
         assert status == 200

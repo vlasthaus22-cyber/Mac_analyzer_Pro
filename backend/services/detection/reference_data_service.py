@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 
-SUPPORTED_PREFIX_LENGTHS = {6, 8, 10}
+SUPPORTED_PREFIX_LENGTHS = {6, 7, 8, 9, 10}
 
 
 def normalize_prefix(value: Any) -> str:

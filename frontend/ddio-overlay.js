@@ -117,6 +117,15 @@
     return new Map();
   }
 
+  function seedSwitchChange(tracker, macValue, beforeValue, afterValue, currentIpValue = "") {
+    const mac = normalizeMac(macValue);
+    const before = text(beforeValue);
+    const after = text(afterValue);
+    if (!mac || !before || !after || before === after || !(tracker instanceof Map)) return false;
+    tracker.set(mac, { before, after, currentIp: text(currentIpValue) });
+    return true;
+  }
+
   function observeSwitch(tracker, fileIndex, macValue, switchIpValue, existedBeforeMerge = true) {
     const mac = normalizeMac(macValue);
     const switchIp = text(switchIpValue);
@@ -200,6 +209,7 @@
     normalizeMac,
     observeCurrentIp,
     observeSwitch,
+    seedSwitchChange,
     switchChanges,
     validateMapping,
   });

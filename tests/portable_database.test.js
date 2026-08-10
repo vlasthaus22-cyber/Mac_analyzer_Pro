@@ -101,6 +101,9 @@ class MemoryFileHandle {
       }
       await onChunk("invalid", [{ row: 7, raw: "bad-mac" }]);
     },
+    inventoryStreamer: async (onChunk) => {
+      await onChunk(devices.slice(0, 750));
+    },
   };
   const streamedResult = await database.write(streamedHandle, streamedPayload);
   assert.equal(streamedResult.counts.devices, 60_000);
@@ -113,6 +116,7 @@ class MemoryFileHandle {
   const restoredChunks = [];
   const restoredStarts = [];
   const restoredEnds = [];
+  const inventoryRows = [];
   const boundedRestore = await database.readFile(streamedHandle.blob, () => {}, {
     retainRows: false,
     previewLimit: 250,
@@ -123,6 +127,7 @@ class MemoryFileHandle {
       assert.ok(rows.length <= 500);
     },
     onSnapshotEnd: async (metadata, counts) => restoredEnds.push({ id: metadata.id, counts }),
+    onInventoryChunk: async (rows) => inventoryRows.push(...rows),
   });
   assert.equal(boundedRestore.deviceCount, 60_000);
   assert.equal(boundedRestore.devices.length, 250, "cross-browser restore must retain only one preview page");
@@ -131,6 +136,7 @@ class MemoryFileHandle {
   assert.equal(restoredEnds[0].counts.deviceCount, 60_000);
   assert.equal(restoredEnds[0].counts.deviceChunks, 120);
   assert.equal(restoredChunks.filter((item) => item.kind === "device").length, 120);
+  assert.equal(inventoryRows.length, 750, "portable database must carry the cumulative device inventory");
 
   console.log("portable database streaming stress test passed");
 })().catch((error) => {

@@ -23,6 +23,7 @@ $stylePattern = '<link\s+rel="stylesheet"\s+href="styles\.css\?v=[^"]+"\s*>'
 $html = [regex]::Replace($html, $stylePattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($match) "<style>`n$styles`n</style>" }, 1)
 
 $scripts = @(
+    "frontend/ieee-vendor-registry.js",
     "frontend/memory-guard.js",
     "frontend/file-readers.js",
     "frontend/state-persistence.js",
@@ -71,6 +72,7 @@ if ($built -match '<script\s+src=' -or $built -match '<link\s+rel="stylesheet"')
 }
 foreach ($marker in @(
     "window.MacAnalyzerAppBootstrapped = true;",
+    "window.MacAnalyzerIeeeRegistry",
     "window.MacAnalyzerPortableDatabase",
     "window.MacAnalyzerXlsxExporter",
     "window.MacAnalyzerFullXlsxReport",

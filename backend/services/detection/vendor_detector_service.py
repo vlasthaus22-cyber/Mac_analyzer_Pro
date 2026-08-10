@@ -189,6 +189,8 @@ def detect_model(mac: str, explicit_model: Any, history_model: Any, model_rules:
     normalized = normalize_mac(mac)
     if _text(explicit_model):
         return {"value": _text(explicit_model), "source": "file", "confidence": 1.0, "matchedPrefix": ""}
+    if _text(history_model):
+        return {"value": _text(history_model), "source": "history", "confidence": 0.96, "matchedPrefix": normalized}
     threshold = normalized_settings["confidenceThreshold"]
     if normalized_settings["enabled"] and normalized_settings["useMac5"]:
         rule = indexed_prefix_rule(normalized, rule_index) if rule_index else longest_prefix_rule(normalized, model_rules, "prefix", "model")
@@ -203,8 +205,6 @@ def detect_model(mac: str, explicit_model: Any, history_model: Any, model_rules:
             confidence = 0.75
             if confidence >= threshold:
                 return {"value": compatible_rule["model"], "source": "prefix_compatible", "confidence": confidence, "matchedPrefix": prefix}
-    if _text(history_model):
-        return {"value": _text(history_model), "source": "history", "confidence": 0.88, "matchedPrefix": normalized}
     if normalized_settings["enabled"] and normalized_settings["useInference"] and similar_result and _text(similar_result.get("model")):
         confidence = float(similar_result.get("confidence") or 0.0) * 0.9
         if confidence >= threshold:
