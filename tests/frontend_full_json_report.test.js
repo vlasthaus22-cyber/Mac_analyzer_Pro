@@ -29,6 +29,7 @@ const reportBuilder = global.MacAnalyzerFullJsonReport;
     },
     analyticsPayload: async () => ({ metrics: { devices: 2, changedRooms: 1 } }),
     streamCurrentRows: async (accept) => accept(current),
+    streamInventoryRows: async (accept) => accept([...current, { mac: "112233445566", room: "архив" }]),
     streamInvalidRows: async (accept) => accept([]),
     streamSnapshotRows: async (item, accept) => accept(item.devices),
     maxChunkBytes: 96,
@@ -36,11 +37,15 @@ const reportBuilder = global.MacAnalyzerFullJsonReport;
   assert.ok(result.chunks > 1, "small chunks exercise bounded JSON assembly");
   assert.equal(result.currentRows, 2);
   assert.equal(result.snapshotRows, 2);
-  const payload = JSON.parse(await result.blob.text());
+  assert.equal(result.inventoryRows, 3);
+  const reportText = await result.blob.text();
+  assert.ok(reportText.split("\n").length > 20, "full JSON must be human-readable, not one line");
+  const payload = JSON.parse(reportText);
   assert.equal(payload.format, "mac-analyzer-full-json");
   assert.equal(payload.currentDevices[0].smartroomId, "SR-101");
   assert.equal(payload.snapshots[0].devices[1].smartroomId, "SR-102");
   assert.equal(payload.movementHistory.length, 1);
+  assert.equal(payload.allDevices.length, 3, "full JSON must include MAC addresses absent from the current export");
   const devicesOnly = await reportBuilder.createDeviceExport({
     streamRows: async (accept) => accept(current),
     maxChunkBytes: 64,
@@ -48,6 +53,7 @@ const reportBuilder = global.MacAnalyzerFullJsonReport;
   const devicesPayload = JSON.parse(await devicesOnly.blob.text());
   assert.equal(devicesOnly.rows, 2);
   assert.equal(devicesPayload.devices[1].mac, "AABBCCDDEEFF");
+  assert.ok((await devicesOnly.blob.text()).includes("\n    {"), "device JSON must be formatted across lines");
   console.log("frontend full JSON report test passed");
 })().catch((error) => {
   console.error(error);

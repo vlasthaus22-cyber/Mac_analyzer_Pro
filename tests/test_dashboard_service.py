@@ -68,6 +68,13 @@ def test_dashboard_metrics_payload_counts_known_and_invalid_records():
     assert payload["distributions"]["switches"][0] == {"label": "10.1.1.1", "value": 2}
     assert payload["distributions"]["oui3"] == [{"label": "AABBCC", "value": 4}]
 
+    same_name = build_dashboard_metrics_payload([
+        {"mac": "001122000011", "room": "Переговорная", "smartroomId": "ROOM-A"},
+        {"mac": "001122000012", "room": "Переговорная", "smartroomId": "ROOM-B"},
+    ])
+    assert same_name["metrics"]["rooms"] == 2
+    assert same_name["distributions"]["rooms"] == [{"label": "Переговорная", "value": 2}]
+
 
 def test_dashboard_reproduces_python_status_filters_and_history_charts():
     current = DEVICES[:2]

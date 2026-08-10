@@ -108,7 +108,17 @@
     for (const item of groups.flat()) {
       if (!item || typeof item !== "object") continue;
       const normalized = { ...item, device: compactDevice(item.device || item) };
-      merged.set(appearanceKey(normalized), normalized);
+      const key = appearanceKey(normalized);
+      const existing = merged.get(key);
+      if (!existing) {
+        merged.set(key, normalized);
+        continue;
+      }
+      const device = { ...existing.device };
+      for (const [field, value] of Object.entries(normalized.device)) {
+        if (String(value || "").trim() || !String(device[field] || "").trim()) device[field] = value;
+      }
+      merged.set(key, { ...existing, ...normalized, device });
     }
     return Array.from(merged.values()).sort(
       (left, right) => (Date.parse(left.createdAt || "") || 0) - (Date.parse(right.createdAt || "") || 0),

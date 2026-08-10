@@ -1,8 +1,7 @@
-"""Smartroom room identity normalization.
+"""Smartroom identifier and room-name normalization.
 
-The product treats a Smartroom identifier as the full room name.  Keeping the
-numbered suffix is important: ``Переговорная 1`` and ``Переговорная 2`` are
-different rooms and must never be grouped under a shortened label.
+``smartroomId`` is a stable room identity used for counting and matching.
+``room`` is the separate display name.  Neither field may overwrite the other.
 """
 
 from __future__ import annotations
@@ -21,26 +20,24 @@ def smartroom_identity(
     smartroom_id: Any,
     mappings: Mapping[str, Any] | None = None,
 ) -> tuple[str, str]:
-    """Return identical ``(room, smartroom_id)`` values for one exact room."""
+    """Return a normalized room name and the original Smartroom identifier."""
     room_name = normalized_room_name(room)
-    legacy_id = normalized_room_name(smartroom_id)
+    normalized_id = normalized_room_name(smartroom_id)
     mapping = mappings if isinstance(mappings, Mapping) else {}
-    canonical = room_name or normalized_room_name(mapping.get(legacy_id)) or legacy_id
-    return canonical, canonical
+    resolved_room = room_name or normalized_room_name(mapping.get(normalized_id))
+    return resolved_room, normalized_id
 
 
 def synchronize_smartroom_device(
     device: dict[str, Any],
     mappings: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Normalize a device in place and retain an old-id lookup when present."""
-    legacy_id = normalized_room_name(device.get("smartroomId") or device.get("smartroom_id"))
-    room, smartroom_id = smartroom_identity(device.get("room"), legacy_id, mappings)
+    """Normalize both independent fields and learn an ID-to-room mapping."""
+    original_id = normalized_room_name(device.get("smartroomId") or device.get("smartroom_id"))
+    room, smartroom_id = smartroom_identity(device.get("room"), original_id, mappings)
     device["room"] = room
     device["smartroomId"] = smartroom_id
     device.pop("smartroom_id", None)
-    if isinstance(mappings, dict) and room:
-        mappings[room] = room
-        if legacy_id:
-            mappings[legacy_id] = room
+    if isinstance(mappings, dict) and smartroom_id and room:
+        mappings[smartroom_id] = room
     return device

@@ -43,6 +43,29 @@ def test_device_analytics_hydrates_snapshot_metadata_before_building_chronology(
     assert "Hydrated snapshot" in payload["chronologyRowsHtml"]
 
 
+def test_sparse_snapshot_appearance_recovers_values_from_matching_history_row():
+    sparse = {"mac": MAC, "model": "", "address": "", "source": "old-final.xlsx"}
+    history = [{
+        "mac": MAC,
+        "model": "Model retained from old final",
+        "address": "Building retained from old final",
+        "source": "old-final.xlsx",
+        "recorded_at": "2026-07-01T08:00:00Z",
+    }]
+    payload = build_device_analytics(MAC, [sparse], [{
+        "id": "old-final",
+        "name": "Analysis: old-final.xlsx",
+        "source": "old-final.xlsx",
+        "createdAt": "2026-07-01T08:00:00Z",
+        "devices": [sparse],
+    }], history)
+
+    appearance = payload["appearances"][0]["device"]
+    assert appearance["model"] == "Model retained from old final"
+    assert appearance["address"] == "Building retained from old final"
+
+
 if __name__ == "__main__":
     test_device_analytics_hydrates_snapshot_metadata_before_building_chronology()
+    test_sparse_snapshot_appearance_recovers_values_from_matching_history_row()
     print("device analytics snapshot hydration test passed")

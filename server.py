@@ -1848,10 +1848,6 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
         for item in normalized_devices
         if as_text(item.get("smartroomId") or item.get("smartroom_id")) and as_text(item.get("room"))
     }
-    for item in normalized_devices:
-        room_name = as_text(item.get("room"))
-        if room_name:
-            smartroom_mappings.setdefault(room_name, room_name)
     settings_rows: dict[str, str] = {}
     with db_connection() as conn:
         settings_rows = {
@@ -1986,9 +1982,6 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
                 chunk,
             ).fetchall():
                 smartroom_mappings.setdefault(as_text(row["smartroom_id"]), as_text(row["room"]))
-    for room_name in list(smartroom_mappings.values()):
-        if as_text(room_name):
-            smartroom_mappings.setdefault(as_text(room_name), as_text(room_name))
     existing_vendor_prefixes = {as_text(item.get("oui")) for item in vendor_rules}
     for mac in macs:
         ieee = lookup_ieee_vendor(ROOT, mac)
@@ -2087,7 +2080,6 @@ def enrich_device(device: dict[str, Any], context: Optional[dict[str, Any]] = No
     if not address:
         address = as_text(history.get("address"))
     smartroom_id = value("smartroomId", "smartroom_id")
-    legacy_smartroom_id = normalized_room_name(smartroom_id)
     room = value("room")
     room, smartroom_id = smartroom_identity(room, smartroom_id, batch.get("smartroomMappings"))
     enriched = {
@@ -2112,8 +2104,6 @@ def enrich_device(device: dict[str, Any], context: Optional[dict[str, Any]] = No
         "source": as_text(device.get("source")),
         "row": device.get("row"),
     }
-    if legacy_smartroom_id and legacy_smartroom_id != smartroom_id:
-        enriched["_smartroomLegacyId"] = legacy_smartroom_id
     return enriched
 
 
@@ -2126,15 +2116,14 @@ def save_history(
 ) -> None:
     timestamp = as_text(recorded_at) or utc_now()
     valid_devices = [device for device in devices if normalize_mac(device.get("mac") or device.get("macFormatted"))]
-    legacy_smartroom_aliases = {
-        normalized_room_name(device.get("_smartroomLegacyId") or device.get("smartroomId") or device.get("smartroom_id")): normalized_room_name(device.get("room"))
+    smartroom_aliases = {
+        normalized_room_name(device.get("smartroomId") or device.get("smartroom_id")): normalized_room_name(device.get("room"))
         for device in valid_devices
-        if normalized_room_name(device.get("_smartroomLegacyId") or device.get("smartroomId") or device.get("smartroom_id"))
+        if normalized_room_name(device.get("smartroomId") or device.get("smartroom_id"))
         and normalized_room_name(device.get("room"))
     }
     for device in valid_devices:
         synchronize_smartroom_device(device)
-        device.pop("_smartroomLegacyId", None)
     macs = sorted({normalize_mac(device.get("mac") or device.get("macFormatted")) for device in valid_devices})
     previous_by_mac: dict[str, dict[str, Any]] = {}
     with db_connection() as conn:
@@ -2241,8 +2230,8 @@ def save_history(
                 switch_mapping_rows.append((switch_ip, address, source or "analysis", timestamp))
             if smartroom_id and room:
                 smartroom_mapping_rows.append((smartroom_id, room, source or "analysis", timestamp))
-        for legacy_id, room in legacy_smartroom_aliases.items():
-            smartroom_mapping_rows.append((legacy_id, room, source or "analysis", timestamp))
+        for smartroom_id, room in smartroom_aliases.items():
+            smartroom_mapping_rows.append((smartroom_id, room, source or "analysis", timestamp))
         if switch_mapping_rows:
             conn.executemany(
                 "INSERT INTO ip_address_mappings (switch_ip, physical_address, source, updated_at) VALUES (?, ?, ?, ?) "

@@ -49,6 +49,13 @@ const chronology = global.MacAnalyzerMacChronology;
   assert.equal(appearances.length, 2, "browserStored snapshots must contribute to MAC chronology");
   assert.equal(appearances[1].device.room, "202");
 
+  const merged = chronology.mergeAppearances(
+    [{ ...appearances[0], device: { ...appearances[0].device, model: "C2960", address: "Корпус A" } }],
+    [{ ...appearances[0], device: { ...appearances[0].device, model: "", address: "" } }],
+  );
+  assert.equal(merged[0].device.model, "C2960", "a sparse duplicate must not erase the old final value");
+  assert.equal(merged[0].device.address, "Корпус A");
+
   const events = chronology.buildEvents({
     appearances,
     movements: [{

@@ -53,6 +53,12 @@ assert.equal(filtered.topology.summary.linkedDevices, 2);
 const withoutUnknown = analytics.build(devices, { showUnknown: false });
 assert.equal(withoutUnknown.summary.devices, 3);
 assert.equal(withoutUnknown.summary.unknownVendors, 0);
+const sameNameRooms = analytics.build([
+  { mac: "001122000011", room: "Переговорная", smartroomId: "ROOM-A" },
+  { mac: "001122000012", room: "Переговорная", smartroomId: "ROOM-B" },
+]);
+assert.equal(sameNameRooms.summary.uniqueRooms, 2, "Smartroom ID is the room identity used only for counting");
+assert.deepEqual(sameNameRooms.charts.rooms, [{ label: "Переговорная", value: 2 }], "room names remain a separate column");
 
 assert.match(analytics.renderOverview(payload), /Smartroom ID/);
 assert.match(analytics.renderClusters(payload), /Cisco · 101 · 10\.0\.0\.1/);

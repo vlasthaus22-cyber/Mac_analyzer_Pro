@@ -821,16 +821,16 @@
   }
   function normalizedRoomName(value){return String(value||"").trim().replace(/\s+/g," ");}
   function synchronizeSmartroomIdentity(device,mappings=state.smartroomMappings||{}){
-    const legacyId=normalizedRoomName(device?.smartroomId||device?.smartroom_id),room=normalizedRoomName(device?.room),mapped=normalizedRoomName(mappings instanceof Map?mappings.get(legacyId):mappings?.[legacyId]),canonical=room||mapped||legacyId;
-    if(!device||!canonical)return false;
-    const changed=device.room!==canonical||device.smartroomId!==canonical;
-    device.room=canonical;device.smartroomId=canonical;delete device.smartroom_id;
-    if(mappings instanceof Map){mappings.set(canonical,canonical);if(legacyId)mappings.set(legacyId,canonical);}else{mappings[canonical]=canonical;if(legacyId)mappings[legacyId]=canonical;}
+    if(!device)return false;
+    const smartroomId=normalizedRoomName(device.smartroomId||device.smartroom_id),room=normalizedRoomName(device.room),mapped=normalizedRoomName(mappings instanceof Map?mappings.get(smartroomId):mappings?.[smartroomId]),resolvedRoom=room||mapped;
+    const changed=device.room!==resolvedRoom||device.smartroomId!==smartroomId||Object.prototype.hasOwnProperty.call(device,"smartroom_id");
+    device.room=resolvedRoom;device.smartroomId=smartroomId;delete device.smartroom_id;
+    if(smartroomId&&resolvedRoom){if(mappings instanceof Map)mappings.set(smartroomId,resolvedRoom);else mappings[smartroomId]=resolvedRoom;}
     return changed;
   }
   function inferSmartroomRoomMappings(devices=state.devices,source="analysis"){
     const learned={...(state.smartroomMappings||{})};let imported=0,filled=0;
-    for(const device of devices||[]){const legacyId=normalizedRoomName(device.smartroomId||device.smartroom_id),room=normalizedRoomName(device.room);if(legacyId&&room&&learned[legacyId]!==room){learned[legacyId]=room;imported++;}if(room)learned[room]=room;}
+    for(const device of devices||[]){const smartroomId=normalizedRoomName(device.smartroomId||device.smartroom_id),room=normalizedRoomName(device.room);if(smartroomId&&room&&learned[smartroomId]!==room){learned[smartroomId]=room;imported++;}}
     for(const device of devices||[]){const hadRoom=Boolean(normalizedRoomName(device.room));if(synchronizeSmartroomIdentity(device,learned)&&!hadRoom){device.roomSource="smartroom_mapping";filled++;}}
     state.smartroomMappings=learned;return{imported,filled,source};
   }
@@ -962,7 +962,7 @@
     const switchAddresses=new Map(localIpMappingRows().map((item)=>[normalizeIp(item.switchIp),item.address])),smartroomRooms=new Map(Object.entries(state.smartroomMappings||{}));
     let processed=0,invalidCount=0,storedRows=0,previousContext=activeLocalDetectionContext;
     const observe=(map,key,value)=>{if(!key||!value||map.size>=50000&&!map.has(key+"\u0000"+value))return;const item=key+"\u0000"+value;map.set(item,(map.get(item)||0)+1);};
-    const observeDevice=(device)=>{const legacyId=normalizedRoomName(device.smartroomId||device.smartroom_id),mac=normalize(device.mac||device.macFormatted),vendor=String(device.vendor||"").trim(),model=String(device.model||"").trim(),room=normalizedRoomName(device.room);if(!mac)return;for(const length of [6,8,10])if(vendor&&vendor!=="Unknown"&&vendor!=="Не определено")observe(vendorCounts,mac.slice(0,length),vendor);if(model)observe(modelCounts,mac.slice(0,10),model);if(device.switchIp&&device.address){const ip=normalizeIp(device.switchIp);if(ip){switchAddresses.set(ip,device.address);upsertLocalIpMapping(ip,device.address,source||"current-file");}}if(room){smartroomRooms.set(room,room);if(legacyId)smartroomRooms.set(legacyId,room);}};
+    const observeDevice=(device)=>{const smartroomId=normalizedRoomName(device.smartroomId||device.smartroom_id),mac=normalize(device.mac||device.macFormatted),vendor=String(device.vendor||"").trim(),model=String(device.model||"").trim(),room=normalizedRoomName(device.room);if(!mac)return;for(const length of [6,8,10])if(vendor&&vendor!=="Unknown"&&vendor!=="Не определено")observe(vendorCounts,mac.slice(0,length),vendor);if(model)observe(modelCounts,mac.slice(0,10),model);if(device.switchIp&&device.address){const ip=normalizeIp(device.switchIp);if(ip){switchAddresses.set(ip,device.address);upsertLocalIpMapping(ip,device.address,source||"current-file");}}if(smartroomId&&room)smartroomRooms.set(smartroomId,room);};
     const flush=async(allowNew)=>{if(!deviceBatch.size)return;const devices=Array.from(deviceBatch.values());deviceBatch.clear();storedRows+=await BrowserSnapshots.mergeEnrichmentRows(jobId,devices,{allowNew});devices.length=0;await MemoryGuard.yieldToMainThread();};
     const learn=(target,counts,threshold=2)=>{const best=new Map();counts.forEach((count,key)=>{if(count<threshold)return;const split=key.indexOf("\u0000"),prefix=key.slice(0,split),value=key.slice(split+1);if(!prefix||!value||target[prefix])return;const current=best.get(prefix);if(!current||count>current.count)best.set(prefix,{value,count});});let learned=0;best.forEach((item,prefix)=>{target[prefix]=item.value;learned++;});return learned;};
     await BrowserSnapshots.clearEnrichment(jobId).catch(()=>false);
@@ -994,7 +994,7 @@
       await BrowserSnapshots.transformEnrichmentRows(jobId,(device)=>{
         let changed=false;const ip=normalizeIp(device.switchIp),address=switchAddresses.get(ip),vendor=localVendor(device.mac),model=localModel(device.mac);
         if(address&&!device.address){device.address=address;changed=true;}
-        if(synchronizeSmartroomIdentity(device,smartroomRooms)){device.roomSource="smartroom_mapping";changed=true;}
+        const hadRoom=Boolean(normalizedRoomName(device.room));if(synchronizeSmartroomIdentity(device,smartroomRooms)){if(!hadRoom&&device.room)device.roomSource="smartroom_mapping";changed=true;}
         if((!device.vendor||device.vendor==="Unknown"||device.vendor==="Не определено")&&vendor!=="Unknown"){device.vendor=vendor;changed=true;}
         if(!device.model&&model){device.model=model;changed=true;}
         if(device.source!==source){device.source=source;changed=true;}
@@ -2868,6 +2868,12 @@
       return result;
     }catch(error){failProcess(processId,error);toast(error.message);throw error;}
   }
+  async function streamAllDeviceRows(acceptRows){
+    let page=backendAvailable?await api("/database/devices/all?offset=0&limit=1000").catch(()=>null):null;
+    if(page?.total){while(page){await acceptRows(page.items||[]);page=page.nextOffset===null?null:await api(`/database/devices/all?offset=${page.nextOffset}&limit=1000`);}return;}
+    if(!BrowserSnapshots?.streamDeviceHistory)throw new Error("Накопительная база устройств недоступна");
+    await BrowserSnapshots.streamDeviceHistory(acceptRows);
+  }
   async function streamFullReportSnapshotRows(snapshot,acceptRows){
     if(snapshot?.browserStored&&BrowserSnapshots?.streamSnapshot){
       const metadata=await BrowserSnapshots.streamSnapshot(snapshot.id,async(kind,rows)=>{if(kind==="device")await acceptRows(rows);});
@@ -2927,6 +2933,7 @@
       const result=await FullJsonReport.createReport({
         state,
         streamCurrentRows:streamCurrentXlsxRows,
+        streamInventoryRows:streamAllDeviceRows,
         streamInvalidRows:streamFullReportInvalidRows,
         streamSnapshotRows:streamFullReportSnapshotRows,
         analyticsPayload:fullExportAnalyticsPayload,

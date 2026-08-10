@@ -507,7 +507,11 @@ def build_dashboard_payload(
             "unchanged": len(unchanged_scope),
             "uniqueMacs": len({_text(device.get("mac") or device.get("macFormatted")) for device in filtered if _text(device.get("mac") or device.get("macFormatted"))}),
             "vendors": len({_text(device.get("vendor")) for device in current_scope if _text(device.get("vendor")) and _text(device.get("vendor")) != "Unknown"}),
-            "rooms": len({_text(device.get("room")) for device in current_scope if _text(device.get("room")) and _text(device.get("room")) != "Unknown"}),
+            "rooms": len({
+                _text(device.get("smartroomId") or device.get("smartroom_id") or device.get("room"))
+                for device in current_scope
+                if _text(device.get("smartroomId") or device.get("smartroom_id") or device.get("room")) not in {"", "Unknown"}
+            }),
             "switches": len({_text(device.get("switchIp") or device.get("switch_ip")) for device in filtered if _text(device.get("switchIp") or device.get("switch_ip"))}),
         },
         "statusCounts": {key: len(value) for key, value in status_devices.items()},
@@ -547,6 +551,7 @@ def build_dashboard_metrics_payload(
     vendors = [value(device, "vendor") or "Unknown" for device in filtered]
     models = [value(device, "model") for device in filtered]
     rooms = [value(device, "room") for device in filtered]
+    room_identities = [value(device, "smartroomId", "smartroom_id", "room") for device in filtered]
     switches = [value(device, "switchIp", "switch_ip") for device in filtered]
     oui3 = [mac[:6] for mac in normalized_macs if len(mac) >= 6]
     oui4 = [mac[:8] for mac in normalized_macs if len(mac) >= 8]
@@ -571,7 +576,7 @@ def build_dashboard_metrics_payload(
             "devices": total,
             "vendors": len({item for item in vendors if item.lower() not in unknown_labels}),
             "models": len({item for item in models if item}),
-            "rooms": len({item for item in rooms if item}),
+            "rooms": len({item for item in room_identities if item}),
             "switches": len({item for item in switches if item}),
             "knownDevices": known,
             "unknownVendor": unknown_vendor,

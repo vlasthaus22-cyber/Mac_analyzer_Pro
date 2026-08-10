@@ -53,10 +53,9 @@ change is detected even when the previous export is not loaded in the current
 workspace. IndexedDB version alignment and short-lived analytics/history render
 caches improve tab opening and repeated navigation.
 
-Version v1.0.42 makes the Smartroom identifier equal to the complete room
-name. Numbered rooms such as `Переговорная 1` and `Переговорная 2`
-remain separate, while stored legacy identifiers continue to resolve to their
-exact names. Automatic vendor, model, physical-address, and room enrichment
+Version v1.0.42 keeps numbered rooms such as `Переговорная 1` and
+`Переговорная 2` separate, while stored identifiers continue to resolve to
+their exact room names. Automatic vendor, model, physical-address, and room enrichment
 continues to reuse exact-MAC history and switch-IP mappings. Enrichment and
 mapping files no longer replace the primary filename on resulting devices;
 Analytics, History, and comparison selectors show only completed final
@@ -72,6 +71,15 @@ only missing address, vendor, and model values and preserves explicit data from
 the current file. Learned 3–5-byte model prefixes can now be downloaded as CSV.
 Analytics expand/collapse controls and selected-card labels use theme-aware
 foreground colors on hover and in both themes.
+
+Version v1.0.44 preserves `Smartroom ID` and the room name as independent
+columns. Smartroom ID is used as the stable identity only when counting rooms,
+so two rooms with the same display name and different IDs remain distinct.
+The full JSON report is valid, human-readable, streamed across lines, and now
+contains the cumulative all-device inventory, including MAC addresses absent
+from the latest upload. MAC chronology merges browser and SQLite evidence
+without allowing a sparse duplicate to erase values present in an older final
+export; matching history rows repair legacy snapshot persistence gaps.
 
 In backend mode, the Data screen can upload a `.db`, `.sqlite`, or `.sqlite3`
 file. The server verifies the SQLite header and integrity, stores the uploaded

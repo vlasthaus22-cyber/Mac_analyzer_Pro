@@ -960,6 +960,7 @@
     const vendors = new Map();
     const models = new Map();
     const rooms = new Map();
+    const roomIdentities = new Set();
     const switchRows = new Map();
     const oui3Rows = new Map();
     const oui4Rows = new Map();
@@ -981,6 +982,7 @@
         const vendor = String(device?.vendor || "").trim();
         const model = String(device?.model || "").trim();
         const room = String(device?.room || "").trim();
+        const smartroomId = String(device?.smartroomId || device?.smartroom_id || "").trim();
         if (!matchesDashboardFilter(device, options)) continue;
         devices += 1;
         const switchIp = String(device?.switchIp || device?.switch_ip || "").trim();
@@ -988,6 +990,7 @@
         tallyRows(vendors, vendor);
         if (model) tallyRows(models, model);
         if (room) tallyRows(rooms, room);
+        if (smartroomId || room) roomIdentities.add(smartroomId || room);
         if (switchIp) tallyRowsBounded(switchRows, switchIp);
         if (mac.length >= 6) tallyRowsBounded(oui3Rows, mac.slice(0, 6));
         if (mac.length >= 8) tallyRowsBounded(oui4Rows, mac.slice(0, 8));
@@ -1014,7 +1017,7 @@
       knownPercent: devices ? Math.round(known / devices * 100) : 0,
       uniqueVendors: Array.from(vendors.keys()).filter((value) => !unknown.has(value.toLowerCase())).length,
       uniqueModels: models.size,
-      uniqueRooms: rooms.size,
+      uniqueRooms: roomIdentities.size,
       uniqueSwitches: switches.size,
       withAddress,
       withRoom,

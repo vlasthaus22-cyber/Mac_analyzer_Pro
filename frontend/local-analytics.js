@@ -66,6 +66,7 @@
     const vendors = new Map();
     const models = new Map();
     const rooms = new Map();
+    const roomIdentities = new Set();
     const smartrooms = new Map();
     const switchCounts = new Map();
     const clusterMap = new Map();
@@ -107,6 +108,7 @@
         if (model) tally(models, model);
         if (room) tally(rooms, room);
         if (smartroomId) tally(smartrooms, smartroomId);
+        if (smartroomId || room) roomIdentities.add(smartroomId || room);
         if (switchIp) tally(switchCounts, switchIp);
         if (!unknownVendors.has(vendor.toLowerCase())) knownVendors += 1;
         if (text(device.ip)) withIp += 1;
@@ -172,7 +174,7 @@
           unknownVendors: Math.max(0, devices - knownVendors),
           uniqueVendors: Array.from(vendors.keys()).filter((value) => !unknownVendors.has(value.toLowerCase())).length,
           uniqueModels: models.size,
-          uniqueRooms: rooms.size,
+          uniqueRooms: roomIdentities.size,
           uniqueSmartrooms: smartrooms.size,
           uniqueSwitches: topologyMap.size,
           withIp,

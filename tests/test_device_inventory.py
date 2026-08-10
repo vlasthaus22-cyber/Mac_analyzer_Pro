@@ -19,6 +19,9 @@ def test_device_inventory_preserves_known_fields_and_exports_every_mac():
             }, {
                 "mac": "AABBCC000002", "vendor": "Vendor Two",
             }], "second.csv", "2026-08-02T10:00:00Z")
+            server.save_history([{
+                "mac": "AABBCC000002", "vendor": "Vendor Two", "ip": "192.0.2.20",
+            }], "third-with-first-mac-absent.csv", "2026-08-03T10:00:00Z")
 
             page = server.all_devices_page(0, 1)
             assert page["total"] == 2
@@ -34,6 +37,7 @@ def test_device_inventory_preserves_known_fields_and_exports_every_mac():
             second_page = server.all_devices_page(page["nextOffset"], 10)
             assert len(second_page["items"]) == 1
             assert second_page["nextOffset"] is None
+            assert second_page["items"][0]["seenCount"] == 2
     finally:
         server.DATABASE_PATH = original
 

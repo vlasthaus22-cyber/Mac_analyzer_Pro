@@ -117,7 +117,7 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert '<script src="frontend/memory-guard.js?v=20260722.9"></script>' in html
     assert '<script src="frontend/file-readers.js?v=20260722.8"></script>' in html
-    assert '<meta name="application-build" content="2026.08.10.3">' in html
+    assert '<meta name="application-build" content="2026.08.10.4">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app

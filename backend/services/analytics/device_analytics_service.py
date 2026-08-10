@@ -96,6 +96,52 @@ def _source_name(value: Any) -> str:
     return text.replace("\\", "/").rsplit("/", 1)[-1] if text else "-"
 
 
+def _history_value(item: dict[str, Any], field: str) -> str:
+    aliases = {
+        "smartroomId": ("smartroomId", "smartroom_id"),
+        "switchIp": ("switchIp", "switch_ip"),
+        "switchPort": ("switchPort", "switch_port"),
+    }
+    return next((_text(item.get(key)) for key in aliases.get(field, (field,)) if _text(item.get(key))), "")
+
+
+def _snapshot_device_with_history(
+    device: dict[str, Any],
+    snapshot: dict[str, Any],
+    history: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Fill persistence gaps from the history row belonging to this final export."""
+    result = dict(device)
+    snapshot_source = _source_name(snapshot.get("source") or device.get("source"))
+    snapshot_date = _text(snapshot.get("createdAt") or snapshot.get("created_at"))
+
+    def score(item: dict[str, Any]) -> tuple[int, float]:
+        source_match = _source_name(item.get("source") or item.get("source_file")) == snapshot_source
+        recorded = _text(item.get("recorded_at") or item.get("recordedAt"))
+        distance = float("inf")
+        try:
+            left = datetime.fromisoformat(snapshot_date.replace("Z", "+00:00"))
+            right = datetime.fromisoformat(recorded.replace("Z", "+00:00"))
+            distance = abs((left - right).total_seconds())
+        except (ValueError, TypeError):
+            pass
+        return (0 if source_match else 1, distance)
+
+    candidates = [item for item in history if isinstance(item, dict)]
+    if not candidates:
+        return result
+    evidence = min(candidates, key=score)
+    evidence_score = score(evidence)
+    if evidence_score[0] and evidence_score[1] > 300:
+        return result
+    for field in ("vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort"):
+        if not _text(result.get(field)):
+            value = _history_value(evidence, field)
+            if value:
+                result[field] = value
+    return result
+
+
 def device_fields_html(device: dict[str, Any], model_prefixes: list[dict[str, Any]]) -> str:
     fields = [
         "vendor", "vendorSource", "vendorConfidence", "model", "modelSource", "modelConfidence",
@@ -166,12 +212,13 @@ def build_device_analytics(
             continue
         matches = [device for device in snapshot_devices if normalize_mac(device.get("mac") or device.get("macFormatted")) == normalized]
         for match in matches:
+            historical_device = _snapshot_device_with_history(match, snapshot, history)
             appearances.append({
                 "snapshotId": snapshot.get("id", ""),
                 "snapshotName": snapshot.get("name", ""),
-                "source": snapshot.get("source") or match.get("source", ""),
+                "source": snapshot.get("source") or historical_device.get("source", ""),
                 "createdAt": snapshot.get("createdAt") or snapshot.get("created_at", ""),
-                "device": match,
+                "device": historical_device,
             })
     sources = sorted({_text(item.get("source")) for item in appearances if _text(item.get("source"))})
     rooms = sorted({_text((item.get("device") or {}).get("room")) for item in appearances if _text((item.get("device") or {}).get("room"))})

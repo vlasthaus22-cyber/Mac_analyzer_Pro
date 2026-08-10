@@ -247,7 +247,7 @@ def test_enrichment_restores_latest_non_empty_history_fields_and_switch_address(
     assert restored["model"] == "PE-48"
     assert restored["address"] == "Корпус А, этаж 3"
     assert restored["room"] == "А-305"
-    assert restored["smartroomId"] == "А-305"
+    assert restored["smartroomId"] == "SR-305"
     assert restored["switchPort"] == "Gi1/0/7"
     assert enrich_device({"mac": source_mac})["switchIp"] == switch_ip
 
@@ -290,7 +290,7 @@ def test_save_history_learns_switch_address_and_smartroom_room_mapping():
     enriched = enrich_device({"mac": target_mac, "switchIp": switch_ip, "smartroomId": smartroom_id})
     assert enriched["address"] == "Building B, floor 4"
     assert enriched["room"] == "B-402"
-    assert enriched["smartroomId"] == "B-402"
+    assert enriched["smartroomId"] == smartroom_id
 
     batch_context = build_enrichment_context([
         {"mac": source_mac, "switchIp": "198.51.100.243", "address": "Building C", "smartroomId": "TEST-SR-403", "room": "C-403"},
@@ -299,7 +299,7 @@ def test_save_history_learns_switch_address_and_smartroom_room_mapping():
     batch_enriched = enrich_device({"mac": target_mac, "switchIp": "198.51.100.243", "smartroomId": "TEST-SR-403"}, batch_context)
     assert batch_enriched["address"] == "Building C"
     assert batch_enriched["room"] == "C-403"
-    assert batch_enriched["smartroomId"] == "C-403"
+    assert batch_enriched["smartroomId"] == "TEST-SR-403"
 
     cleanup(source_mac, target_mac)
     with db_connection() as conn:
