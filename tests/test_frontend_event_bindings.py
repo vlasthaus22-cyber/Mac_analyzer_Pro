@@ -117,7 +117,7 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert '<script src="frontend/memory-guard.js?v=20260722.9"></script>' in html
     assert '<script src="frontend/file-readers.js?v=20260722.8"></script>' in html
-    assert '<meta name="application-build" content="2026.08.10.1">' in html
+    assert '<meta name="application-build" content="2026.08.10.2">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -241,7 +241,7 @@ def test_single_snapshot_compare_uses_backend_snapshot_resolver():
     app = read_app_js()
 
     assert 'function comparisonPayload(exportFormat="")' in app
-    assert 'return {snapshots:state.snapshots,baselineId:$("#baselineSelect").value,currentId:$("#comparisonSelect").value,fields,exportFormat};' in app
+    assert 'return {snapshots:finalDashboardSnapshots(),baselineId:$("#baselineSelect").value,currentId:$("#comparisonSelect").value,fields,exportFormat};' in app
     assert 'api("/compare/snapshots",{method:"POST",body:JSON.stringify(payload)})' in app
     assert 'api("/compare",{method:"POST",body:JSON.stringify(payload.body)})' not in app
     assert 'baselineDevices:baseline.devices||[],currentDevices:current.devices||[]' not in app
@@ -295,7 +295,7 @@ def test_backend_export_paths_are_still_wired():
         'api("/quality/panel",{method:"POST",body:JSON.stringify(state.resultSnapshotId?currentDevicePayload({invalid:state.invalid,source:"current-browser-dataset",save:true}):{devices:dashboardDevices(),invalid:state.invalid,source:"current-browser-dataset",save:true})})',
         'api("/device/analytics",{method:"POST",body:JSON.stringify(currentDevicePayload({mac:normalized,snapshots:state.snapshots}))})',
         'api("/model/analytics",{method:"POST",body:JSON.stringify(currentDevicePayload({model}))})',
-        'api("/analytics/panel",{method:"POST",body:JSON.stringify(state.resultSnapshotId?currentDevicePayload({snapshots:state.snapshots}):{devices,snapshots:state.snapshots})})',
+        'api("/analytics/panel",{method:"POST",body:JSON.stringify(state.resultSnapshotId?currentDevicePayload({snapshots}):{devices,snapshots})})',
         'api("/topology",{method:"POST",body:JSON.stringify(state.resultSnapshotId?currentDevicePayload():{devices})})',
         'api("/charts",{method:"POST",body:JSON.stringify(state.resultSnapshotId?currentDevicePayload({snapshots:state.snapshots,exportFormat:"svg"}):{devices:dashboardDevices(),snapshots:state.snapshots,exportFormat:"svg"})})',
         'exportData("spreadsheetml")',
@@ -1498,7 +1498,7 @@ def test_dashboard_metrics_use_backend_payload():
     assert 'api("/dashboard/metrics",{method:"POST",body:JSON.stringify(currentDevicePayload({invalid:state.invalid,snapshots:state.snapshots,settings:{vendor:"",room:"",chartLimit:8,showUnknown:true}}))})' in app
     assert '$("#metricKnown").textContent=(metrics.knownPercent||0)+"%";' in app
     assert '$("#metricInvalid").textContent=metrics.invalid||0;' in app
-    assert '$("#snapshotMetric").textContent=state.snapshots.length||0;' in app
+    assert '$("#snapshotMetric").textContent=finalDashboardSnapshots().length||0;' in app
     assert '$("#uniqueMacMetric").textContent=data.metrics.uniqueMacs||0;' in app
     assert 'quality=(data.charts||[]).find((chart)=>chart.id==="quality")' not in app
     assert 'Object.fromEntries((quality?.items||[]).map((item)=>[item.label,item.value]))' not in app
@@ -1582,7 +1582,7 @@ def test_snapshot_select_options_use_backend_payload():
     app = read_app_js()
 
     assert 'async function renderSnapshots()' in app
-    assert 'api("/snapshots/options",{method:"POST",body:JSON.stringify({snapshots:state.snapshots})})' in app
+    assert 'api("/snapshots/options",{method:"POST",body:JSON.stringify({snapshots:finalSnapshots})})' in app
     assert 'data.optionsHtml||""' in app
     assert 'data.comparisonSelectedIndex||0' in app
     assert 'state.snapshots.map((s)=>' not in app
@@ -2116,6 +2116,7 @@ def test_search_dashboard_smartroom_and_unified_exports_are_wired():
         "BrowserSnapshots.aggregate(currentId,{limit:200,vendor:settings.vendor,room:settings.room",
         "async function exportFullJson()", "FullJsonReport.createReport({",
         "function initializeAnalyticsExpanders()",
+        "function normalizedRoomName(", "function synchronizeSmartroomIdentity(",
         "function inferSmartroomRoomMappings(", "function mergeDdioOverlayMovements(",
         'api("/database/import"',
     ):

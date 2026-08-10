@@ -53,6 +53,15 @@ change is detected even when the previous export is not loaded in the current
 workspace. IndexedDB version alignment and short-lived analytics/history render
 caches improve tab opening and repeated navigation.
 
+Version v1.0.42 makes the Smartroom identifier equal to the complete room
+name. Numbered rooms such as `Переговорная 1` and `Переговорная 2`
+remain separate, while stored legacy identifiers continue to resolve to their
+exact names. Automatic vendor, model, physical-address, and room enrichment
+continues to reuse exact-MAC history and switch-IP mappings. Enrichment and
+mapping files no longer replace the primary filename on resulting devices;
+Analytics, History, and comparison selectors show only completed final
+enrichments and select the previous/latest pair by default.
+
 In backend mode, the Data screen can upload a `.db`, `.sqlite`, or `.sqlite3`
 file. The server verifies the SQLite header and integrity, stores the uploaded
 copy under `data/imports`, and additively merges supported MAC Analyzer tables;

@@ -78,7 +78,7 @@ def test_history_statistics_groups_filters_and_movements():
 def test_snapshot_history_payload_contains_backend_table_rows():
     init_database()
     cleanup()
-    save_statistics_snapshot([{"mac": MAC}], "History Table", "history-table-source", "history-table-test", "2026-01-03T12:30:00Z")
+    save_statistics_snapshot([{"mac": MAC}], "Анализ: History Table", "history-table-source", "history-table-test", "2026-01-03T12:30:00Z")
 
     payload = statistics_snapshot_history(query_text="History Table", limit=10)
 

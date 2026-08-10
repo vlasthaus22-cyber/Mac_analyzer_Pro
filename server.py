@@ -65,6 +65,7 @@ from backend.services.detection.detection_index_service import (
 )
 from backend.services.detection.reference_data_service import import_oui_reference, reference_status
 from backend.services.detection.ieee_registry_service import lookup_ieee_vendor, ieee_registry_status
+from backend.services.detection.smartroom_service import normalized_room_name, smartroom_identity, synchronize_smartroom_device
 from backend.services.system.legacy_migration_service import migrate_legacy_sqlite
 from backend.services.system.parity_service import build_parity_report, build_parity_status
 from backend.services.system.diagnostics_service import build_system_diagnostics
@@ -1425,7 +1426,7 @@ def snapshot_state_items(limit: int = 100) -> list[dict[str, Any]]:
             "devices": [],
             "backendStored": True,
             "snapshotOrder": int(row["snapshot_order"] or 0),
-            "kind": "analysis" if as_text(row["name"]).casefold().startswith("анализ:") else "snapshot",
+            "kind": "analysis" if as_text(row["name"]).casefold().startswith(("анализ:", "analysis:")) else "snapshot",
         }
         for row in rows
     ]
@@ -1460,6 +1461,15 @@ def hydrate_snapshot_devices(snapshots: Any) -> list[dict[str, Any]]:
     return items
 
 
+def is_final_enrichment_snapshot(item: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    return (
+        as_text(item.get("kind")).casefold() == "analysis"
+        or as_text(item.get("name")).casefold().startswith(("анализ:", "analysis:"))
+    )
+
+
 def dashboard_snapshot_context(
     snapshots: Any,
     current_snapshot_id: str = "",
@@ -1491,12 +1501,7 @@ def dashboard_snapshot_context(
         merged[snapshot_id] = {**stored, **current}
 
     items = [*merged.values(), *anonymous]
-    final_items = [
-        item for item in items
-        if as_text(item.get("kind")).casefold() == "analysis"
-        or as_text(item.get("name")).casefold().startswith("анализ:")
-    ]
-    options = final_items if len(final_items) >= 2 else items
+    options = [item for item in items if is_final_enrichment_snapshot(item)]
     options.sort(key=lambda item: (
         int(item.get("snapshotOrder") or item.get("snapshot_order") or 0),
         as_text(item.get("createdAt") or item.get("created_at")),
@@ -1632,7 +1637,12 @@ def resolve_payload_devices(payload: dict[str, Any], key: str = "devices") -> li
 
 
 def snapshot_select_payload(snapshots: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    items = [item for item in (snapshots or []) if isinstance(item, dict)]
+    items = [item for item in (snapshots or []) if is_final_enrichment_snapshot(item)]
+    items.sort(key=lambda item: (
+        int(item.get("snapshotOrder") or item.get("snapshot_order") or 0),
+        as_text(item.get("createdAt") or item.get("created_at")),
+        as_text(item.get("id")),
+    ))
 
     def label(item: dict[str, Any]) -> str:
         created_at = as_text(item.get("createdAt") or item.get("created_at"))
@@ -1647,8 +1657,9 @@ def snapshot_select_payload(snapshots: list[dict[str, Any]] | None = None) -> di
     )
     return {
         "optionsHtml": options_html,
-        "emptyOptionHtml": "<option>Нет снимков</option>",
-        "comparisonSelectedIndex": 1 if len(items) > 1 else 0,
+        "emptyOptionHtml": "<option>Нет финальных обогащений</option>",
+        "baselineSelectedIndex": max(0, len(items) - 2),
+        "comparisonSelectedIndex": max(0, len(items) - 1),
         "count": len(items),
     }
 
@@ -1810,7 +1821,11 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
     target_macs = set(macs)
     ouis = sorted({mac[:6] for mac in macs})
     switch_ips = sorted({as_text(item.get("switchIp") or item.get("switch_ip")) for item in normalized_devices} - {""})
-    smartroom_ids = sorted({as_text(item.get("smartroomId") or item.get("smartroom_id")) for item in normalized_devices} - {""})
+    smartroom_ids = sorted({
+        as_text(value)
+        for item in normalized_devices
+        for value in (item.get("smartroomId") or item.get("smartroom_id"), item.get("room"))
+    } - {""})
     vendor_rules: list[dict[str, Any]] = []
     model_rules: list[dict[str, Any]] = []
     history_rows: list[dict[str, Any]] = []
@@ -1826,6 +1841,10 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
         for item in normalized_devices
         if as_text(item.get("smartroomId") or item.get("smartroom_id")) and as_text(item.get("room"))
     }
+    for item in normalized_devices:
+        room_name = as_text(item.get("room"))
+        if room_name:
+            smartroom_mappings.setdefault(room_name, room_name)
     settings_rows: dict[str, str] = {}
     with db_connection() as conn:
         settings_rows = {
@@ -1960,6 +1979,9 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
                 chunk,
             ).fetchall():
                 smartroom_mappings.setdefault(as_text(row["smartroom_id"]), as_text(row["room"]))
+    for room_name in list(smartroom_mappings.values()):
+        if as_text(room_name):
+            smartroom_mappings.setdefault(as_text(room_name), as_text(room_name))
     existing_vendor_prefixes = {as_text(item.get("oui")) for item in vendor_rules}
     for mac in macs:
         ieee = lookup_ieee_vendor(ROOT, mac)
@@ -2058,10 +2080,10 @@ def enrich_device(device: dict[str, Any], context: Optional[dict[str, Any]] = No
     if not address:
         address = as_text(history.get("address"))
     smartroom_id = value("smartroomId", "smartroom_id")
+    legacy_smartroom_id = normalized_room_name(smartroom_id)
     room = value("room")
-    if smartroom_id and not room:
-        room = as_text((batch.get("smartroomMappings") or {}).get(smartroom_id))
-    return {
+    room, smartroom_id = smartroom_identity(room, smartroom_id, batch.get("smartroomMappings"))
+    enriched = {
         "valid": True,
         "mac": mac,
         "macFormatted": format_mac(mac),
@@ -2083,6 +2105,9 @@ def enrich_device(device: dict[str, Any], context: Optional[dict[str, Any]] = No
         "source": as_text(device.get("source")),
         "row": device.get("row"),
     }
+    if legacy_smartroom_id and legacy_smartroom_id != smartroom_id:
+        enriched["_smartroomLegacyId"] = legacy_smartroom_id
+    return enriched
 
 
 def save_history(
@@ -2094,6 +2119,15 @@ def save_history(
 ) -> None:
     timestamp = as_text(recorded_at) or utc_now()
     valid_devices = [device for device in devices if normalize_mac(device.get("mac") or device.get("macFormatted"))]
+    legacy_smartroom_aliases = {
+        normalized_room_name(device.get("_smartroomLegacyId") or device.get("smartroomId") or device.get("smartroom_id")): normalized_room_name(device.get("room"))
+        for device in valid_devices
+        if normalized_room_name(device.get("_smartroomLegacyId") or device.get("smartroomId") or device.get("smartroom_id"))
+        and normalized_room_name(device.get("room"))
+    }
+    for device in valid_devices:
+        synchronize_smartroom_device(device)
+        device.pop("_smartroomLegacyId", None)
     macs = sorted({normalize_mac(device.get("mac") or device.get("macFormatted")) for device in valid_devices})
     previous_by_mac: dict[str, dict[str, Any]] = {}
     with db_connection() as conn:
@@ -2200,6 +2234,8 @@ def save_history(
                 switch_mapping_rows.append((switch_ip, address, source or "analysis", timestamp))
             if smartroom_id and room:
                 smartroom_mapping_rows.append((smartroom_id, room, source or "analysis", timestamp))
+        for legacy_id, room in legacy_smartroom_aliases.items():
+            smartroom_mapping_rows.append((legacy_id, room, source or "analysis", timestamp))
         if switch_mapping_rows:
             conn.executemany(
                 "INSERT INTO ip_address_mappings (switch_ip, physical_address, source, updated_at) VALUES (?, ?, ?, ?) "
@@ -3767,7 +3803,7 @@ def save_statistics_snapshot(
         "createdAt": timestamp,
         "savedAt": saved_at,
         "snapshotOrder": snapshot_order,
-        "kind": "analysis" if normalized_name.casefold().startswith("анализ:") else "snapshot",
+        "kind": "analysis" if normalized_name.casefold().startswith(("анализ:", "analysis:")) else "snapshot",
     }
 
 
@@ -3810,8 +3846,9 @@ def all_devices_page(offset: Any = 0, limit: Any = 1000) -> dict[str, Any]:
             (safe_limit, safe_offset),
         ).fetchall()
     next_offset = safe_offset + len(rows)
+    items = [synchronize_smartroom_device(dict(row)) for row in rows]
     return {
-        "items": [dict(row) for row in rows],
+        "items": items,
         "total": total,
         "offset": safe_offset,
         "limit": safe_limit,
@@ -3854,7 +3891,13 @@ def synchronize_device_inventory() -> int:
             rows = cursor.fetchmany(1000)
             if not rows:
                 break
-            conn.executemany(sql, [tuple(row) for row in rows])
+            normalized_rows = []
+            for row in rows:
+                values = list(row)
+                room, smartroom_id = smartroom_identity(values[6], values[7])
+                values[6], values[7] = room, smartroom_id
+                normalized_rows.append(tuple(values))
+            conn.executemany(sql, normalized_rows)
             updated += len(rows)
     return updated
 
@@ -3899,6 +3942,7 @@ def statistics_snapshot_history(
     to_filter = as_text(date_to)
     where: list[str] = []
     params: list[Any] = []
+    where.append("(name LIKE 'Анализ:%' OR lower(name) LIKE 'analysis:%')")
     if source_filter:
         where.append("source = ?")
         params.append(source_filter)
@@ -4114,10 +4158,10 @@ def statistics_summary(limit: int = 100, source: str = "") -> dict[str, Any]:
         requested_limit = 100
     bounded_limit = max(1, min(requested_limit, 500))
     source_filter = as_text(source)
-    snapshot_sql = "SELECT id, name, source, device_count, devices_json, created_at FROM snapshots"
+    snapshot_sql = "SELECT id, name, source, device_count, devices_json, created_at FROM snapshots WHERE (name LIKE 'Анализ:%' OR lower(name) LIKE 'analysis:%')"
     snapshot_params: list[Any] = []
     if source_filter:
-        snapshot_sql += " WHERE source = ?"
+        snapshot_sql += " AND source = ?"
         snapshot_params.append(source_filter)
     snapshot_sql += " ORDER BY created_at ASC LIMIT ?"
     snapshot_params.append(bounded_limit)
@@ -4207,10 +4251,10 @@ def temporal_statistics(period: str = "day", source: str = "", limit: int = 365)
     bounded_limit = max(1, min(requested_limit, 1000))
     source_filter = as_text(source)
 
-    sql = "SELECT id, name, source, device_count, devices_json, created_at FROM snapshots"
+    sql = "SELECT id, name, source, device_count, devices_json, created_at FROM snapshots WHERE (name LIKE 'Анализ:%' OR lower(name) LIKE 'analysis:%')"
     params: list[Any] = []
     if source_filter:
-        sql += " WHERE source = ?"
+        sql += " AND source = ?"
         params.append(source_filter)
     sql += " ORDER BY created_at ASC LIMIT ?"
     params.append(bounded_limit)
@@ -4473,7 +4517,8 @@ def statistics_panel_payload(source: str = "") -> dict[str, Any]:
 def analytics_panel_payload(devices: list[dict[str, Any]], snapshots: list[dict[str, Any]]) -> dict[str, Any]:
     if not isinstance(devices, list) or not isinstance(snapshots, list):
         raise ValueError("devices and snapshots must be arrays")
-    chart_payload = build_chart_payload(devices, snapshots)
+    final_snapshots = [snapshot for snapshot in snapshots if is_final_enrichment_snapshot(snapshot)]
+    chart_payload = build_chart_payload(devices, final_snapshots)
     chart_map = {chart["id"]: chart for chart in chart_payload.get("charts", [])}
     backend_charts = []
     for chart_id in ("vendors", "models", "rooms", "quality"):

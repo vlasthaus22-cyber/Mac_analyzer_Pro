@@ -75,6 +75,8 @@ def row_to_device(row: list[Any], file_info: dict[str, Any], row_index: int, com
 def merge_device(previous: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
     merged = dict(previous)
     for key, value in current.items():
+        if key == "source" and previous:
+            continue
         if value not in ("", None):
             merged[key] = value
     return merged
@@ -163,6 +165,9 @@ def _enrich_row_streams(
                     "percent": round(rows_processed / total_rows * 100) if total_rows else 100,
                 })
     devices = sorted(by_mac.values(), key=lambda item: item["mac"])
+    final_source = str(files[0].get("name") or "")
+    for device in devices:
+        device["source"] = final_source
     switch_ip_changes = [
         {"mac": mac, "before": values["before"], "after": values["after"]}
         for mac, values in switch_state.items()

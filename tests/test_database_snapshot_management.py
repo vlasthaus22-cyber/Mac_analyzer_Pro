@@ -103,14 +103,17 @@ def test_stale_snapshot_reference_falls_back_without_breaking_api_routes():
 
 def test_snapshot_select_payload_prepares_ready_options():
     payload = snapshot_select_payload([
-        {"id": "first", "name": "First", "createdAt": "2026-01-01T10:00:00Z"},
-        {"id": "second", "name": "Second", "createdAt": "2026-01-02T11:30:00Z"},
+        {"id": "mapping", "name": "Mapping: rooms.xlsx", "createdAt": "2026-01-03T11:30:00Z"},
+        {"id": "second", "name": "Analysis: Second", "createdAt": "2026-01-02T11:30:00Z"},
+        {"id": "first", "name": "Анализ: First", "createdAt": "2026-01-01T10:00:00Z"},
     ])
 
     assert payload["count"] == 2
+    assert payload["baselineSelectedIndex"] == 0
     assert payload["comparisonSelectedIndex"] == 1
-    assert '<option value="first">First · 01.01.2026, 10:00:00</option>' in payload["optionsHtml"]
-    assert '<option value="second">Second · 02.01.2026, 11:30:00</option>' in payload["optionsHtml"]
+    assert '<option value="first">Анализ: First · 01.01.2026, 10:00:00</option>' in payload["optionsHtml"]
+    assert '<option value="second">Analysis: Second · 02.01.2026, 11:30:00</option>' in payload["optionsHtml"]
+    assert "mapping" not in payload["optionsHtml"]
 
 
 def test_large_snapshot_open_is_compact_for_browser():

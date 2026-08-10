@@ -32,7 +32,7 @@ def insert_snapshot(snapshot_id, created_at, devices):
             "INSERT INTO snapshots (id, name, source, device_count, devices_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
             (
                 snapshot_id,
-                snapshot_id,
+                "Анализ: " + snapshot_id,
                 "stats-test",
                 len(devices),
                 json.dumps(devices, ensure_ascii=False),
@@ -126,7 +126,7 @@ def test_statistics_database_service_functions():
             {"mac": "CCDDEE000001", "vendor": "Juniper", "room": "301"},
             {"mac": "CCDDEE000002", "vendor": "Juniper", "room": "302"},
         ],
-        name="Stats service snapshot",
+        name="Анализ: Stats service snapshot",
         source="stats-service",
         snapshot_id=SNAPSHOT_IDS[2],
         created_at="2026-02-01T12:00:00Z",
@@ -147,7 +147,7 @@ def test_statistics_database_service_functions():
     html_export = export_snapshot_history(query_text="Juniper", source="stats-service", export_format="html")
     assert html_export["filename"] == "mac-history.html"
     assert html_export["mimeType"] == "text/html"
-    assert "Stats service snapshot" in html_export["content"]
+    assert "Анализ: Stats service snapshot" in html_export["content"]
     assert "Juniper" not in html_export["content"]
 
     csv_export = export_snapshot_history(source="stats-service", export_format="csv")

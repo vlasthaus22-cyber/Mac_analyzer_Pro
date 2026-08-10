@@ -692,7 +692,7 @@ def test_rest_api_and_ui_controls_smoke():
                     {"mac": "AABBCC000001", "vendor": "Cisco", "room": "101"},
                     {"mac": "AABBCC000002", "vendor": "Cisco", "room": "102"},
                 ],
-                "snapshots": [{"devices": [
+                "snapshots": [{"kind": "analysis", "name": "Анализ: previous", "devices": [
                     {"mac": "AABBCC000001", "vendor": "Cisco", "room": "101"},
                     {"mac": "AABBCC000002", "vendor": "Cisco", "room": "102"},
                     {"mac": "AABBCC000003", "vendor": "Juniper", "room": "103"},
@@ -721,8 +721,8 @@ def test_rest_api_and_ui_controls_smoke():
             {
                 "devices": [],
                 "snapshots": [
-                    {"id": "before", "createdAt": "2026-07-01T08:00:00Z", "devices": [{"mac": "AABBCC000001", "switchPort": "Gi1"}, {"mac": "AABBCC000099"}]},
-                    {"id": "after", "createdAt": "2026-07-12T08:00:00Z", "devices": [{"mac": "AABBCC000001", "switchPort": "Gi2"}]},
+                    {"id": "before", "kind": "analysis", "createdAt": "2026-07-01T08:00:00Z", "devices": [{"mac": "AABBCC000001", "switchPort": "Gi1"}, {"mac": "AABBCC000099"}]},
+                    {"id": "after", "kind": "analysis", "createdAt": "2026-07-12T08:00:00Z", "devices": [{"mac": "AABBCC000001", "switchPort": "Gi2"}]},
                 ],
                 "settings": {"changeMode": "snapshots", "baselineSnapshotId": "before", "comparisonSnapshotId": "after"},
             },
@@ -757,7 +757,7 @@ def test_rest_api_and_ui_controls_smoke():
             app.base_url,
             "POST",
             "/api/snapshots",
-            {"id": SNAPSHOT_ID, "name": "UI/API smoke", "source": "ui-api-smoke", "devices": snapshot_devices},
+            {"id": SNAPSHOT_ID, "name": "Анализ: UI/API smoke", "source": "ui-api-smoke", "devices": snapshot_devices},
         )
         assert status == 201
         assert snapshot["id"] == SNAPSHOT_ID
@@ -957,7 +957,7 @@ def test_rest_api_and_ui_controls_smoke():
             app.base_url,
             "POST",
             "/api/charts",
-            {"devices": devices, "snapshots": [{"id": SNAPSHOT_ID, "name": "UI/API smoke", "source": "ui-api-smoke", "devices": devices}]},
+            {"devices": devices, "snapshots": [{"id": SNAPSHOT_ID, "name": "Анализ: UI/API smoke", "source": "ui-api-smoke", "devices": devices}]},
         )
         assert status == 200
         chart_map = {item["id"]: item for item in charts["charts"]}

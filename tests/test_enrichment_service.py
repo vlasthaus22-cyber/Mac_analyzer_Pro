@@ -37,7 +37,7 @@ def test_enrichment_primary_and_merge_strategies():
     assert merged["progress"]["valid"] == 2
     assert [device["mac"] for device in merged["devices"]] == ["AABBCC000001", "AABBCC000002"]
     assert merged["devices"][1]["address"] == "Rack 2"
-    assert merged["devices"][1]["source"] == "extra.csv"
+    assert all(device["source"] == "primary.csv" for device in merged["devices"])
 
 
 if __name__ == "__main__":
