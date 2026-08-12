@@ -27,6 +27,7 @@ release/
 !data/imports/.gitkeep
 !data/legacy/.gitkeep
 !data/reference/.gitkeep
+!data/reference/oui.csv
 !data/reference/ieee_registry.json.gz
 !data/reference/IEEE_REGISTRY_INFO.json
 !data/runtime/.gitkeep
