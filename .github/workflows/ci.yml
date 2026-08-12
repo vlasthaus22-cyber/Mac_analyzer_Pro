@@ -18,10 +18,11 @@ jobs:
         with:
           node-version: "24"
           cache: pnpm
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
+          cache-dependency-path: requirements-web.txt
       - name: Install JavaScript checks
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Install Python dependencies
