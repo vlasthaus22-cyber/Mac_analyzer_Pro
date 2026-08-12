@@ -1,0 +1,44 @@
+name: Build and test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install JavaScript checks
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements-web.txt
+      - name: ESLint
+        run: pnpm run lint
+      - name: Full regression suite
+        shell: pwsh
+        run: ./scripts/run_tests.ps1
+      - name: Build autonomous HTML
+        shell: pwsh
+        run: ./scripts/build_html_portable.ps1
+      - name: Package release.zip
+        shell: pwsh
+        run: Compress-Archive -LiteralPath portable/html/MAC-Analyzer-Pro.html,README.md,docs/screenshots -DestinationPath release.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MAC-Analyzer-Pro-release
+          path: release.zip
+          if-no-files-found: error
