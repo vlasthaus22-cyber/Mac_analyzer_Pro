@@ -3853,15 +3853,8 @@ def merge_switch_ip_changes_with_history(
     context: dict[str, Any],
     current_changes: Optional[list[dict[str, Any]]] = None,
 ) -> list[dict[str, str]]:
-    """Add switch moves against the stored exact-MAC baseline before saving it."""
+    """Compare switch moves only with the stored exact-MAC baseline."""
     merged: dict[str, dict[str, str]] = {}
-    for item in current_changes or []:
-        if not isinstance(item, dict):
-            continue
-        mac = normalize_mac(item.get("mac"))
-        before, after = as_text(item.get("before")), as_text(item.get("after"))
-        if mac and before and after and before != after:
-            merged[mac] = {"mac": mac, "before": before, "after": after}
     latest = context.get("latestHistory") or {}
     for device in devices:
         mac = normalize_mac(device.get("mac") or device.get("macFormatted"))
@@ -6237,7 +6230,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     "ddioOverlay": ddio_overlay,
                     "ddioSummary": {
                         "loaded": bool(ddio_file),
-                        "switchIpChanges": len(merged.get("switchIpChanges") or []),
+                        "switchIpChanges": len(switch_ip_changes),
                         "newIpHints": len(ddio_overlay),
                     },
                     "processedAt": utc_now(),

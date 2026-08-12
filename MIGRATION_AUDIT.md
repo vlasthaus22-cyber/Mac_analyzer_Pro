@@ -10,13 +10,25 @@ SQLite persistence. The machine-checkable source of truth is
 ## Current Coverage
 
 - PyQt blocks covered by web equivalents: 31/31.
-- PARITY_REGISTRY.md requirements: 61/61.
+- PARITY_REGISTRY.md requirements: 64/64.
 - Missing web equivalents: 0.
 - Unchecked items in `PARITY_REGISTRY.md`: 0.
 - Legacy SQLite import: available through `GET /api/legacy/import/status` and
   protected `POST /api/legacy/import`.
 - UI visibility: Settings contains the PyQt -> Web parity status block with a
   detailed list and JSON export.
+
+## v1.0.46 Smartroom audit
+
+- Null/blank Smartroom IDs are skipped safely and reported without throwing.
+- Snapshot math and additions/removals use the composite `smartroom_id + mac`
+  identity; percentage change is based on the previous snapshot count.
+- MAC and room chronology preserve every ordered appearance and replacement.
+- The primary final export is authoritative; enrichment can only fill blanks.
+- DDIO switch-IP warnings compare the current trimmed value strictly against
+  persisted history, never against a secondary file in the same analysis.
+- Lazy tabs, cached in-flight requests, Web Worker aggregation and twenty-row
+  virtual windows keep large UI updates bounded and responsive.
 
 ## Covered PyQt Areas
 
@@ -69,8 +81,10 @@ SQLite persistence. The machine-checkable source of truth is
 
 ## Latest Verification
 
-- Full automated suite: 85/85 Python test files, 265/265 test functions, plus
+- Full automated suite: 95/95 Python test files, 299/299 test functions, plus
   all frontend Node regression and syntax checks.
+- Smartroom worker performance: 10,000 composite `smartroom_id + mac` rows were
+  aggregated in 81.7 ms in the release run, below the 500 ms requirement.
 - The complete browser Excel report is verified as a real ten-sheet XLSX with
   current devices, analytics, snapshots, every available MAC appearance,
   changes, invalid rows, source-file metadata, references, and settings.

@@ -226,6 +226,17 @@
     );
   }
 
+  async function getMacHistory(options = {}) {
+    const collected = await collectAppearances(options);
+    const appearances = mergeAppearances(collected, options.appearances || []);
+    return buildEvents({
+      appearances,
+      history: options.history || [],
+      movements: options.movements || [],
+      events: options.events || [],
+    }).slice().reverse();
+  }
+
   function displayDate(value, formatter) {
     if (typeof formatter === "function") return formatter(value);
     const date = new Date(value);
@@ -319,6 +330,7 @@
     compactDevice,
     collectAppearances,
     mergeAppearances,
+    getMacHistory,
     buildEvents,
     renderTimeline,
     renderSummary,

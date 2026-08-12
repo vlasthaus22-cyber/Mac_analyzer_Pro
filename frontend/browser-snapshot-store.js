@@ -2,7 +2,7 @@
   "use strict";
 
   const databaseName = "mac-analyzer-browser-storage-v1";
-  const databaseVersion = 6;
+  const databaseVersion = 7;
   const workspaceStore = "workspaces";
   const snapshotStore = "snapshots";
   const snapshotChunkStore = "snapshotChunks";
@@ -36,6 +36,20 @@
         }
         if (!database.objectStoreNames.contains(deviceHistoryStore)) {
           database.createObjectStore(deviceHistoryStore, { keyPath: "mac" });
+        }
+        if (!database.objectStoreNames.contains("Equipment")) {
+          const equipment = database.createObjectStore("Equipment", { keyPath: "id" });
+          equipment.createIndex("smartroom_id", "smartroom_id", { unique: false });
+          equipment.createIndex("mac", "mac", { unique: false });
+          equipment.createIndex("ip_switch", "ip_switch", { unique: false });
+        }
+        if (!database.objectStoreNames.contains("History")) {
+          const history = database.createObjectStore("History", { keyPath: "id", autoIncrement: true });
+          history.createIndex("entity_type", "entity_type", { unique: false });
+          history.createIndex("timestamp", "timestamp", { unique: false });
+        }
+        if (!database.objectStoreNames.contains("DDIO_Snapshot")) {
+          database.createObjectStore("DDIO_Snapshot", { keyPath: "date" });
         }
       };
       request.onsuccess = () => resolve(request.result);
@@ -497,6 +511,7 @@
     const id = String(jobId || "");
     const rows = Array.isArray(devices) ? devices : [];
     const allowNew = options.allowNew !== false;
+    const preferExisting = options.preferExisting === true;
     if (!id || !rows.length) return 0;
     const database = await openDatabase();
     return new Promise((resolve, reject) => {
@@ -506,14 +521,15 @@
       for (const device of rows) {
         const mac = String(device?.mac || "");
         if (!mac) continue;
-        const key = `${id}:${mac}`;
+        const key = `${id}:${String(device?.storageIdentity || mac)}`;
         const request = store.get(key);
         request.onsuccess = () => {
           const previous = request.result?.device;
           if (!previous && !allowNew) return;
           const merged = previous ? { ...previous } : {};
           for (const [field, value] of Object.entries(device)) {
-            if (value !== "" && value !== undefined) merged[field] = value;
+            const hasExisting = merged[field] !== "" && merged[field] !== undefined && merged[field] !== null;
+            if (value !== "" && value !== undefined && (!preferExisting || !hasExisting)) merged[field] = value;
           }
           store.put({ key, jobId: id, mac, device: merged, updatedAt: Date.now() });
           written += 1;
@@ -1127,6 +1143,12 @@
     };
   }
 
+  function comparisonIdentity(device) {
+    const room = String(device?.smartroomId || device?.smartroom_id || "").trim();
+    const mac = String(device?.mac || device?.macFormatted || "").toUpperCase().replace(/[^0-9A-F]/g, "");
+    return `${room}|${mac}`;
+  }
+
   async function compareCurrentChunk(jobId, rows, result, limit) {
     const database = await openDatabase();
     return new Promise((resolve, reject) => {
@@ -1135,7 +1157,7 @@
       for (const source of rows) {
         const device = compactComparisonDevice(source);
         if (!device.mac) continue;
-        const key = `${jobId}:${device.mac}`;
+        const key = `${jobId}:${comparisonIdentity(device)}`;
         const request = store.get(key);
         request.onsuccess = () => {
           const previous = request.result?.device;
@@ -1219,7 +1241,7 @@
     try {
       const baseline = await streamSnapshot(baselineId, async (kind, rows) => {
         if (kind !== "device") return;
-        const compact = rows.map(compactComparisonDevice).filter((device) => device.mac);
+        const compact = rows.map(compactComparisonDevice).filter((device) => device.mac).map((device) => ({ ...device, storageIdentity: comparisonIdentity(device) }));
         await mergeEnrichmentRows(jobId, compact, { allowNew: true });
         compact.length = 0;
       });

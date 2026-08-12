@@ -226,7 +226,7 @@ def test_dashboard_reports_unique_macs_across_uploads_and_latest_count():
     assert [item["delta"] for item in payload["uploadFleet"]["series"]] == [0, 0]
 
 
-def test_dashboard_counts_changed_rooms_and_smartroom_changes():
+def test_dashboard_counts_changes_by_smartroom_and_mac_identity():
     snapshots = [
         {
             "id": "old",
@@ -248,7 +248,10 @@ def test_dashboard_counts_changed_rooms_and_smartroom_changes():
     )
     assert result["summary"]["changedRooms"] == 1
     assert result["summary"]["changedRoomValues"] == ["101"]
-    assert any(item["field"] == "smartroomId" for item in result["changes"])
+    assert result["summary"]["added"] == 1
+    assert result["summary"]["removed"] == 1
+    assert result["summary"]["modified"] == 0
+    assert {item["identity"] for item in result["changes"]} == {"SR-OLD|001122334455", "SR-NEW|001122334455"}
 
 
 if __name__ == "__main__":
@@ -260,5 +263,5 @@ if __name__ == "__main__":
     test_dashboard_change_analysis_compares_selected_snapshots()
     test_dashboard_uses_previous_and_current_final_snapshots_for_all_status_metrics()
     test_dashboard_reports_unique_macs_across_uploads_and_latest_count()
-    test_dashboard_counts_changed_rooms_and_smartroom_changes()
+    test_dashboard_counts_changes_by_smartroom_and_mac_identity()
     print("dashboard service test passed")

@@ -126,7 +126,7 @@
     return true;
   }
 
-  function observeSwitch(tracker, fileIndex, macValue, switchIpValue, existedBeforeMerge = true) {
+  function observeSwitch(tracker, fileIndex, macValue, switchIpValue) {
     const mac = normalizeMac(macValue);
     const switchIp = text(switchIpValue);
     if (!mac || !switchIp || !(tracker instanceof Map)) return false;
@@ -134,10 +134,9 @@
       tracker.set(mac, { before: switchIp, after: switchIp });
       return true;
     }
-    const current = tracker.get(mac);
-    if (!current || !existedBeforeMerge) return false;
-    current.after = switchIp;
-    return true;
+    // Enrichment files are not an authoritative previous state. A real
+    // transition is seeded later from the last value persisted in IndexedDB.
+    return false;
   }
 
   function observeCurrentIp(tracker, macValue, ipValue) {
@@ -170,12 +169,15 @@
     const leaseIpIndex = compiled.leaseIp ?? compiled.ip;
     const reservationIp = reservationIpIndex === undefined ? "" : text(row[reservationIpIndex]);
     const leaseIp = leaseIpIndex === undefined ? "" : text(row[leaseIpIndex]);
-    if (reservationMac && reservationIp && changes.has(reservationMac) && !candidates.has(reservationMac)) {
-      candidates.set(reservationMac, { ip: reservationIp, match: "reservation" });
+    if (reservationMac && reservationIp && changes.has(reservationMac)) {
+      const existing = candidates.get(reservationMac);
+      if (existing) existing.possibleIps = Array.from(new Set([...(existing.possibleIps || [existing.ip]), reservationIp]));
+      else candidates.set(reservationMac, { ip: reservationIp, match: "reservation", possibleIps: [reservationIp] });
       matched++;
     }
     if (leaseMac && leaseIp && changes.has(leaseMac)) {
-      candidates.set(leaseMac, { ip: leaseIp, match: "lease" });
+      const existing = candidates.get(leaseMac), possibleIps = Array.from(new Set([...(existing?.possibleIps || (existing?.ip ? [existing.ip] : [])), leaseIp]));
+      candidates.set(leaseMac, { ip: leaseIp, match: "lease", possibleIps });
       matched++;
     }
     return matched;
@@ -188,9 +190,11 @@
       const candidate = candidates.get(mac);
       if (!candidate?.ip) continue;
       const currentIp = text(currentIpByMac instanceof Map ? currentIpByMac.get(mac) : currentIpByMac?.[mac]);
-      if (currentIp && currentIp === candidate.ip) continue;
+      const possibleIps = Array.from(new Set((candidate.possibleIps || [candidate.ip]).map(text).filter((ip) => ip && ip !== currentIp)));
+      if (!possibleIps.length) continue;
       overlay[mac] = {
-        ip: candidate.ip,
+        ip: possibleIps.includes(candidate.ip) ? candidate.ip : possibleIps[0],
+        possibleIps,
         match: candidate.match,
         previousSwitchIp: text(change.before),
         currentSwitchIp: text(change.after),

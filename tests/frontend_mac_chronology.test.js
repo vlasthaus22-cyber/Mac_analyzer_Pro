@@ -73,6 +73,15 @@ const chronology = global.MacAnalyzerMacChronology;
   assert.equal(events.find((item) => item.field === "room").fieldLabel, "Помещение");
   assert.ok(events.some((item) => item.field === "model" && item.before === "C2960" && item.after === "C3560"));
 
+  const fullChain = await chronology.getMacHistory({
+    mac: requested,
+    snapshots,
+    findSnapshotDevice: async (snapshot) => stored.get(snapshot.id),
+  });
+  assert.equal(fullChain.length, 4, "getMacHistory must return the complete chain rather than the last event");
+  assert.equal(fullChain[0].date, "2026-07-01T08:00:00Z", "the chain starts with the first appearance");
+  assert.equal(fullChain.at(-1).date, "2026-07-02T08:00:00Z", "the chain ends at the current state");
+
   const timeline = chronology.renderTimeline(events, { formatDate: (value) => value.slice(0, 10) });
   assert.match(timeline, /mac-timeline-item/);
   assert.match(timeline, /Первая выгрузка/);

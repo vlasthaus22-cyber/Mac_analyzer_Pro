@@ -40,7 +40,8 @@
     }
     const body = table.tBodies?.[0];
     if (!body) return false;
-    const rows = Array.from(body.rows);
+    const virtualTable = window.MacAnalyzerVirtualTable;
+    const rows = virtualTable?.rows?.(body) || Array.from(body.rows);
     const sortable = rows.filter((row) => row.cells.length > index && !row.querySelector("td[colspan]") && row.dataset.sortDisabled !== "true");
     const sortableSet = new Set(sortable), fixed = rows.filter((row) => !sortableSet.has(row));
     sortable.forEach((row, order) => { row.__tableSortOrder = order; });
@@ -52,6 +53,10 @@
       const compared = compareValues(a, b);
       return (direction === "desc" ? -compared : compared) || left.__tableSortOrder - right.__tableSortOrder;
     });
+    if (virtualTable?.sort?.(body, (left, right) => sortable.indexOf(left) - sortable.indexOf(right))) {
+      sortable.forEach((row) => { delete row.__tableSortOrder; });
+      return true;
+    }
     const fragment = document.createDocumentFragment();
     [...sortable, ...fixed].forEach((row) => { delete row.__tableSortOrder; fragment.appendChild(row); });
     body.appendChild(fragment);

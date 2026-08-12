@@ -15,7 +15,7 @@ def test_ddio_third_export_is_display_only_and_bound_in_primary_frontend():
     assert 'id="ddioFileInput"' in html
     assert 'id="browseDdioFileButton"' in html
     assert 'id="ddioMappingGrid"' in html
-    assert '<script src="frontend/ddio-overlay.js?v=20260810.1"></script>' in html
+    assert '<script src="frontend/ddio-overlay.js?v=20260812.1"></script>' in html
     assert 'loadDdioFile(e.target.files,e.target)' in app
     assert all(field in ddio for field in ('reservationMac', 'reservationIp', 'leaseMac', 'leaseIp'))
     assert '[["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"]]' in app
@@ -104,7 +104,8 @@ def test_navigation_tabs_are_hash_routable_and_safe():
     assert 'b.setAttribute("aria-selected",active?"true":"false")' in app
     assert "panel.hidden=!active" in app
     assert 'history.pushState(null,"","#"+name)' in app
-    assert '$$(".nav-item").forEach((b)=>{b.setAttribute("aria-controls",b.dataset.view+"View");b.addEventListener("click",()=>view(b.dataset.view));});' in app
+    assert '$$(".nav-item").forEach((b)=>b.setAttribute("aria-controls",b.dataset.view+"View"));' in app
+    assert 'event.target.closest?.(".nav-item[data-view]")' in app
     assert 'window.addEventListener("hashchange",()=>view(viewFromHash(),{updateHash:true}));' in app
     assert 'view(viewFromHash(),{updateHash:true,render:false});renderEngineeringState();renderAll();' in app
 
@@ -117,7 +118,7 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert '<script src="frontend/memory-guard.js?v=20260722.9"></script>' in html
     assert '<script src="frontend/file-readers.js?v=20260722.8"></script>' in html
-    assert '<meta name="application-build" content="2026.08.10.5">' in html
+    assert '<meta name="application-build" content="2026.08.12.2">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -332,7 +333,8 @@ def test_backend_export_paths_are_still_wired():
 def test_workspace_navigation_renders_compact_results():
     app = read_app_js()
 
-    assert 'function renderViewContent(name){if(name==="workspace"){renderFiles();renderMapping();renderMetrics();renderResults();return;}' in app
+    assert 'function renderViewContent(name){if(name==="workspace"){renderFiles();renderMapping();renderMetrics();renderResults();return Promise.resolve();}' in app
+    assert 'UiFeedback?.start("Открытие вкладки…")' in app
     assert 'function activateView(name,{updateHash=true,render=true}={})' in app
     assert 'if(render)scheduleViewContent(name);return name;' in app
     assert 'function scheduleViewContent(name)' in app
@@ -959,6 +961,9 @@ def test_browser_mode_enrichment_keeps_basic_workflow_alive():
     app = read_app_js()
 
     assert "async function localAnalyzeFiles(fields,strategy,onProgress=()=>{})" in app
+    assert "function mergeAnalysisDevice(previous,incoming,{preferExisting=false}={})" in app
+    assert "mergeAnalysisDevice(previous,result.device,{preferExisting:fileIndex>0})" in app
+    assert "BrowserSnapshots.mergeEnrichmentRows(jobId,devices,{allowNew,preferExisting})" in app
     assert "async function visitLocalRowsForAnalysis(file,fileIndex,fileCount,onProgress,onRow)" in app
     assert "const sourceFile=await restoreSourceFile(file);" in app
     assert "const data=await clientReadTable(sourceFile,progress,{collectRows:false,onRow});" in app
@@ -1007,7 +1012,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260810.3"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260812.1"></script>' in html
     assert '<script src="frontend/xlsx-exporter.js?v=20260727.5"></script>' in html
     assert '<script src="frontend/full-xlsx-report.js?v=20260729.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
@@ -1019,7 +1024,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert app.index('await BrowserSnapshots.prune(keepIds);') < app.index('await BrowserSnapshots.save(record,(percent)=>')
     assert 'browserSnapshotRows: 1_000_000' in memory_guard
     assert 'const snapshotStore = "snapshots";' in snapshot_store
-    assert 'const databaseVersion = 6;' in snapshot_store
+    assert 'const databaseVersion = 7;' in snapshot_store
     assert 'const enrichmentRowStore = "enrichmentRows";' in snapshot_store
     assert 'const deviceHistoryStore = "deviceHistory";' in snapshot_store
     assert 'async function enrichDevicesFromHistory(rows)' in snapshot_store
@@ -1157,7 +1162,7 @@ def test_main_tabs_are_clickable_and_hash_addressable():
     assert 'function normalizeViewName(name)' in app
     assert 'function viewFromHash()' in app
     assert 'function activateView(name,{updateHash=true,render=true}={})' in app
-    assert '$$(".nav-item").forEach((b)=>{b.setAttribute("aria-controls",b.dataset.view+"View");b.addEventListener("click",()=>view(b.dataset.view));});' in app
+    assert 'document.addEventListener("click",(event)=>{const button=event.target.closest?.(".nav-item[data-view]")' in app
     assert 'window.addEventListener("hashchange",()=>view(viewFromHash(),{updateHash:true}))' in app
     assert 'panel.hidden=!active' in app
     assert 'history.pushState(null,"","#"+name)' in app

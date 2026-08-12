@@ -36,13 +36,13 @@ def build_ddio_overlay(
     mapping: Any,
     switch_changes: Any,
     current_ip_by_mac: dict[str, Any] | None = None,
-) -> dict[str, dict[str, str]]:
+) -> dict[str, dict[str, Any]]:
     """Build a display-only DDIO hint map without mutating device records."""
     changes = normalize_switch_changes(switch_changes)
     if not changes:
         return {}
     compiled = validate_ddio_mapping(mapping)
-    candidates: dict[str, dict[str, str]] = {}
+    candidates: dict[str, dict[str, Any]] = {}
     for row in rows:
         if not isinstance(row, list):
             continue
@@ -52,22 +52,27 @@ def build_ddio_overlay(
         lease_ip_field = "leaseIp" if "leaseIp" in compiled else "ip"
         reservation_ip = read_mapped(row, compiled, reservation_ip_field)
         lease_ip = read_mapped(row, compiled, lease_ip_field)
-        if reservation_mac in changes and reservation_ip and reservation_mac not in candidates:
-            candidates[reservation_mac] = {"ip": reservation_ip, "match": "reservation"}
+        if reservation_mac in changes and reservation_ip:
+            candidate = candidates.setdefault(reservation_mac, {"ip": reservation_ip, "match": "reservation", "possibleIps": []})
+            candidate["possibleIps"] = list(dict.fromkeys([*candidate.get("possibleIps", []), reservation_ip]))
         if lease_mac in changes and lease_ip:
-            candidates[lease_mac] = {"ip": lease_ip, "match": "lease"}
+            candidate = candidates.setdefault(lease_mac, {"ip": lease_ip, "match": "lease", "possibleIps": []})
+            candidate.update({"ip": lease_ip, "match": "lease"})
+            candidate["possibleIps"] = list(dict.fromkeys([*candidate.get("possibleIps", []), lease_ip]))
 
     current_ips = current_ip_by_mac if isinstance(current_ip_by_mac, dict) else {}
-    overlay: dict[str, dict[str, str]] = {}
+    overlay: dict[str, dict[str, Any]] = {}
     for mac, change in changes.items():
         candidate = candidates.get(mac)
         if not candidate:
             continue
         current_ip = str(current_ips.get(mac) or "").strip()
-        if current_ip and current_ip == candidate["ip"]:
+        possible_ips = [value for value in candidate.get("possibleIps", [candidate["ip"]]) if value and value != current_ip]
+        if not possible_ips:
             continue
         overlay[mac] = {
-            "ip": candidate["ip"],
+            "ip": candidate["ip"] if candidate["ip"] in possible_ips else possible_ips[0],
+            "possibleIps": possible_ips,
             "match": candidate["match"],
             "previousSwitchIp": change["before"],
             "currentSwitchIp": change["after"],

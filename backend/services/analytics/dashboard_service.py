@@ -167,6 +167,11 @@ def _device_context(device: dict[str, Any] | None) -> dict[str, str] | None:
     }
 
 
+def _device_identity(device: dict[str, Any] | None, mac: str = "") -> str:
+    context = _device_context(device) or {}
+    return f"{_text(context.get('smartroomId'))}|{_text(context.get('mac') or mac)}"
+
+
 def _change_row(
     *, mac: str, changed_at: str, change_type: str, field: str = "device",
     before: Any = "", after: Any = "", source: str = "history",
@@ -178,6 +183,7 @@ def _change_row(
     current = _device_context(after_device)
     return {
         "mac": mac, "macFormatted": ":".join(mac[index:index + 2] for index in range(0, 12, 2)) if len(mac) == 12 else mac,
+        "identity": _device_identity(current or previous, mac),
         "date": changed_at, "type": change_type, "typeLabel": labels.get(change_type, "Изменено"),
         "field": normalized_field, "fieldLabel": CHANGE_FIELD_LABELS.get(normalized_field, normalized_field),
         "before": _text(before) or "-", "after": _text(after) or "-", "source": source,
@@ -204,33 +210,44 @@ def analyze_dashboard_changes(
         indexed = {_snapshot_id(snapshot, index): snapshot for index, snapshot in enumerate(snapshots) if isinstance(snapshot, dict)}
         baseline = indexed.get(baseline_id) or indexed.get(options[-2]["id"]) or snapshots[-2]
         comparison = indexed.get(comparison_id) or indexed.get(options[-1]["id"]) or snapshots[-1]
-        before_devices = {_mac(device): device for device in baseline.get("devices", []) if isinstance(device, dict) and _mac(device)}
-        after_devices = {_mac(device): device for device in comparison.get("devices", []) if isinstance(device, dict) and _mac(device)}
+        before_devices = {_device_identity(device): device for device in baseline.get("devices", []) if isinstance(device, dict) and _mac(device)}
+        after_devices = {_device_identity(device): device for device in comparison.get("devices", []) if isinstance(device, dict) and _mac(device)}
         changed_at = _text(comparison.get("fileCreatedAt") or comparison.get("createdAt") or comparison.get("created_at"))
-        for mac in sorted(set(after_devices) - set(before_devices)):
+        for identity in sorted(set(after_devices) - set(before_devices)):
+            mac = _mac(after_devices[identity])
             changes.append(_change_row(
                 mac=mac, changed_at=changed_at, change_type="added",
-                after=after_devices[mac].get("source") or "Устройство", source="snapshot",
-                after_device=after_devices[mac],
+                after=after_devices[identity].get("source") or "Устройство", source="snapshot",
+                after_device=after_devices[identity],
             ))
-        for mac in sorted(set(before_devices) - set(after_devices)):
+        for identity in sorted(set(before_devices) - set(after_devices)):
+            mac = _mac(before_devices[identity])
             changes.append(_change_row(
                 mac=mac, changed_at=changed_at, change_type="removed",
-                before=before_devices[mac].get("source") or "Устройство", source="snapshot",
-                before_device=before_devices[mac],
+                before=before_devices[identity].get("source") or "Устройство", source="snapshot",
+                before_device=before_devices[identity],
             ))
-        for mac in sorted(set(before_devices) & set(after_devices)):
+        for identity in sorted(set(before_devices) & set(after_devices)):
+            mac = _mac(after_devices[identity])
             for field in CHANGE_FIELDS:
-                before = before_devices[mac].get(field)
-                after = after_devices[mac].get(field)
+                before = before_devices[identity].get(field)
+                after = after_devices[identity].get(field)
                 if _text(before) != _text(after):
                     changes.append(_change_row(
                         mac=mac, changed_at=changed_at, change_type="modified", field=field,
                         before=before, after=after, source="snapshot",
-                        before_device=before_devices[mac], after_device=after_devices[mac],
+                        before_device=before_devices[identity], after_device=after_devices[identity],
                     ))
     else:
-        date_to = _parse_date(selected_to, end_of_day=True) or datetime.now()
+        movement_dates = [
+            _parse_date(_movement_value(item, "changedAt", "changed_at") or _text(item.get("date_str")))
+            for item in movements
+            if isinstance(item, dict)
+        ]
+        latest_movement = max((value for value in movement_dates if value is not None), default=None)
+        # A stored dashboard must stay reproducible: an omitted period is relative
+        # to the newest supplied event, not to the wall clock at viewing time.
+        date_to = _parse_date(selected_to, end_of_day=True) or latest_movement or datetime.now()
         date_from = _parse_date(selected_from) or (date_to - timedelta(days=30))
         selected_from = selected_from or date_from.date().isoformat()
         selected_to = selected_to or date_to.date().isoformat()
@@ -251,7 +268,7 @@ def analyze_dashboard_changes(
 
     period_groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
     for item in changes:
-        period_groups.setdefault((item["mac"], item["date"], item["source"]), []).append(item)
+        period_groups.setdefault((item.get("identity") or item["mac"], item["date"], item["source"]), []).append(item)
     for grouped_changes in period_groups.values():
         fields = {item["field"] for item in grouped_changes}
         inferred_critical = "switchIp" in fields and not ({"ip", "room"} & fields)
@@ -262,11 +279,11 @@ def analyze_dashboard_changes(
 
     changes.sort(key=lambda item: item.get("date", ""), reverse=True)
     summary = {
-        key: len({item["mac"] for item in changes if item["type"] == key})
+        key: len({item.get("identity") or item["mac"] for item in changes if item["type"] == key})
         for key in ("added", "removed", "modified")
     }
-    summary["critical"] = len({item["mac"] for item in changes if item["severity"] == "critical"})
-    summary["total"] = len({item["mac"] for item in changes})
+    summary["critical"] = len({item.get("identity") or item["mac"] for item in changes if item["severity"] == "critical"})
+    summary["total"] = len({item.get("identity") or item["mac"] for item in changes})
     changed_rooms = {
         _text((item.get("afterDevice") or item.get("beforeDevice") or {}).get("room"))
         for item in changes

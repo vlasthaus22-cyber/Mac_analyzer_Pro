@@ -34,32 +34,34 @@ DDIO.observeSwitch(tracker, 1, "00:11:22:33:44:55", "10.0.0.2", true);
 DDIO.observeSwitch(tracker, 1, "00:11:22:33:44:66", "10.0.0.8", true);
 
 const changes = DDIO.switchChanges(tracker);
-assert.strictEqual(changes.size, 1, "only a real switch-IP change is eligible");
+assert.strictEqual(changes.size, 0, "an enrichment file must not impersonate the previous database state");
 
 const historicalTracker = DDIO.createSwitchTracker();
 assert.strictEqual(DDIO.seedSwitchChange(historicalTracker, "00:11:22:33:44:55", "10.0.0.1", "10.0.0.9", "192.168.1.10"), true);
-assert.deepStrictEqual(DDIO.switchChanges(historicalTracker).get("001122334455"), { before: "10.0.0.1", after: "10.0.0.9" });
+const historicalChanges = DDIO.switchChanges(historicalTracker);
+assert.deepStrictEqual(historicalChanges.get("001122334455"), { before: "10.0.0.1", after: "10.0.0.9" });
 
 const candidates = new Map();
-DDIO.collectCandidate(["192.168.1.20", "00-11-22-33-44-55", ""], mapping, changes, candidates);
-DDIO.collectCandidate(["192.168.1.30", "", "00:11:22:33:44:55"], mapping, changes, candidates);
-const overlay = DDIO.buildOverlay(changes, candidates, new Map([["001122334455", "192.168.1.10"]]));
+DDIO.collectCandidate(["192.168.1.20", "00-11-22-33-44-55", ""], mapping, historicalChanges, candidates);
+DDIO.collectCandidate(["192.168.1.30", "", "00:11:22:33:44:55"], mapping, historicalChanges, candidates);
+const overlay = DDIO.buildOverlay(historicalChanges, candidates, new Map([["001122334455", "192.168.1.10"]]));
 assert.deepStrictEqual(overlay, {
   "001122334455": {
     ip: "192.168.1.30",
+    possibleIps: ["192.168.1.20", "192.168.1.30"],
     match: "lease",
     previousSwitchIp: "10.0.0.1",
-    currentSwitchIp: "10.0.0.2",
+    currentSwitchIp: "10.0.0.9",
   },
 });
 
 const devices = [{ mac: "001122334455", ip: "192.168.1.10", switchIp: "10.0.0.2" }];
 const before = JSON.stringify(devices);
-DDIO.buildOverlay(changes, candidates, new Map());
+DDIO.buildOverlay(historicalChanges, candidates, new Map());
 assert.strictEqual(JSON.stringify(devices), before, "DDIO overlay must not mutate device data");
 
-const sameIpOverlay = DDIO.buildOverlay(changes, candidates, new Map([["001122334455", "192.168.1.30"]]));
-assert.deepStrictEqual(sameIpOverlay, {}, "an already stored IP is not a new DDIO hint");
+const sameIpOverlay = DDIO.buildOverlay(historicalChanges, candidates, new Map([["001122334455", "192.168.1.30"]]));
+assert.deepStrictEqual(sameIpOverlay["001122334455"].possibleIps, ["192.168.1.20"], "the stored IP is excluded while another possible DDIO IP remains");
 
 const wideRow = Array(14).fill("");
 wideRow[9] = "00:11:22:33:44:55";
@@ -67,7 +69,7 @@ wideRow[10] = "192.168.1.40";
 wideRow[12] = "00:11:22:33:44:55";
 wideRow[13] = "192.168.1.50";
 const wideCandidates = new Map();
-DDIO.collectCandidate(wideRow, wideMapping, changes, wideCandidates);
-assert.deepStrictEqual(wideCandidates.get("001122334455"), { ip: "192.168.1.50", match: "lease" });
+DDIO.collectCandidate(wideRow, wideMapping, historicalChanges, wideCandidates);
+assert.deepStrictEqual(wideCandidates.get("001122334455"), { ip: "192.168.1.50", match: "lease", possibleIps: ["192.168.1.40", "192.168.1.50"] });
 
 console.log("frontend_ddio_overlay.test.js: ok");

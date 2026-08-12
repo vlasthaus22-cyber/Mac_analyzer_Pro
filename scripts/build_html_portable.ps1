@@ -23,6 +23,7 @@ $stylePattern = '<link\s+rel="stylesheet"\s+href="styles\.css\?v=[^"]+"\s*>'
 $html = [regex]::Replace($html, $stylePattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($match) "<style>`n$styles`n</style>" }, 1)
 
 $scripts = @(
+    "frontend/vendor/chart.umd.min.js",
     "frontend/ieee-vendor-registry.js",
     "frontend/memory-guard.js",
     "frontend/file-readers.js",
@@ -39,6 +40,14 @@ $scripts = @(
     "frontend/ddio-overlay.js",
     "frontend/dashboard-change-tabs.js",
     "frontend/guide.js",
+    "frontend/ui-feedback.js",
+    "frontend/lazy-tabs.js",
+    "frontend/virtual-table.js",
+    "frontend/smartroom-worker.js",
+    "frontend/smartroom-store.js",
+    "frontend/smartroom-charts.js",
+    "frontend/room-timeline.js",
+    "frontend/smartroom-ui.js",
     "frontend/table-sorter.js",
     "app.js"
 )
@@ -82,6 +91,13 @@ foreach ($marker in @(
     "window.MacAnalyzerWorkspaceFileLifecycle",
     "window.MacAnalyzerDashboardChangeTabs",
     "window.MacAnalyzerTableSorter",
+    "window.MacAnalyzerLazyTabs",
+    "window.MacAnalyzerVirtualTable",
+    "window.MacAnalyzerSmartroomWorker",
+    "window.MacAnalyzerSmartroomStore",
+    "window.MacAnalyzerRoomTimeline",
+    "window.MacAnalyzerSmartroomUI",
+    "window.MacAnalyzerUiFeedback",
     "xlsxWorksheetRows",
     "assertEnrichmentCapacity",
     "id=`"portableDatabaseButton`""

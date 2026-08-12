@@ -17,6 +17,9 @@ logs/*.log
 config/*.json
 .venv-portable/
 portable/*
+node_modules/
+.pnpm-store/
+release/
 !data/backups/.gitkeep
 !data/build/.gitkeep
 !data/databases/.gitkeep

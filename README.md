@@ -9,7 +9,7 @@ and lease MAC/IP pairs are mapped independently, including columns after H;
 the DDIO selectors always display Excel letters such as I, J, and AA. When a
 device moves to a different switch IP, DDIO can show an underlined candidate
 device IP in the results table. The hint never overwrites devices, history,
-snapshots, or exports. A `?` warning beside the MAC in change history preserves
+snapshots, or exports. A `❗` warning beside the MAC in change history preserves
 the display-only DDIO candidate IP and explains that it appeared after a switch
 IP change; no device field is replaced. Legacy DDIO mappings with one shared IP
 column remain compatible.
@@ -91,6 +91,31 @@ screen is visible. Device dialogs show the current row immediately and cache
 the completed chronology for fast reopening. Empty values are placed last and
 numbers, IP-like values, and dates use natural ordering.
 
+The Smartroom monitoring stage adds lazy tab mounting through
+`DocumentFragment`, Web Worker aggregation, and a 20-row virtual window for
+tables over 100 rows. `Smartroom ID` is the room identity, while its display
+name remains a separate field. The **Rooms**, **IP history**, and **Room
+chronology** views show missing equipment, switch-IP changes with DDIO
+`Possible_IPs`, and the full replacement chain. Three locally bundled Chart.js
+4.5.1 charts update from snapshot history. A configurable DDIO URL is fetched
+on startup; the newest IndexedDB `DDIO_Snapshot` is used when the URL is not
+available. The browser database also exposes the requested `Equipment`,
+`History`, and `DDIO_Snapshot` object stores.
+
+Version v1.0.46 completes the Smartroom audit. Null or blank Smartroom IDs are
+skipped with a console warning, while added and removed devices are counted by
+the composite `smartroom_id + mac` identity. The selected room survives tab
+switches through `sessionStorage`. IP warnings are emitted only when a trimmed
+switch IP differs from the preceding persisted snapshot. MAC history is merged
+into a complete first-to-current chain, and the separate `RoomTimeline` module
+renders both a horizontally scrollable chronology and an Added/Removed table.
+The ARP cache resolves a physical MAC with the explicit `MAC не найден`
+fallback; unknown models can be entered from the chronology and are reused by
+future enrichments. Chart instances are destroyed before refresh, legends and
+value labels are enabled, and the total comparison shows the percentage
+relative to the previous snapshot. A 10,000-row worker regression verifies
+bounded aggregation below 500 ms.
+
 In backend mode, the Data screen can upload a `.db`, `.sqlite`, or `.sqlite3`
 file. The server verifies the SQLite header and integrity, stores the uploaded
 copy under `data/imports`, and additively merges supported MAC Analyzer tables;
@@ -171,6 +196,38 @@ in IndexedDB, and abandoned rows from interrupted runs are pruned on startup.
 multi-user deployments. It is optional and is not required by the autonomous
 HTML application. Backend domain logic lives under `backend/services/`, and
 runtime paths are managed by `backend/services/system/storage_paths.py`.
+
+## Local development with Live Server
+
+Open the repository in Visual Studio Code, run **Live Server** for `index.html`,
+and use the generated `http://127.0.0.1:.../index.html` address. Opening the
+source page through HTTP avoids browser restrictions applied to `file://`.
+Alternatively, run `python server.py` and open `http://127.0.0.1:8080`.
+
+Minimal DDIO JSON accepted by the Smartroom loader:
+
+```json
+[
+  {
+    "Smartroom_ID": "SR-001",
+    "room": "Переговорная 1",
+    "mac": "00:11:22:33:44:55",
+    "ip_switch": "10.10.0.12",
+    "switch_port": "Gi1/0/7",
+    "reservation_mac": "00:11:22:33:44:55",
+    "reservation_ip": "192.168.10.21",
+    "lease_mac": "00:11:22:33:44:55",
+    "lease_ip": "192.168.10.22",
+    "Possible_IPs": ["192.168.10.21", "192.168.10.22"]
+  }
+]
+```
+
+The autonomous HTML requires no environment variables. The DDIO endpoint is
+saved in the **Ссылка на выгрузку DDIO** field, or can be supplied before app
+startup as `window.MAC_ANALYZER_API_URL`. Backend deployments may set
+`MAC_ANALYZER_HOST`, `MAC_ANALYZER_PORT`, `MAC_ANALYZER_DATA_DIR`,
+`MAC_ANALYZER_DATABASE_PATH`, and `MAC_ANALYZER_ENGINEERING_PASSWORD`.
 
 ## Project checks
 

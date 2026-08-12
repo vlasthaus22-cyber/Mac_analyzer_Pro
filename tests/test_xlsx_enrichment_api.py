@@ -193,12 +193,23 @@ def test_third_ddio_xlsx_returns_display_only_ip_hint_after_switch_change():
     try:
         host, port = server.server_address
         base_url = f"http://{host}:{port}"
+        post_json(
+            base_url,
+            "/api/analyze",
+            {
+                "devices": [{"mac": "00:11:22:33:44:55", "ip": "192.168.1.10", "switchIp": "10.0.0.1"}],
+                "source": "saved-ddio-baseline",
+                "saveHistory": True,
+                "saveSnapshot": False,
+                "notify": False,
+            },
+        )
         main = post_binary_file(
             base_url,
             "main.xlsx",
             workbook_bytes(
                 ["MAC Address", "IP Address", "Switch IP"],
-                [["00:11:22:33:44:55", "192.168.1.10", "10.0.0.1"]],
+                [["00:11:22:33:44:55", "192.168.1.10", "10.0.0.2"]],
             ),
         )
         enrichment = post_binary_file(
@@ -206,7 +217,7 @@ def test_third_ddio_xlsx_returns_display_only_ip_hint_after_switch_change():
             "enrichment.xlsx",
             workbook_bytes(
                 ["MAC Address", "Switch IP"],
-                [["00:11:22:33:44:55", "10.0.0.2"]],
+                [["00:11:22:33:44:55", "10.0.0.9"]],
             ),
         )
         ddio = post_binary_file(
@@ -267,6 +278,7 @@ def test_third_ddio_xlsx_returns_display_only_ip_hint_after_switch_change():
         assert result["ddioOverlay"] == {
             "001122334455": {
                 "ip": "192.168.1.30",
+                "possibleIps": ["192.168.1.20", "192.168.1.30"],
                 "match": "lease",
                 "previousSwitchIp": "10.0.0.1",
                 "currentSwitchIp": "10.0.0.2",

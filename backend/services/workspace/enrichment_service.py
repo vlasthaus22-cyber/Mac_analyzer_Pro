@@ -72,13 +72,16 @@ def row_to_device(row: list[Any], file_info: dict[str, Any], row_index: int, com
     return device
 
 
-def merge_device(previous: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
+def merge_device(
+    previous: dict[str, Any], current: dict[str, Any], *, prefer_existing: bool = False
+) -> dict[str, Any]:
     merged = dict(previous)
     for key, value in current.items():
-        if key == "source" and previous:
+        if value in ("", None):
             continue
-        if value not in ("", None):
-            merged[key] = value
+        if prefer_existing and merged.get(key) not in ("", None):
+            continue
+        merged[key] = value
     return merged
 
 
@@ -145,13 +148,13 @@ def _enrich_row_streams(
                 continue
             existing = by_mac.get(current["mac"])
             if file_index == 0 or allow_new_from_secondary or existing:
-                by_mac[current["mac"]] = merge_device(existing or {}, current)
+                by_mac[current["mac"]] = merge_device(
+                    existing or {}, current, prefer_existing=file_index > 0
+                )
                 switch_ip = str(current.get("switchIp") or "").strip()
                 if switch_ip:
                     if file_index == 0:
                         switch_state[current["mac"]] = {"before": switch_ip, "after": switch_ip}
-                    elif existing and current["mac"] in switch_state:
-                        switch_state[current["mac"]]["after"] = switch_ip
             if progress_callback and (rows_processed % progress_interval == 0 or rows_processed == total_rows):
                 progress_callback({
                     "files": len(files),
