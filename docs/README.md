@@ -1,0 +1,53 @@
+# MAC Analyzer Pro v1.0.47
+
+Полная браузерная программа запускается без Python и backend: откройте корневой `index.html` через Live Server либо используйте автономный `dist/index.html` из релиза. Первый запуск создаёт IndexedDB; последующие запуски автоматически читают последнюю локальную базу и последний DDIO-снимок.
+
+## Локальный запуск
+
+1. Распакуйте полный архив в короткий путь, например `C:\MAC-Analyzer`.
+2. Для однофайловой версии откройте `MAC-Analyzer-Pro.html` в современном Chrome/Edge.
+3. Для разработки откройте корневой `index.html` через расширение Live Server или выполните `python -m http.server 8000`, затем откройте `http://localhost:8000`.
+4. Загрузите основные/финальные выгрузки и отдельно DDIO. Выберите независимые колонки MAC/IP резервации и аренды; доступны все колонки, включая I, J, AA и далее.
+
+## Пример DDIO JSON
+
+```json
+[
+  {
+    "Device_ID": "SW-ROOM-101",
+    "Reservation MAC Address": "00:11:22:33:44:55",
+    "Reservation IP Address": "192.168.10.20",
+    "Lease MAC Address": "00:11:22:33:44:55",
+    "Lease IP Address": "192.168.10.21",
+    "Possible_IPs": ["192.168.10.20", "192.168.10.21"]
+  }
+]
+```
+
+JSON также может содержать массив в полях `devices`, `items`, `results` или `data`. CSV поддерживает запятую и точку с запятой. Smartroom ID очищается от внешних пробелов; пустые ID безопасно пропускаются и журналируются.
+
+## DDIO URL
+
+Переменные окружения не обязательны. Вставьте адрес в поле «Ссылка на выгрузку DDIO» и нажмите «Сохранить URL». Это единственная настройка в `localStorage`; оборудование, история, снимки и известные модели находятся в IndexedDB. Для преднастройки страницы до загрузки `app.js` можно задать:
+
+```html
+<script>window.MAC_ANALYZER_API_URL = "https://example.local/ddio.json";</script>
+```
+
+Если URL недоступен, программа использует последний `DDIO_Snapshot` из IndexedDB.
+
+## Проверка и сборка
+
+```powershell
+pnpm install --frozen-lockfile
+pnpm run lint
+pnpm run format:check
+powershell -ExecutionPolicy Bypass -File scripts/run_tests.ps1
+powershell -ExecutionPolicy Bypass -File scripts/build_html_portable.ps1
+```
+
+Сборка создаёт `portable/html/MAC-Analyzer-Pro.html`. Полный релиз v1.0.47 публикуется только в `vlasthaus22-cyber/Mac_analyzer_Pro` и включает исходники, автономный HTML, Windows runtime, OUI-базу, сохранённую совместимую базу и историю.
+
+## Данные и резервная копия
+
+Используйте кнопки экспорта/импорта MADB в разделе базы данных. Импорт не требует установленной СУБД. Не очищайте данные браузера до создания резервной копии.

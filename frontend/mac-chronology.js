@@ -1,6 +1,8 @@
 (() => {
   "use strict";
 
+  const Time = window.MacAnalyzerTime || (typeof require === "function" ? require("./time-utils.js") : null);
+
   const fieldLabels = Object.freeze({
     snapshot: "Выгрузка",
     history: "Запись истории",
@@ -72,7 +74,7 @@
       ? options.findSnapshotDevice
       : async () => null;
     const snapshots = (Array.isArray(options.snapshots) ? options.snapshots : []).slice().sort(
-      (left, right) => (Date.parse(snapshotDate(left)) || 0) - (Date.parse(snapshotDate(right)) || 0),
+      (left, right) => (Time.timestamp(snapshotDate(left)) ?? Number.MAX_SAFE_INTEGER) - (Time.timestamp(snapshotDate(right)) ?? Number.MAX_SAFE_INTEGER),
     );
     const appearances = [];
     for (const snapshot of snapshots) {
@@ -121,7 +123,7 @@
       merged.set(key, { ...existing, ...normalized, device });
     }
     return Array.from(merged.values()).sort(
-      (left, right) => (Date.parse(left.createdAt || "") || 0) - (Date.parse(right.createdAt || "") || 0),
+      (left, right) => (Time.timestamp(left.createdAt) ?? Number.MAX_SAFE_INTEGER) - (Time.timestamp(right.createdAt) ?? Number.MAX_SAFE_INTEGER),
     );
   }
 
@@ -175,7 +177,7 @@
 
   function appearanceChanges(appearances) {
     const ordered = (appearances || []).slice().sort(
-      (left, right) => (Date.parse(left.createdAt || "") || 0) - (Date.parse(right.createdAt || "") || 0),
+      (left, right) => (Time.timestamp(left.createdAt) ?? Number.MAX_SAFE_INTEGER) - (Time.timestamp(right.createdAt) ?? Number.MAX_SAFE_INTEGER),
     );
     const fields = ["vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort"];
     const events = [];
@@ -222,7 +224,7 @@
     const unique = new Map();
     for (const event of events) unique.set(eventKey(event), event);
     return Array.from(unique.values()).sort(
-      (left, right) => (Date.parse(right.date || "") || 0) - (Date.parse(left.date || "") || 0),
+      (left, right) => (Time.timestamp(right.date) ?? -1) - (Time.timestamp(left.date) ?? -1),
     );
   }
 
@@ -239,8 +241,7 @@
 
   function displayDate(value, formatter) {
     if (typeof formatter === "function") return formatter(value);
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? String(value || "Дата не указана") : date.toLocaleString("ru-RU");
+    return Time.formatUtc(value);
   }
 
   function eventTone(event) {
@@ -273,22 +274,25 @@
     if (!events.length) {
       return '<div class="mac-timeline-empty"><strong>Хронология пока пуста</strong><span>Для этого MAC ещё нет сохранённых появлений или изменений.</span></div>';
     }
+    let previousTimestamp = null;
     return events.slice(0, Math.max(1, Number(options.limit || 1000))).map((event) => {
       const tone = eventTone(event);
+      const currentTimestamp = Time.timestamp(event.date);
+      const interval = previousTimestamp === null || currentTimestamp === null ? "" : `<small class="timeline-duration">Интервал: ${escapeHtml(Time.formatDuration(Math.abs(currentTimestamp - previousTimestamp)))}</small>`;
+      if (currentTimestamp !== null) previousTimestamp = currentTimestamp;
       const hasChange = String(event.before || "") || String(event.after || "");
       const change = hasChange ? (
         `<div class="mac-timeline-change"><span class="mac-value-before">${escapeHtml(event.before || "Не заполнено")}</span>` +
         '<span class="mac-change-arrow" aria-hidden="true">→</span>' +
         `<span class="mac-value-after">${escapeHtml(event.after || "Не заполнено")}</span></div>`
       ) : "";
-      return `<article class="mac-timeline-item mac-timeline-${tone}">` +
-        `<div class="mac-timeline-marker" aria-hidden="true"></div>` +
-        `<div class="mac-timeline-card"><header><time>${escapeHtml(displayDate(event.date, options.formatDate))}</time>` +
+      return `<details class="mac-timeline-item mac-timeline-${tone}">` +
+        `<summary title="Открыть полную информацию о событии"><span class="mac-timeline-marker" aria-hidden="true"></span>` +
+        `<span class="mac-timeline-card"><header><time>${escapeHtml(displayDate(event.date, options.formatDate))}</time>${interval}` +
         `<span class="mac-event-badge">${escapeHtml(event.event)}</span></header>` +
         `<div class="mac-timeline-title"><strong>${escapeHtml(event.fieldLabel || fieldLabels[event.field] || event.field || "Событие")}</strong>` +
-        `<span>${escapeHtml(event.source || "Источник не указан")}</span></div>` +
-        change + contextHtml(event.device || {}) +
-        "</div></article>";
+        `<span>${escapeHtml(event.source || "Источник не указан")}</span></div>` + change +
+        `</span></summary><div class="mac-timeline-details"><strong>Полная информация</strong>${contextHtml(event.device || {})}</div></details>`;
     }).join("");
   }
 
@@ -300,8 +304,8 @@
       ["Выгрузок", appearances.length],
       ["Изменений", events.filter((item) => item.type === "movement").length],
       ["Источников", sources.size],
-      ["Первое появление", dates.length ? new Date(dates[0]).toLocaleDateString("ru-RU") : "—"],
-      ["Последнее появление", dates.length ? new Date(dates[dates.length - 1]).toLocaleDateString("ru-RU") : "—"],
+      ["Первое появление", dates.length ? Time.formatUtc(dates[0]) : "—"],
+      ["Последнее появление", dates.length ? Time.formatUtc(dates[dates.length - 1]) : "—"],
     ];
     return metrics.map(([label, value]) => (
       `<div class="mac-summary-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`

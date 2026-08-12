@@ -54,7 +54,7 @@
   const backendCandidates = browserOnlyMode ? [] : [location.origin + "/api"];
   let backendBase = backendCandidates[0];
   let backendAvailable = false;
-  let resultPage=1,resultPageSize=250,resultRenderRevision=0,resultSortField="",resultSortDirection="asc",resultRequestController=null,resultStateRevision=0;
+  let resultPage=1,resultPageSize=50,resultRenderRevision=0,resultSortField="",resultSortDirection="asc",resultRequestController=null,resultStateRevision=0;
   const resultResponseCache=new Map(),deviceDialogCache=new Map(),localSearchTextCache=new WeakMap();
   let snapshotMutationPromise=Promise.resolve();
   const engineeringPermissionList=["delete:history","delete:snapshots","delete:mappings","delete:tasks","delete:ip-mappings","delete:api-cache","write:settings","write:migration"];
@@ -98,8 +98,8 @@
   function openBrowserStateDb(){
     return new Promise((resolve,reject)=>{
       if(!("indexedDB" in window))return reject(new Error("IndexedDB недоступна"));
-      const request=indexedDB.open(browserStateDbName,7);
-      request.onupgradeneeded=()=>{const db=request.result;if(!db.objectStoreNames.contains(browserStateStoreName))db.createObjectStore(browserStateStoreName,{keyPath:"id"});if(!db.objectStoreNames.contains("snapshots"))db.createObjectStore("snapshots",{keyPath:"id"});if(!db.objectStoreNames.contains("snapshotChunks")){const chunks=db.createObjectStore("snapshotChunks",{keyPath:"key"});chunks.createIndex("snapshotId","snapshotId",{unique:false});}if(!db.objectStoreNames.contains("sourceFiles"))db.createObjectStore("sourceFiles",{keyPath:"id"});if(!db.objectStoreNames.contains("enrichmentRows")){const rows=db.createObjectStore("enrichmentRows",{keyPath:"key"});rows.createIndex("jobId","jobId",{unique:false});}if(!db.objectStoreNames.contains("deviceHistory"))db.createObjectStore("deviceHistory",{keyPath:"mac"});if(!db.objectStoreNames.contains("Equipment")){const equipment=db.createObjectStore("Equipment",{keyPath:"id"});equipment.createIndex("smartroom_id","smartroom_id",{unique:false});equipment.createIndex("mac","mac",{unique:false});equipment.createIndex("ip_switch","ip_switch",{unique:false});}if(!db.objectStoreNames.contains("History")){const history=db.createObjectStore("History",{keyPath:"id",autoIncrement:true});history.createIndex("entity_type","entity_type",{unique:false});history.createIndex("timestamp","timestamp",{unique:false});}if(!db.objectStoreNames.contains("DDIO_Snapshot"))db.createObjectStore("DDIO_Snapshot",{keyPath:"date"});};
+      const request=indexedDB.open(browserStateDbName,8);
+      request.onupgradeneeded=()=>{const db=request.result,tx=request.transaction;if(!db.objectStoreNames.contains(browserStateStoreName))db.createObjectStore(browserStateStoreName,{keyPath:"id"});if(!db.objectStoreNames.contains("snapshots"))db.createObjectStore("snapshots",{keyPath:"id"});if(!db.objectStoreNames.contains("snapshotChunks")){const chunks=db.createObjectStore("snapshotChunks",{keyPath:"key"});chunks.createIndex("snapshotId","snapshotId",{unique:false});}if(!db.objectStoreNames.contains("sourceFiles"))db.createObjectStore("sourceFiles",{keyPath:"id"});if(!db.objectStoreNames.contains("enrichmentRows")){const rows=db.createObjectStore("enrichmentRows",{keyPath:"key"});rows.createIndex("jobId","jobId",{unique:false});}if(!db.objectStoreNames.contains("deviceHistory"))db.createObjectStore("deviceHistory",{keyPath:"mac"});const equipment=db.objectStoreNames.contains("Equipment")?tx.objectStore("Equipment"):db.createObjectStore("Equipment",{keyPath:"id"});for(const[name,keyPath]of[["smartroom_id","smartroom_id"],["mac","mac"],["ip_switch","ip_switch"],["by_smartroom","smartroom_id"],["by_mac","mac"],["by_switch","ip_switch"]])if(!equipment.indexNames.contains(name))equipment.createIndex(name,keyPath,{unique:false});const history=db.objectStoreNames.contains("History")?tx.objectStore("History"):db.createObjectStore("History",{keyPath:"id",autoIncrement:true});for(const[name,keyPath]of[["entity_type","entity_type"],["timestamp","timestamp"],["by_timestamp","timestamp"],["by_mac","mac"],["by_smartroom","smartroom_id"]])if(!history.indexNames.contains(name))history.createIndex(name,keyPath,{unique:false});if(!db.objectStoreNames.contains("DDIO_Snapshot"))db.createObjectStore("DDIO_Snapshot",{keyPath:"date"});if(!db.objectStoreNames.contains("KnownModels")){const known=db.createObjectStore("KnownModels",{keyPath:"mac"});known.createIndex("by_vendor","vendor",{unique:false});known.createIndex("by_updated_at","updatedAt",{unique:false});}};
       request.onsuccess=()=>resolve(request.result);
       request.onerror=()=>reject(request.error||new Error("Не удалось открыть IndexedDB"));
     });
@@ -925,7 +925,7 @@
   async function seedHistorySwitchChanges(switchTracker,devices){
     if(!BrowserSnapshots?.switchChangesFromHistory)return 0;
     const changes=await BrowserSnapshots.switchChangesFromHistory(devices);
-    for(const[mac,item]of changes)DdioOverlay.seedSwitchChange(switchTracker,mac,item.before,item.after,item.currentIp);
+    for(const[mac,item]of changes)DdioOverlay.seedSwitchChange(switchTracker,mac,item.before,item.after,item.currentIp,item.deviceId);
     return changes.size;
   }
   async function localAnalyzeFiles(fields,strategy,onProgress=()=>{}){
@@ -947,7 +947,7 @@
             if(!(fileIndex>0&&strategy==="primary"&&!previous)){
               const merged=mergeAnalysisDevice(previous,result.device,{preferExisting:fileIndex>0});
               deviceMap.set(result.device.mac,merged);
-              DdioOverlay.observeSwitch(switchTracker,fileIndex,result.device.mac,result.device.switchIp,Boolean(previous));
+              DdioOverlay.observeSwitch(switchTracker,fileIndex,result.device.mac,result.device.switchIp,result.device.deviceId||result.device.device_id);
               DdioOverlay.observeCurrentIp(switchTracker,result.device.mac,result.device.ip);
             }
           }
@@ -993,7 +993,7 @@
           else{
             const device=result.device,previous=deviceBatch.get(device.mac),merged=mergeAnalysisDevice(previous,device,{preferExisting:fileIndex>0});
             deviceBatch.set(device.mac,merged);observeDevice(merged);
-            DdioOverlay.observeSwitch(switchTracker,fileIndex,device.mac,device.switchIp,fileIndex===0||switchTracker.has(device.mac));
+            DdioOverlay.observeSwitch(switchTracker,fileIndex,device.mac,device.switchIp,device.deviceId||device.device_id);
             DdioOverlay.observeCurrentIp(switchTracker,device.mac,device.ip);
             if(deviceBatch.size>=batchSize)await flush(allowNew,fileIndex>0);
           }
@@ -1223,8 +1223,8 @@
     if(!file){summary.textContent="Файл DDIO не выбран.";grid.innerHTML="";if(overlaySummary)overlaySummary.textContent="";return;}
     const validation=DdioOverlay.validateMapping(file.mapping||{});
     summary.textContent=`${file.name} · строк: ${Number(file.rowCount||0).toLocaleString("ru-RU")} · ${validation.valid?"колонки готовы":"проверьте сопоставление колонок"}`;
-    const fields=[["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"]];
-    grid.innerHTML=fields.map(([field,title])=>`<label>${title}<select data-ddio-map="${field}">${ddioMappingOptions(file,file.mapping?.[field]??file.mapping?.ip)}</select></label>`).join("");
+    const fields=[["deviceId","Device ID"],["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"]];
+    grid.innerHTML=fields.map(([field,title])=>`<label>${title}<select data-ddio-map="${field}">${ddioMappingOptions(file,file.mapping?.[field]??((field==="reservationIp"||field==="leaseIp")?file.mapping?.ip:""))}</select></label>`).join("");
     const hints=Number(state.ddioSummary?.newIpHints||Object.keys(state.ddioOverlay||{}).length),changes=Number(state.ddioSummary?.switchIpChanges||0);
     if(overlaySummary)overlaySummary.textContent=state.ddioSummary?`Смен коммутатора: ${changes} · новых IP: ${hints}`:"Подсказки появятся после анализа.";
   }
@@ -3522,7 +3522,7 @@
   $("#analyzeButton").addEventListener("click",analyze);const renderSearchResults=debounce(()=>{resultPage=1;renderResults();},180);$("#searchInput").addEventListener("input",renderSearchResults);["#vendorFilter","#validityFilter"].forEach((s)=>$(s).addEventListener("change",()=>{resultPage=1;renderResults();}));$("#resultsTable").addEventListener("table-sort-change",(event)=>{const field=String(event.detail?.field||"");if(!field)return;resultSortField=field;resultSortDirection=event.detail?.direction==="desc"?"desc":"asc";resultPage=1;renderResults();});$("#exportExcelButton").addEventListener("click",()=>exportData("spreadsheetml"));$("#exportCsvButton").addEventListener("click",()=>exportData("csv"));$("#exportTxtButton").addEventListener("click",()=>exportData("txt"));$("#exportYamlButton").addEventListener("click",()=>exportData("yaml"));$("#exportJsonButton").addEventListener("click",()=>exportData("json"));$("#exportHtmlButton").addEventListener("click",()=>exportData("html"));$("#compareButton").addEventListener("click",compare);
   $("#resultPreviousPageButton").addEventListener("click",()=>{if(resultPage>1){resultPage--;renderResults();}});
   $("#resultNextPageButton").addEventListener("click",()=>{resultPage++;renderResults();});
-  $("#resultPageSizeSelect").addEventListener("change",(event)=>{resultPageSize=Math.max(25,Math.min(Number(event.target.value)||250,1000));resultPage=1;renderResults();});
+  $("#resultPageSizeSelect").addEventListener("change",(event)=>{resultPageSize=Math.max(25,Math.min(Number(event.target.value)||50,1000));resultPage=1;renderResults();});
   $("#exportComparisonExcelButton").addEventListener("click",()=>exportComparison("excel"));
   $("#exportComparisonCsvButton").addEventListener("click",()=>exportComparison("csv"));
   $("#exportComparisonTxtButton").addEventListener("click",()=>exportComparison("txt"));

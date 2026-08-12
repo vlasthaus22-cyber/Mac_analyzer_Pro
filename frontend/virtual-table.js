@@ -4,6 +4,7 @@
   const states = new WeakMap();
   const threshold = 100;
   const visibleRows = 20;
+  const fixedRowHeight = 44;
 
   function wrapperFor(tbody) {
     return tbody.closest(".table-wrap") || tbody.parentElement;
@@ -36,7 +37,8 @@
       if (!state.dataMode) fragment.append(state.rows[index]);
       else {
         const template = document.createElement("template");
-        template.innerHTML = state.renderRow(state.data[index], index).trim();
+        if (!state.rowHtml.has(index)) state.rowHtml.set(index, state.renderRow(state.data[index], index).trim());
+        template.innerHTML = state.rowHtml.get(index);
         if (template.content.firstElementChild) fragment.append(template.content.firstElementChild);
       }
     }
@@ -48,6 +50,7 @@
   function detach(tbody) {
     const state = states.get(tbody);
     if (!state) return;
+    if (state.frame) cancelAnimationFrame(state.frame);
     state.wrapper.removeEventListener("scroll", state.onScroll);
     states.delete(tbody);
   }
@@ -61,11 +64,26 @@
       return false;
     }
     const wrapper = wrapperFor(tbody);
-    let frame = 0;
-    const state = { dataMode: true, data: rows, renderRow, rows: [], wrapper, rowHeight: 38, columns: tbody.closest("table")?.tHead?.rows?.[0]?.cells?.length || 1, start: -1, internal: false, onScroll: null };
+    const state = {
+      dataMode: true,
+      data: rows,
+      renderRow,
+      rowHtml: new Map(),
+      rows: [],
+      wrapper,
+      rowHeight: fixedRowHeight,
+      columns: tbody.closest("table")?.tHead?.rows?.[0]?.cells?.length || 1,
+      start: -1,
+      internal: false,
+      frame: 0,
+      onScroll: null,
+    };
     state.onScroll = () => {
-      if (frame) return;
-      frame = requestAnimationFrame(() => { frame = 0; render(tbody); });
+      if (state.frame) return;
+      state.frame = requestAnimationFrame(() => {
+        state.frame = 0;
+        render(tbody);
+      });
     };
     states.set(tbody, state);
     wrapper.classList.add("virtual-table-wrap");
@@ -89,7 +107,10 @@
       return false;
     }
     const sample = rows.find((row) => row.getBoundingClientRect().height > 0);
-    const rowHeight = Math.max(28, Math.round(sample?.getBoundingClientRect().height || existing?.rowHeight || 38));
+    const rowHeight = Math.max(
+      fixedRowHeight,
+      Math.round(sample?.getBoundingClientRect().height || existing?.rowHeight || fixedRowHeight),
+    );
     if (existing) {
       existing.rows = rows;
       existing.rowHeight = rowHeight;
@@ -98,11 +119,22 @@
       return true;
     }
     const wrapper = wrapperFor(tbody);
-    let frame = 0;
-    const state = { rows, wrapper, rowHeight, columns: tbody.closest("table")?.tHead?.rows?.[0]?.cells?.length || 1, start: -1, internal: false, onScroll: null };
+    const state = {
+      rows,
+      wrapper,
+      rowHeight,
+      columns: tbody.closest("table")?.tHead?.rows?.[0]?.cells?.length || 1,
+      start: -1,
+      internal: false,
+      frame: 0,
+      onScroll: null,
+    };
     state.onScroll = () => {
-      if (frame) return;
-      frame = requestAnimationFrame(() => { frame = 0; render(tbody); });
+      if (state.frame) return;
+      state.frame = requestAnimationFrame(() => {
+        state.frame = 0;
+        render(tbody);
+      });
     };
     states.set(tbody, state);
     wrapper.classList.add("virtual-table-wrap");
@@ -114,7 +146,10 @@
   function sort(tbody, compare) {
     const state = states.get(tbody);
     if (!state) return false;
-    if (state.dataMode) state.data.sort(compare); else state.rows.sort(compare);
+    if (state.dataMode) {
+      state.data.sort(compare);
+      state.rowHtml.clear();
+    } else state.rows.sort(compare);
     state.wrapper.scrollTop = 0;
     state.start = -1;
     render(tbody);
@@ -132,16 +167,31 @@
       new MutationObserver((mutations) => {
         const externalChange = mutations.some((item) => {
           if (!item.addedNodes.length && !item.removedNodes.length) return false;
-          const tbody = item.target?.closest?.("tbody"), state = states.get(tbody);
+          const tbody = item.target?.closest?.("tbody"),
+            state = states.get(tbody);
           if (!state) return true;
-          return !Array.from(item.addedNodes).some((node) => node?.dataset?.virtualSpacer === "true");
+          if (state.dataMode) return false;
+          const managed = (node) => node?.dataset?.virtualSpacer === "true" || state.rows.includes(node);
+          return ![...item.addedNodes, ...item.removedNodes].every(managed);
         });
         if (!externalChange) return;
         if (frame) return;
-        frame = requestAnimationFrame(() => { frame = 0; root.querySelectorAll("table[data-virtual-scroll] tbody").forEach(refresh); });
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          root.querySelectorAll("table[data-virtual-scroll] tbody").forEach(refresh);
+        });
       }).observe(root.body || root.documentElement, { childList: true, subtree: true });
     }
   }
 
-  window.MacAnalyzerVirtualTable = Object.freeze({ initialize, refresh, setData, sort, rows, threshold, visibleRows });
+  window.MacAnalyzerVirtualTable = Object.freeze({
+    initialize,
+    refresh,
+    setData,
+    sort,
+    rows,
+    threshold,
+    visibleRows,
+    fixedRowHeight,
+  });
 })();

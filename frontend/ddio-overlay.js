@@ -3,8 +3,32 @@
 
   const text = (value) => String(value ?? "").trim();
 
+  function ipVersion(value) {
+    const candidate = text(value)
+      .replace(/^\[|\]$/g, "")
+      .split("%")[0];
+    if (
+      /^\d{1,3}(?:\.\d{1,3}){3}$/.test(candidate) &&
+      candidate.split(".").every((part) => Number(part) >= 0 && Number(part) <= 255)
+    )
+      return 4;
+    if (!candidate.includes(":") || !/^[0-9a-f:]+$/i.test(candidate) || (candidate.match(/::/g) || []).length > 1)
+      return 0;
+    const sides = candidate.split("::");
+    const groups = sides.flatMap((side) => (side ? side.split(":") : [])).filter(Boolean);
+    if (!groups.every((group) => /^[0-9a-f]{1,4}$/i.test(group))) return 0;
+    return sides.length === 2 ? (groups.length < 8 ? 6 : 0) : groups.length === 8 ? 6 : 0;
+  }
+
+  function normalizeIp(value) {
+    const candidate = text(value).replace(/^\[|\]$/g, "");
+    return ipVersion(candidate) ? candidate : "";
+  }
+
   function normalizeMac(value) {
-    let normalized = text(value).toUpperCase().replace(/[^0-9A-F]/g, "");
+    let normalized = text(value)
+      .toUpperCase()
+      .replace(/[^0-9A-F]/g, "");
     if (normalized.length === 10) normalized = "00" + normalized;
     if (normalized.length === 11) normalized = "0" + normalized;
     if (normalized.length === 8) normalized = "0000" + normalized;
@@ -36,6 +60,11 @@
     const reservation = /(reservation|reserved|fixed address|fixed mac|резервац|зарезерв)/.test(normalized);
     const lease = /(lease|leased|аренд|выдан)/.test(normalized);
     const ip = /(^| )(ip|ipv4)( |$)/.test(normalized) || /ip адрес|адрес ip/.test(normalized);
+    if (field === "deviceId") {
+      return /(device id|device identifier|идентификатор устройства|id устройства|устройство id)/.test(normalized)
+        ? 40
+        : -1;
+    }
     if (field === "reservationMac") {
       if (!hasMac) return -1;
       if (lease && !reservation) return -1;
@@ -79,6 +108,7 @@
     const reservationMac = pick("reservationMac");
     const leaseMac = pick("leaseMac", new Set(reservationMac === "" ? [] : [reservationMac]));
     return {
+      deviceId: pick("deviceId"),
       reservationMac,
       reservationIp: pick("reservationIp"),
       leaseMac,
@@ -89,7 +119,7 @@
 
   function compileMapping(mapping = {}) {
     const result = {};
-    for (const field of ["reservationMac", "reservationIp", "leaseMac", "leaseIp", "ip"]) {
+    for (const field of ["deviceId", "reservationMac", "reservationIp", "leaseMac", "leaseIp", "ip"]) {
       if (mapping[field] === "" || mapping[field] === undefined || mapping[field] === null) continue;
       const index = Number(mapping[field]);
       if (Number.isInteger(index) && index >= 0) result[field] = index;
@@ -99,16 +129,20 @@
 
   function validateMapping(mapping = {}) {
     const compiled = compileMapping(mapping);
-    const reservationComplete = compiled.reservationMac !== undefined
-      && (compiled.reservationIp !== undefined || compiled.ip !== undefined);
-    const leaseComplete = compiled.leaseMac !== undefined
-      && (compiled.leaseIp !== undefined || compiled.ip !== undefined);
+    const reservationComplete =
+      compiled.reservationMac !== undefined && (compiled.reservationIp !== undefined || compiled.ip !== undefined);
+    const leaseComplete =
+      compiled.leaseMac !== undefined && (compiled.leaseIp !== undefined || compiled.ip !== undefined);
+    const deviceComplete =
+      compiled.deviceId !== undefined &&
+      (compiled.reservationIp !== undefined || compiled.leaseIp !== undefined || compiled.ip !== undefined);
     return {
-      valid: reservationComplete || leaseComplete,
+      valid: reservationComplete || leaseComplete || deviceComplete,
       hasIp: compiled.reservationIp !== undefined || compiled.leaseIp !== undefined || compiled.ip !== undefined,
       hasMac: compiled.reservationMac !== undefined || compiled.leaseMac !== undefined,
       reservationComplete,
       leaseComplete,
+      deviceComplete,
       mapping: compiled,
     };
   }
@@ -117,21 +151,21 @@
     return new Map();
   }
 
-  function seedSwitchChange(tracker, macValue, beforeValue, afterValue, currentIpValue = "") {
+  function seedSwitchChange(tracker, macValue, beforeValue, afterValue, currentIpValue = "", deviceIdValue = "") {
     const mac = normalizeMac(macValue);
     const before = text(beforeValue);
     const after = text(afterValue);
     if (!mac || !before || !after || before === after || !(tracker instanceof Map)) return false;
-    tracker.set(mac, { before, after, currentIp: text(currentIpValue) });
+    tracker.set(mac, { before, after, currentIp: text(currentIpValue), deviceId: text(deviceIdValue).toLowerCase() });
     return true;
   }
 
-  function observeSwitch(tracker, fileIndex, macValue, switchIpValue) {
+  function observeSwitch(tracker, fileIndex, macValue, switchIpValue, deviceIdValue = "") {
     const mac = normalizeMac(macValue);
     const switchIp = text(switchIpValue);
     if (!mac || !switchIp || !(tracker instanceof Map)) return false;
     if (fileIndex === 0) {
-      tracker.set(mac, { before: switchIp, after: switchIp });
+      tracker.set(mac, { before: switchIp, after: switchIp, deviceId: text(deviceIdValue).toLowerCase() });
       return true;
     }
     // Enrichment files are not an authoritative previous state. A real
@@ -150,11 +184,21 @@
 
   function switchChanges(tracker) {
     const changes = new Map();
+    const deviceIds = new Map();
+    Object.defineProperty(changes, "deviceIds", { value: deviceIds, enumerable: false });
     if (!(tracker instanceof Map)) return changes;
     for (const [mac, item] of tracker.entries()) {
       const before = text(item?.before);
       const after = text(item?.after);
-      if (before && after && before !== after) changes.set(mac, { before, after });
+      if (before && after && before !== after) {
+        const deviceId = text(item?.deviceId).toLowerCase();
+        changes.set(mac, { before, after, deviceId });
+        if (deviceId) {
+          const macs = deviceIds.get(deviceId) || new Set();
+          macs.add(mac);
+          deviceIds.set(deviceId, macs);
+        }
+      }
     }
     return changes;
   }
@@ -163,24 +207,54 @@
     if (!Array.isArray(row) || !(changes instanceof Map) || !(candidates instanceof Map)) return 0;
     const compiled = compileMapping(mapping);
     let matched = 0;
+    const deviceId = compiled.deviceId === undefined ? "" : text(row[compiled.deviceId]).toLowerCase();
+    const deviceMacs = deviceId ? Array.from(changes.deviceIds?.get(deviceId) || []) : [];
     const reservationMac = compiled.reservationMac === undefined ? "" : normalizeMac(row[compiled.reservationMac]);
     const leaseMac = compiled.leaseMac === undefined ? "" : normalizeMac(row[compiled.leaseMac]);
     const reservationIpIndex = compiled.reservationIp ?? compiled.ip;
     const leaseIpIndex = compiled.leaseIp ?? compiled.ip;
-    const reservationIp = reservationIpIndex === undefined ? "" : text(row[reservationIpIndex]);
-    const leaseIp = leaseIpIndex === undefined ? "" : text(row[leaseIpIndex]);
-    if (reservationMac && reservationIp && changes.has(reservationMac)) {
-      const existing = candidates.get(reservationMac);
-      if (existing) existing.possibleIps = Array.from(new Set([...(existing.possibleIps || [existing.ip]), reservationIp]));
-      else candidates.set(reservationMac, { ip: reservationIp, match: "reservation", possibleIps: [reservationIp] });
-      matched++;
-    }
-    if (leaseMac && leaseIp && changes.has(leaseMac)) {
-      const existing = candidates.get(leaseMac), possibleIps = Array.from(new Set([...(existing?.possibleIps || (existing?.ip ? [existing.ip] : [])), leaseIp]));
-      candidates.set(leaseMac, { ip: leaseIp, match: "lease", possibleIps });
-      matched++;
+    const reservationIp = reservationIpIndex === undefined ? "" : normalizeIp(row[reservationIpIndex]);
+    const leaseIp = leaseIpIndex === undefined ? "" : normalizeIp(row[leaseIpIndex]);
+    const addCandidate = (mac, ip, match) => {
+      if (!mac || !ip || !changes.has(mac)) return;
+      const existing = candidates.get(mac),
+        possibleIps = Array.from(new Set([...(existing?.possibleIps || (existing?.ip ? [existing.ip] : [])), ip]));
+      candidates.set(mac, { ip, match, possibleIps });
+      matched += 1;
+    };
+    addCandidate(reservationMac, reservationIp, "reservation");
+    addCandidate(leaseMac, leaseIp, "lease");
+    for (const mac of deviceMacs) {
+      addCandidate(mac, reservationIp, "device-id/reservation");
+      addCandidate(mac, leaseIp, "device-id/lease");
     }
     return matched;
+  }
+
+  function buildPossibleIpIndex(rows = [], mapping = {}) {
+    const compiled = compileMapping(mapping),
+      index = new Map();
+    const add = (key, ip) => {
+      const normalizedKey = text(key).toLowerCase(),
+        normalizedIp = normalizeIp(ip);
+      if (!normalizedKey || !normalizedIp) return;
+      const values = index.get(normalizedKey) || [];
+      if (!values.includes(normalizedIp)) values.push(normalizedIp);
+      index.set(normalizedKey, values);
+    };
+    for (const row of rows || []) {
+      if (!Array.isArray(row)) continue;
+      const deviceId = compiled.deviceId === undefined ? "" : row[compiled.deviceId];
+      const reservationMac = compiled.reservationMac === undefined ? "" : normalizeMac(row[compiled.reservationMac]);
+      const leaseMac = compiled.leaseMac === undefined ? "" : normalizeMac(row[compiled.leaseMac]);
+      const reservationIp = row[compiled.reservationIp ?? compiled.ip];
+      const leaseIp = row[compiled.leaseIp ?? compiled.ip];
+      add(deviceId, reservationIp);
+      add(deviceId, leaseIp);
+      add(reservationMac, reservationIp);
+      add(leaseMac, leaseIp);
+    }
+    return index;
   }
 
   function buildOverlay(changes, candidates, currentIpByMac = new Map()) {
@@ -189,8 +263,10 @@
     for (const [mac, change] of changes.entries()) {
       const candidate = candidates.get(mac);
       if (!candidate?.ip) continue;
-      const currentIp = text(currentIpByMac instanceof Map ? currentIpByMac.get(mac) : currentIpByMac?.[mac]);
-      const possibleIps = Array.from(new Set((candidate.possibleIps || [candidate.ip]).map(text).filter((ip) => ip && ip !== currentIp)));
+      const currentIp = normalizeIp(currentIpByMac instanceof Map ? currentIpByMac.get(mac) : currentIpByMac?.[mac]);
+      const possibleIps = Array.from(
+        new Set((candidate.possibleIps || [candidate.ip]).map(normalizeIp).filter((ip) => ip && ip !== currentIp)),
+      );
       if (!possibleIps.length) continue;
       overlay[mac] = {
         ip: possibleIps.includes(candidate.ip) ? candidate.ip : possibleIps[0],
@@ -205,12 +281,15 @@
 
   const api = Object.freeze({
     buildOverlay,
+    buildPossibleIpIndex,
     collectCandidate,
     compileMapping,
     createSwitchTracker,
     detectMapping,
     normalizeHeader,
+    normalizeIp,
     normalizeMac,
+    ipVersion,
     observeCurrentIp,
     observeSwitch,
     seedSwitchChange,

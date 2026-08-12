@@ -18,7 +18,7 @@ def test_ddio_third_export_is_display_only_and_bound_in_primary_frontend():
     assert '<script src="frontend/ddio-overlay.js?v=20260812.1"></script>' in html
     assert 'loadDdioFile(e.target.files,e.target)' in app
     assert all(field in ddio for field in ('reservationMac', 'reservationIp', 'leaseMac', 'leaseIp'))
-    assert '[["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"]]' in app
+    assert '[["deviceId","Device ID"],["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"]]' in app
     assert 'mappingOptionLabel(header,"letter")' in app
     assert 'headers = Array.from({ length: columnCount }' in Path("frontend/file-readers.js").read_text(encoding="utf-8")
     assert 'applyDdioOverlayToResults(body,columns)' in app
@@ -1024,7 +1024,16 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert app.index('await BrowserSnapshots.prune(keepIds);') < app.index('await BrowserSnapshots.save(record,(percent)=>')
     assert 'browserSnapshotRows: 1_000_000' in memory_guard
     assert 'const snapshotStore = "snapshots";' in snapshot_store
-    assert 'const databaseVersion = 7;' in snapshot_store
+    assert 'const databaseVersion = 8;' in snapshot_store
+    smartroom_store = Path("frontend/smartroom-store.js").read_text(encoding="utf-8")
+    smartroom_ui = Path("frontend/smartroom-ui.js").read_text(encoding="utf-8")
+    assert 'const knownModelsStore = "KnownModels";' in smartroom_store
+    assert '["by_smartroom", "smartroom_id"]' in smartroom_store
+    assert '["by_mac", "mac"]' in smartroom_store
+    assert '["by_switch", "ip_switch"]' in smartroom_store
+    assert '["by_timestamp", "timestamp"]' in smartroom_store
+    assert 'class="ip-changed-row critical-change"' in smartroom_ui
+    assert 'class="possible-ip-dropdown"' in smartroom_ui
     assert 'const enrichmentRowStore = "enrichmentRows";' in snapshot_store
     assert 'const deviceHistoryStore = "deviceHistory";' in snapshot_store
     assert 'async function enrichDevicesFromHistory(rows)' in snapshot_store

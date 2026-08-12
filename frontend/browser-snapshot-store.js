@@ -2,7 +2,7 @@
   "use strict";
 
   const databaseName = "mac-analyzer-browser-storage-v1";
-  const databaseVersion = 7;
+  const databaseVersion = 8;
   const workspaceStore = "workspaces";
   const snapshotStore = "snapshots";
   const snapshotChunkStore = "snapshotChunks";
@@ -37,19 +37,25 @@
         if (!database.objectStoreNames.contains(deviceHistoryStore)) {
           database.createObjectStore(deviceHistoryStore, { keyPath: "mac" });
         }
-        if (!database.objectStoreNames.contains("Equipment")) {
-          const equipment = database.createObjectStore("Equipment", { keyPath: "id" });
-          equipment.createIndex("smartroom_id", "smartroom_id", { unique: false });
-          equipment.createIndex("mac", "mac", { unique: false });
-          equipment.createIndex("ip_switch", "ip_switch", { unique: false });
+        const equipment = database.objectStoreNames.contains("Equipment")
+          ? request.transaction.objectStore("Equipment")
+          : database.createObjectStore("Equipment", { keyPath: "id" });
+        for (const [name, keyPath] of [["smartroom_id", "smartroom_id"], ["mac", "mac"], ["ip_switch", "ip_switch"], ["by_smartroom", "smartroom_id"], ["by_mac", "mac"], ["by_switch", "ip_switch"]]) {
+          if (!equipment.indexNames.contains(name)) equipment.createIndex(name, keyPath, { unique: false });
         }
-        if (!database.objectStoreNames.contains("History")) {
-          const history = database.createObjectStore("History", { keyPath: "id", autoIncrement: true });
-          history.createIndex("entity_type", "entity_type", { unique: false });
-          history.createIndex("timestamp", "timestamp", { unique: false });
+        const history = database.objectStoreNames.contains("History")
+          ? request.transaction.objectStore("History")
+          : database.createObjectStore("History", { keyPath: "id", autoIncrement: true });
+        for (const [name, keyPath] of [["entity_type", "entity_type"], ["timestamp", "timestamp"], ["by_timestamp", "timestamp"], ["by_mac", "mac"], ["by_smartroom", "smartroom_id"]]) {
+          if (!history.indexNames.contains(name)) history.createIndex(name, keyPath, { unique: false });
         }
         if (!database.objectStoreNames.contains("DDIO_Snapshot")) {
           database.createObjectStore("DDIO_Snapshot", { keyPath: "date" });
+        }
+        if (!database.objectStoreNames.contains("KnownModels")) {
+          const known = database.createObjectStore("KnownModels", { keyPath: "mac" });
+          known.createIndex("by_vendor", "vendor", { unique: false });
+          known.createIndex("by_updated_at", "updatedAt", { unique: false });
         }
       };
       request.onsuccess = () => resolve(request.result);
@@ -733,7 +739,7 @@
         const request = store.get(mac);
         request.onsuccess = () => {
           const before = String(request.result?.switchIp || "").trim();
-          if (before && before !== after) changes.set(mac, { before, after, currentIp: String(device?.ip || "").trim() });
+          if (before && before !== after) changes.set(mac, { before, after, currentIp: String(device?.ip || "").trim(), deviceId: String(device?.deviceId || device?.device_id || "").trim() });
         };
         request.onerror = () => reject(request.error || new Error("Unable to compare switch history"));
       }

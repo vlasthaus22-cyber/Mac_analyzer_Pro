@@ -27,7 +27,7 @@ require("../frontend/smartroom-worker.js");
     switchIp: "10.0.0.1",
     switchPort: `Gi${index}`,
   }));
-  const second = [{ mac: first[0].mac, smartroomId: "ROOM-1", room: "Переговорная 1", switchIp: "10.0.0.2", switchPort: "Gi9" }];
+  const second = [{ mac: first[0].mac, smartroomId: "ROOM-1", room: "Переговорная 1", city: "Москва", address: "Ленина 1", switchIp: "10.0.0.2", switchPort: "Gi9" }];
   const report = await global.MacAnalyzerSmartroomWorker.build([
     { id: "before", createdAt: "2026-08-01T00:00:00Z", devices: first },
     { id: "after", createdAt: "2026-08-02T00:00:00Z", devices: second },
@@ -38,6 +38,7 @@ require("../frontend/smartroom-worker.js");
   assert.deepStrictEqual(Array.from(report.ipHistory[0].possibleIps), ["192.168.1.20", "192.168.1.30"]);
   assert.strictEqual(report.macTimelines[first[0].mac].length, 2, "the full MAC chain is retained");
   assert.strictEqual(report.rooms.find((room) => room.smartroomId === "ROOM-BULK").missing.length, 1000);
+  assert.strictEqual(report.rooms.find((room) => room.smartroomId === "ROOM-1").city, "Москва");
 
   const large = Array.from({ length: 10000 }, (_value, index) => ({ mac: `AABBCC${index.toString(16).padStart(6, "0")}`, smartroomId: `ROOM-${index}`, switchIp: "10.1.0.1" }));
   large.push({ mac: large[0].mac, smartroomId: "ROOM-DUPLICATE", switchIp: "10.1.0.1" });

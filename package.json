@@ -1,13 +1,17 @@
 {
   "name": "mac-analyzer-pro",
-  "version": "1.0.46",
+  "version": "1.0.47",
   "private": true,
   "packageManager": "pnpm@11.16.0",
   "scripts": {
     "lint": "eslint app.js frontend/*.js tests/*.test.js",
-    "syntax": "node --check app.js"
+    "syntax": "node --check app.js && node --check frontend/smartroom-store.js && node --check frontend/ddio-overlay.js && node --check frontend/mac-chronology.js && node --check frontend/smartroom-charts.js && node --check frontend/time-utils.js",
+    "format": "prettier --write frontend/time-utils.js frontend/smartroom-charts.js frontend/room-timeline.js frontend/ddio-overlay.js frontend/virtual-table.js frontend/smartroom-ui.js frontend/smartroom-store.js tests/frontend_time_utils.test.js tests/frontend_smartroom_charts.test.js tests/frontend_room_timeline.test.js tests/frontend_ddio_overlay.test.js",
+    "format:check": "prettier --check frontend/time-utils.js frontend/smartroom-charts.js frontend/room-timeline.js frontend/ddio-overlay.js frontend/virtual-table.js frontend/smartroom-ui.js frontend/smartroom-store.js tests/frontend_time_utils.test.js tests/frontend_smartroom_charts.test.js tests/frontend_room_timeline.test.js tests/frontend_ddio_overlay.test.js",
+    "test": "node tests/frontend_ddio_overlay.test.js && node tests/frontend_mac_chronology.test.js && node tests/frontend_room_timeline.test.js && node tests/frontend_time_utils.test.js && node tests/frontend_smartroom_charts.test.js"
   },
   "devDependencies": {
-    "eslint": "9.39.5"
+    "eslint": "9.39.5",
+    "prettier": "3.6.2"
   }
 }

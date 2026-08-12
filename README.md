@@ -102,8 +102,9 @@ on startup; the newest IndexedDB `DDIO_Snapshot` is used when the URL is not
 available. The browser database also exposes the requested `Equipment`,
 `History`, and `DDIO_Snapshot` object stores.
 
-Version v1.0.46 completes the Smartroom audit. Null or blank Smartroom IDs are
-skipped with a console warning, while added and removed devices are counted by
+Version v1.0.47 completes the full frontend/backend audit in the original
+`vlasthaus22-cyber/Mac_analyzer_Pro` release line. Null or blank Smartroom IDs are
+skipped safely, while added and removed devices are counted by
 the composite `smartroom_id + mac` identity. The selected room survives tab
 switches through `sessionStorage`. IP warnings are emitted only when a trimmed
 switch IP differs from the preceding persisted snapshot. MAC history is merged
@@ -111,10 +112,20 @@ into a complete first-to-current chain, and the separate `RoomTimeline` module
 renders both a horizontally scrollable chronology and an Added/Removed table.
 The ARP cache resolves a physical MAC with the explicit `MAC не найден`
 fallback; unknown models can be entered from the chronology and are reused by
-future enrichments. Chart instances are destroyed before refresh, legends and
+future enrichments through the IndexedDB `KnownModels` store. IndexedDB v8
+adds `by_smartroom`, `by_mac`, `by_switch`, and `by_timestamp` without deleting
+existing browser data. DDIO now indexes possible IPs by MAC and Device ID and
+shows them in an accessible dropdown on `.critical-change` rows. Chart instances are destroyed before refresh, legends and
 value labels are enabled, and the total comparison shows the percentage
-relative to the previous snapshot. A 10,000-row worker regression verifies
-bounded aggregation below 500 ms.
+relative to the previous snapshot. Chart failures and empty datasets now show
+an explicit UI state instead of a blank canvas. All chronology timestamps are
+normalized to UTC, dynamic intervals are calculated from milliseconds, and
+missing dates never break rendering. Room views include an instant city filter.
+IPv4/IPv6 values from DDIO are validated before warning badges are rendered.
+Virtual tables use a fixed 44-pixel row contract and ignore their own DOM
+mutations, eliminating scroll jumps. Navigation is grouped into collapsible
+Processing, Monitoring, and Management sections. A 10,000-row worker regression
+verifies bounded aggregation below 500 ms.
 
 In backend mode, the Data screen can upload a `.db`, `.sqlite`, or `.sqlite3`
 file. The server verifies the SQLite header and integrity, stores the uploaded
