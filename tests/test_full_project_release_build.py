@@ -22,7 +22,7 @@ def _tracked_files() -> set[str]:
 
 
 def test_full_project_release_contains_every_tracked_file_and_no_user_data():
-    powershell = shutil.which("powershell")
+    powershell = shutil.which("pwsh") or shutil.which("powershell")
     assert powershell
     runtime = ROOT / "data" / "runtime"
     runtime.mkdir(parents=True, exist_ok=True)

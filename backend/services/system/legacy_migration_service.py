@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -196,7 +197,7 @@ def migrate_legacy_sqlite(root: Path, web_database: Path, now: str, dry_run: boo
             results.append(item)
             continue
         try:
-            with _connect(path) as old, _connect(web_database) as new:
+            with closing(_connect(path)) as old, closing(_connect(web_database)) as new:
                 if source == "history":
                     details = migrate_history(old, new, dry_run)
                 elif source == "vendorModel":

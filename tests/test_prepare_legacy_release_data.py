@@ -4,13 +4,15 @@ import json
 import shutil
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import zipfile
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
+LOCAL_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
+PYTHON = LOCAL_PYTHON if LOCAL_PYTHON.is_file() else Path(sys.executable)
 
 
 def test_legacy_release_data_preserves_history_and_redacts_secrets():

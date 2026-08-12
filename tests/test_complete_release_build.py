@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_complete_release_contains_program_layers_without_executables():
-    powershell = shutil.which("powershell")
+    powershell = shutil.which("pwsh") or shutil.which("powershell")
     assert powershell
     runtime = ROOT / "data" / "runtime"
     runtime.mkdir(parents=True, exist_ok=True)

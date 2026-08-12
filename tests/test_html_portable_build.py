@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_html_portable_builder_outputs_one_self_contained_html_file():
-    powershell = shutil.which("powershell")
+    powershell = shutil.which("pwsh") or shutil.which("powershell")
     assert powershell
     runtime = ROOT / "data" / "runtime"
     runtime.mkdir(parents=True, exist_ok=True)

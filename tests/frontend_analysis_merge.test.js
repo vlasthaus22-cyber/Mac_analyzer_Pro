@@ -3,9 +3,9 @@ const fs = require("fs");
 const path = require("path");
 
 const app = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
-const match = app.match(/function mergeAnalysisDevice[\s\S]*?\n  }\n  async function visitLocalRowsForAnalysis/);
+const match = app.match(/function mergeAnalysisDevice[\s\S]*?\r?\n  }\r?\n  async function visitLocalRowsForAnalysis/);
 assert(match, "mergeAnalysisDevice must remain available to browser enrichment");
-const definition = match[0].replace(/\n  async function visitLocalRowsForAnalysis$/, "");
+const definition = match[0].replace(/\r?\n  async function visitLocalRowsForAnalysis$/, "");
 const mergeAnalysisDevice = Function(`"use strict"; ${definition}; return mergeAnalysisDevice;`)();
 
 const current = {

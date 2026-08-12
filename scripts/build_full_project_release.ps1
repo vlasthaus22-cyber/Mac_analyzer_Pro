@@ -59,8 +59,7 @@ try {
     }
 
     $htmlBuild = Join-Path $stagingRoot "html"
-    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "scripts\build_html_portable.ps1") -OutputDirectory $htmlBuild | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Autonomous HTML build failed." }
+    & (Join-Path $root "scripts\build_html_portable.ps1") -OutputDirectory $htmlBuild | Out-Null
     Copy-Item -LiteralPath (Join-Path $htmlBuild "MAC-Analyzer-Pro.html") -Destination (Join-Path $package "MAC-Analyzer-Pro.html") -Force
 
     $commit = (& (Get-Command git.exe -ErrorAction Stop).Source -C $root rev-parse HEAD).Trim()

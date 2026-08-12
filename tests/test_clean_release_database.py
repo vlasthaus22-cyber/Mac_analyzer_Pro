@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import sqlite3
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
+LOCAL_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
+PYTHON = LOCAL_PYTHON if LOCAL_PYTHON.is_file() else Path(sys.executable)
 
 
 def test_clean_release_database_has_complete_schema_and_no_user_rows():

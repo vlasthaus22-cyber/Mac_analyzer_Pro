@@ -32,8 +32,7 @@ try {
         [IO.Path]::GetFullPath($PortablePackage)
     } else {
         $runtimeBuildRoot = Join-Path $stagingRoot "runtime-build"
-        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "scripts\build_portable.ps1") -OutputDirectory $runtimeBuildRoot | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "Windows portable runtime build failed." }
+        & (Join-Path $root "scripts\build_portable.ps1") -OutputDirectory $runtimeBuildRoot | Out-Null
         Join-Path $runtimeBuildRoot "dist\MACAnalyzerBackend"
     }
     foreach ($required in @("MACAnalyzerBackend.exe", "START_MAC_ANALYZER.cmd", "PACKAGE_INFO.json")) {
@@ -43,8 +42,7 @@ try {
     }
 
     $sourceBuildRoot = Join-Path $stagingRoot "source-build"
-    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "scripts\build_full_project_release.ps1") -OutputDirectory $sourceBuildRoot -Version $Version | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Full source project build failed." }
+    & (Join-Path $root "scripts\build_full_project_release.ps1") -OutputDirectory $sourceBuildRoot -Version $Version | Out-Null
     $sourceArchive = Join-Path $sourceBuildRoot "MAC-Analyzer-$Version-Source.zip"
     $expandedSourceRoot = Join-Path $stagingRoot "expanded-source"
     Expand-Archive -LiteralPath $sourceArchive -DestinationPath $expandedSourceRoot
