@@ -21,6 +21,8 @@ $failed = [System.Collections.Generic.List[string]]::new()
 $passed = 0
 $testRuntimeRoot = Join-Path $root "data\runtime\tests"
 $testDataDirectory = Join-Path $testRuntimeRoot ([Guid]::NewGuid().ToString("N"))
+$xlsxMemoryFixture = Join-Path $root "data\imports\oom-browser-test.xlsx"
+$createdXlsxMemoryFixture = $false
 New-Item -ItemType Directory -Force -Path $testDataDirectory | Out-Null
 
 if (-not $files.Count) {
@@ -35,6 +37,14 @@ $env:MAC_ANALYZER_DATA_DIR = $testDataDirectory
 $env:MAC_ANALYZER_DATABASE_PATH = Join-Path $testDataDirectory "databases\mac_analyzer_web.db"
 Push-Location $root
 try {
+    if (-not (Test-Path -LiteralPath $xlsxMemoryFixture)) {
+        & $python -m tools.create_xlsx_memory_fixture $xlsxMemoryFixture
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to create the XLSX memory-test fixture."
+        }
+        $createdXlsxMemoryFixture = $true
+    }
+
     foreach ($file in $files) {
         $module = "tests.$($file.BaseName)"
         & $python -m $module
@@ -70,6 +80,13 @@ try {
     $resolvedTestRoot = [IO.Path]::GetFullPath($testRuntimeRoot).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
     if ($resolvedTestData.StartsWith($resolvedTestRoot, [StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $resolvedTestData)) {
         Remove-Item -LiteralPath $resolvedTestData -Recurse -Force
+    }
+    if ($createdXlsxMemoryFixture -and (Test-Path -LiteralPath $xlsxMemoryFixture)) {
+        $resolvedFixture = [IO.Path]::GetFullPath($xlsxMemoryFixture)
+        $resolvedImportsRoot = [IO.Path]::GetFullPath((Join-Path $root "data\imports")).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+        if ($resolvedFixture.StartsWith($resolvedImportsRoot, [StringComparison]::OrdinalIgnoreCase)) {
+            Remove-Item -LiteralPath $resolvedFixture -Force
+        }
     }
 }
 
