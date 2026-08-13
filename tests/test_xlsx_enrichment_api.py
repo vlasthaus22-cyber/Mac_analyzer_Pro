@@ -146,12 +146,15 @@ def test_two_xlsx_files_are_visible_and_enrich_matching_primary_mac():
             },
         )
         assert result["status"] == "completed"
-        assert len(result["devices"]) == 1
-        device = result["devices"][0]
+        assert len(result["devices"]) == 2
+        device = next(item for item in result["devices"] if item["mac"] == "AABBCC000021")
         assert device["mac"] == "AABBCC000021"
         assert device["ip"] == "10.21.0.5"
         assert device["room"] == "Room 21"
         assert device["switchIp"] == "192.168.21.1"
+        secondary_only = next(item for item in result["devices"] if item["mac"] == "AABBCC000099")
+        assert secondary_only["ip"] == "10.99.0.5"
+        assert "enrichment" in secondary_only["sourceRoles"]
 
         WORKSPACE_FILE_CACHE.discard(main["fileToken"])
         WORKSPACE_FILE_CACHE.discard(enrichment["fileToken"])
@@ -280,6 +283,7 @@ def test_third_ddio_xlsx_returns_display_only_ip_hint_after_switch_change():
                 "ip": "192.168.1.30",
                 "possibleIps": ["192.168.1.20", "192.168.1.30"],
                 "match": "lease",
+                "source": "DDIO",
                 "previousSwitchIp": "10.0.0.1",
                 "currentSwitchIp": "10.0.0.2",
             }

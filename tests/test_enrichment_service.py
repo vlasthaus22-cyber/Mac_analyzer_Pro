@@ -27,17 +27,19 @@ def test_enrichment_primary_and_merge_strategies():
     primary = enrich_files(FILES, "primary")
     assert primary["progress"]["files"] == 2
     assert primary["progress"]["rows"] == 4
-    assert primary["progress"]["valid"] == 1
+    assert primary["progress"]["valid"] == 2
     assert primary["progress"]["invalid"] == 1
     assert primary["devices"][0]["mac"] == "AABBCC000001"
     assert primary["devices"][0]["address"] == "Rack 1"
+    assert primary["devices"][1]["address"] == "Rack 2"
     assert primary["devices"][0]["room"] == "101"
 
     merged = enrich_files(FILES, "merge")
     assert merged["progress"]["valid"] == 2
     assert [device["mac"] for device in merged["devices"]] == ["AABBCC000001", "AABBCC000002"]
     assert merged["devices"][1]["address"] == "Rack 2"
-    assert all(device["source"] == "primary.csv" for device in merged["devices"])
+    assert merged["devices"][0]["source"] == "primary.csv + extra.csv"
+    assert merged["devices"][1]["source"] == "extra.csv"
 
 
 if __name__ == "__main__":

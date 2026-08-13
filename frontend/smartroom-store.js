@@ -183,7 +183,7 @@
         const mac = normalizeMac(row.mac || row.macFormatted);
         const smartroomId = text(row.smartroomId || row.smartroom_id);
         if (!smartroomId) {
-          console.warn(`[Smartroom] Запись ${index + 1} пропущена: Smartroom ID пустой или null`, row);
+          console.warn(`[Smartroom] Запись ${index + 1} пропущена: Smartroom ID пустой или null`);
           return null;
         }
         return {

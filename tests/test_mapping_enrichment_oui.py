@@ -36,7 +36,7 @@ def test_mapping_summary_enrichment_fields_and_oui_settings():
     assert fields["room"] is True
     assert fields["history"] is True
     field_stats = enrichment_field_summary(fields)
-    assert field_stats["total"] == 9
+    assert field_stats["total"] == 13
     assert "vendor" in field_stats["disabled"]
 
     saved = save_oui_settings({"length": 5, "style": "dash"})

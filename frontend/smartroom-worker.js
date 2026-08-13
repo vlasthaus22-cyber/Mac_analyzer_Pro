@@ -17,21 +17,21 @@
       ip: text(row.ip || row.deviceIp || row.device_ip), deviceId: text(row.deviceId || row.device_id), vendor: text(row.vendor || row.manufacturer), model: text(row.model),
       possibleIps: ips(row.Possible_IPs || row.possible_ips || row.possibleIps)
     });
-    const key = row => row.smartroomId || ('MAC:' + row.mac);
-    function begin(id, options) { sessions.set(id, { options: options || {}, snapshots: [], current: new Map(), previous: new Map(), rooms: new Map(), macs: new Map(), ipHistory: [], daily: new Map(), pending: null, skipped: 0 }); }
+    const key = row => row.smartroomId || ('UNASSIGNED:' + row.mac);
+    function begin(id, options) { sessions.set(id, { options: options || {}, snapshots: [], current: new Map(), previous: new Map(), rooms: new Map(), macs: new Map(), criticalSwitchChanges: [], daily: new Map(), pending: null, skipped: 0 }); }
     function beginSnapshot(id, meta) { const s = sessions.get(id); if (!s) throw new Error('Worker session not found'); s.pending = { meta: meta || {}, next: new Map(), byRoom: new Map() }; }
     function ingest(id, rows) {
       const s = sessions.get(id); if (!s) throw new Error('Worker session not found');
       if (!s.pending) throw new Error('Worker snapshot not started');
       for (const raw of rows || []) {
         const row = compact(raw);
-        if (!row.smartroomId) {
+        if (!row.smartroomId && !row.mac) {
           s.skipped += 1;
           continue;
         }
-        const identity = row.smartroomId + '|' + row.mac;
+        const identity = row.mac ? 'mac:' + row.mac : 'room:' + row.smartroomId;
         s.pending.next.set(identity, row);
-        const roomKey = key(row); if (!s.pending.byRoom.has(roomKey)) s.pending.byRoom.set(roomKey, []); s.pending.byRoom.get(roomKey).push(row);
+        if (row.smartroomId) { const roomKey = key(row); if (!s.pending.byRoom.has(roomKey)) s.pending.byRoom.set(roomKey, []); s.pending.byRoom.get(roomKey).push(row); }
       }
     }
     function endSnapshot(id) {
@@ -46,7 +46,7 @@
         if (before.switchIp && row.switchIp && before.switchIp !== row.switchIp) {
           changed += 1;
           const overlay = s.options.ddioOverlay?.[row.mac] || s.options.ddioOverlay?.['device-id:' + row.deviceId.toLowerCase()] || {};
-          s.ipHistory.push({ date, smartroomId: row.smartroomId, room: row.room, mac: row.mac, previousIp: before.switchIp, currentIp: row.switchIp, possibleIps: Array.from(new Set([...row.possibleIps, ...ips(overlay.possibleIps), text(overlay.ip)].filter(Boolean))) });
+          s.criticalSwitchChanges.push({ date, smartroomId: row.smartroomId, room: row.room, mac: row.mac, previousIp: before.switchIp, currentIp: row.switchIp, possibleIps: Array.from(new Set([...row.possibleIps, ...ips(overlay.possibleIps), text(overlay.ip)].filter(Boolean))), source: 'DDIO' });
         }
       }
       for (const identity of s.current.keys()) if (!next.has(identity)) removed += 1;
@@ -65,7 +65,7 @@
         rooms.push({ smartroomId: latest.devices[0]?.smartroomId || prior.devices[0]?.smartroomId || roomKey.replace(/^MAC:/, ''), room: latest.devices[0]?.room || prior.devices[0]?.room || '', city: latest.devices[0]?.city || prior.devices[0]?.city || '', address: latest.devices[0]?.address || prior.devices[0]?.address || '', devices: latest.devices, missing, history: events });
       }
       rooms.sort((a,b) => a.smartroomId.localeCompare(b.smartroomId, 'ru', { numeric: true }));
-      const result = { rooms, ipHistory: s.ipHistory, macTimelines: Object.fromEntries(s.macs), charts: Array.from(s.daily.values()).sort((a,b) => a.date.localeCompare(b.date)), snapshots: s.snapshots, skipped: s.skipped };
+      const result = { rooms, criticalSwitchChanges: s.criticalSwitchChanges, macTimelines: Object.fromEntries(s.macs), charts: Array.from(s.daily.values()).sort((a,b) => a.date.localeCompare(b.date)), snapshots: s.snapshots, skipped: s.skipped };
       sessions.delete(id); return result;
     }
     self.onmessage = event => { const { requestId, action, sessionId, meta, rows, options } = event.data || {}; try { let value = true; if (action === 'begin') begin(sessionId, options); else if (action === 'beginSnapshot') beginSnapshot(sessionId, meta || {}); else if (action === 'ingest') ingest(sessionId, rows || []); else if (action === 'endSnapshot') endSnapshot(sessionId); else if (action === 'finish') value = finish(sessionId); self.postMessage({ requestId, value }); } catch (error) { self.postMessage({ requestId, error: error.message || String(error) }); } };

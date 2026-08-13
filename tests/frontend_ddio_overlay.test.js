@@ -65,6 +65,7 @@ assert.deepStrictEqual(overlay, {
     ip: "192.168.1.30",
     possibleIps: ["192.168.1.20", "192.168.1.30"],
     match: "lease",
+    source: "DDIO",
     previousSwitchIp: "10.0.0.1",
     currentSwitchIp: "10.0.0.9",
   },
@@ -78,9 +79,15 @@ assert.strictEqual(JSON.stringify(devices), before, "DDIO overlay must not mutat
 const sameIpOverlay = DDIO.buildOverlay(historicalChanges, candidates, new Map([["001122334455", "192.168.1.30"]]));
 assert.deepStrictEqual(
   sameIpOverlay["001122334455"].possibleIps,
-  ["192.168.1.20"],
-  "the stored IP is excluded while another possible DDIO IP remains",
+  ["192.168.1.20", "192.168.1.30"],
+  "critical analytics retains every possible DDIO IP",
 );
+
+const fallbackDevices = [{ mac: "001122334455", ip: "" }];
+const fallbackIndex = DDIO.buildPossibleIpIndex([["00:11:22:33:44:55", "192.168.1.60"]], { leaseMac: 0, leaseIp: 1 });
+assert.strictEqual(DDIO.applyIpFallback(fallbackDevices, fallbackIndex), 1);
+assert.strictEqual(fallbackDevices[0].ip, "192.168.1.60");
+assert.strictEqual(fallbackDevices[0].ipSource, "ddio");
 
 const wideRow = Array(14).fill("");
 wideRow[9] = "00:11:22:33:44:55";

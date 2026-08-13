@@ -10,9 +10,12 @@ def read(relative: str) -> str:
 
 def test_smartroom_tabs_and_chart_canvases_are_present():
     html = read("index.html")
-    for view in ("rooms", "iphistory", "roomhistory"):
+    for view in ("rooms", "roomhistory"):
         assert f'data-view="{view}"' in html
         assert f'id="{view}View"' in html
+    assert 'data-view="iphistory"' not in html
+    assert 'id="iphistoryView"' not in html
+    assert "Аналитике критических изменений" in html
     for canvas in ("smartroomChangesChart", "smartroomAddedRemovedChart", "smartroomTotalChart"):
         assert f'id="{canvas}"' in html
     assert 'frontend/vendor/chart.umd.min.js?v=4.5.1' in html
@@ -22,7 +25,7 @@ def test_worker_uses_chunked_ingestion_and_full_timeline_fields():
     source = read("frontend/smartroom-worker.js")
     assert 'action === \'ingest\'' in source
     assert 'offset += 1000' in source
-    assert "ipHistory" in source
+    assert "criticalSwitchChanges" in source
     assert "macTimelines" in source
     assert "Possible_IPs" in source
     assert "switchPort" in source

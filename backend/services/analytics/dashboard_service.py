@@ -7,6 +7,8 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+from backend.services.identity.device_identity_service import identity_key, pair_device_sets
+
 from .chart_service import build_chart_payload
 
 
@@ -53,10 +55,12 @@ def normalize_dashboard_settings(settings: dict[str, Any] | None = None) -> dict
     }
 
 
-CHANGE_FIELDS = ("vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort")
+CHANGE_FIELDS = ("mac", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName")
 CHANGE_FIELD_LABELS = {
     "vendor": "Производитель", "model": "Модель", "ip": "IP-адрес", "address": "Адрес",
-    "room": "Помещение", "smartroomId": "Smartroom ID", "switchIp": "Коммутатор", "switchPort": "Порт", "device": "Устройство",
+    "room": "Помещение", "smartroomId": "Smartroom ID", "switchIp": "IP коммутатора", "switchPort": "Порт", "device": "Устройство",
+    "mac": "MAC / физический адрес", "hostname": "Hostname", "serialNumber": "Серийный номер",
+    "deviceId": "ID устройства", "deviceName": "Название устройства", "identityConflict": "Конфликт идентификации",
 }
 
 
@@ -136,12 +140,10 @@ def _change_severity(
     before_device: dict[str, Any] | None = None,
     after_device: dict[str, Any] | None = None,
 ) -> str:
-    if field == "switchIp" and before_device and after_device:
-        if (
-            _text(before_device.get("ip")) == _text(after_device.get("ip"))
-            and _text(before_device.get("room")) == _text(after_device.get("room"))
-        ):
-            return "critical"
+    if field == "switchIp":
+        return "critical"
+    if field in {"mac", "identityConflict"}:
+        return "critical"
     if field in {"ip", "address", "room"}:
         return "high"
     if field in {"vendor", "model", "smartroomId", "switchIp", "switchPort"}:
@@ -151,7 +153,7 @@ def _change_severity(
     return "low"
 
 
-def _device_context(device: dict[str, Any] | None) -> dict[str, str] | None:
+def _device_context(device: dict[str, Any] | None) -> dict[str, Any] | None:
     if not isinstance(device, dict):
         return None
     return {
@@ -164,12 +166,20 @@ def _device_context(device: dict[str, Any] | None) -> dict[str, str] | None:
         "smartroomId": _text(device.get("smartroomId") or device.get("smartroom_id")),
         "switchIp": _text(device.get("switchIp") or device.get("switch_ip")),
         "switchPort": _text(device.get("switchPort") or device.get("switch_port")),
+        "hostname": _text(device.get("hostname") or device.get("host_name")),
+        "serialNumber": _text(device.get("serialNumber") or device.get("serial_number") or device.get("serial")),
+        "deviceId": _text(device.get("deviceId") or device.get("device_id")),
+        "deviceName": _text(device.get("deviceName") or device.get("device_name") or device.get("name")),
+        "source": _text(device.get("source")),
+        "ipSource": _text(device.get("ipSource") or (device.get("fieldSources") or {}).get("ip")),
+        "possibleIps": list(device.get("possibleIps") or []),
+        "hasConflict": bool(device.get("hasConflict")),
+        "conflicts": list(device.get("conflicts") or []),
     }
 
 
 def _device_identity(device: dict[str, Any] | None, mac: str = "") -> str:
-    context = _device_context(device) or {}
-    return f"{_text(context.get('smartroomId'))}|{_text(context.get('mac') or mac)}"
+    return identity_key(device or {}) or ("mac:" + (_mac(device or {}) or mac) if (_mac(device or {}) or mac) else "")
 
 
 def _change_row(
@@ -181,7 +191,7 @@ def _change_row(
     normalized_field = {"switch_ip": "switchIp", "switch_port": "switchPort"}.get(field, field or "device")
     previous = _device_context(before_device)
     current = _device_context(after_device)
-    return {
+    result = {
         "mac": mac, "macFormatted": ":".join(mac[index:index + 2] for index in range(0, 12, 2)) if len(mac) == 12 else mac,
         "identity": _device_identity(current or previous, mac),
         "date": changed_at, "type": change_type, "typeLabel": labels.get(change_type, "Изменено"),
@@ -190,6 +200,17 @@ def _change_row(
         "severity": _change_severity(change_type, normalized_field, previous, current),
         "beforeDevice": previous, "afterDevice": current,
     }
+    if normalized_field == "switchIp" and current:
+        possible_ips = list(current.get("possibleIps") or [])
+        device_ip = _text(current.get("ip"))
+        if device_ip and device_ip not in possible_ips:
+            possible_ips.append(device_ip)
+        if possible_ips:
+            result["ddioCandidateIp"] = possible_ips[0]
+            result["possibleDdioIps"] = possible_ips
+            result["ddioMatch"] = "device"
+            result["valueSource"] = _text(current.get("ipSource") or "DDIO")
+    return result
 
 
 def analyze_dashboard_changes(
@@ -210,34 +231,44 @@ def analyze_dashboard_changes(
         indexed = {_snapshot_id(snapshot, index): snapshot for index, snapshot in enumerate(snapshots) if isinstance(snapshot, dict)}
         baseline = indexed.get(baseline_id) or indexed.get(options[-2]["id"]) or snapshots[-2]
         comparison = indexed.get(comparison_id) or indexed.get(options[-1]["id"]) or snapshots[-1]
-        before_devices = {_device_identity(device): device for device in baseline.get("devices", []) if isinstance(device, dict) and _mac(device)}
-        after_devices = {_device_identity(device): device for device in comparison.get("devices", []) if isinstance(device, dict) and _mac(device)}
+        baseline_devices = [device for device in baseline.get("devices", []) if isinstance(device, dict)]
+        comparison_devices = [device for device in comparison.get("devices", []) if isinstance(device, dict)]
+        pairs, added_devices, removed_devices = pair_device_sets(baseline_devices, comparison_devices)
         changed_at = _text(comparison.get("fileCreatedAt") or comparison.get("createdAt") or comparison.get("created_at"))
-        for identity in sorted(set(after_devices) - set(before_devices)):
-            mac = _mac(after_devices[identity])
+        for device in added_devices:
+            mac = _mac(device)
             changes.append(_change_row(
                 mac=mac, changed_at=changed_at, change_type="added",
-                after=after_devices[identity].get("source") or "Устройство", source="snapshot",
-                after_device=after_devices[identity],
+                after=device.get("source") or "Устройство", source="snapshot",
+                after_device=device,
             ))
-        for identity in sorted(set(before_devices) - set(after_devices)):
-            mac = _mac(before_devices[identity])
+        for device in removed_devices:
+            mac = _mac(device)
             changes.append(_change_row(
                 mac=mac, changed_at=changed_at, change_type="removed",
-                before=before_devices[identity].get("source") or "Устройство", source="snapshot",
-                before_device=before_devices[identity],
+                before=device.get("source") or "Устройство", source="snapshot",
+                before_device=device,
             ))
-        for identity in sorted(set(before_devices) & set(after_devices)):
-            mac = _mac(after_devices[identity])
+        for before_device, after_device in pairs:
+            mac = _mac(after_device) or _mac(before_device)
             for field in CHANGE_FIELDS:
-                before = before_devices[identity].get(field)
-                after = after_devices[identity].get(field)
+                before = _mac(before_device) if field == "mac" else before_device.get(field)
+                after = _mac(after_device) if field == "mac" else after_device.get(field)
+                if _text(before) and not _text(after):
+                    continue
                 if _text(before) != _text(after):
                     changes.append(_change_row(
                         mac=mac, changed_at=changed_at, change_type="modified", field=field,
                         before=before, after=after, source="snapshot",
-                        before_device=before_devices[identity], after_device=after_devices[identity],
+                        before_device=before_device, after_device=after_device,
                     ))
+            if after_device.get("hasConflict"):
+                conflicts = after_device.get("conflicts") if isinstance(after_device.get("conflicts"), list) else []
+                changes.append(_change_row(
+                    mac=mac, changed_at=changed_at, change_type="modified", field="identityConflict",
+                    before="-", after="; ".join(_text(item.get("field")) for item in conflicts if isinstance(item, dict)) or "Обнаружен конфликт",
+                    source="snapshot", before_device=before_device, after_device=after_device,
+                ))
     else:
         movement_dates = [
             _parse_date(_movement_value(item, "changedAt", "changed_at") or _text(item.get("date_str")))

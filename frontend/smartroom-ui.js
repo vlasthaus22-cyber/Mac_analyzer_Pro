@@ -9,7 +9,6 @@
   const LazyTabs = window.MacAnalyzerLazyTabs;
   const Feedback = window.MacAnalyzerUiFeedback;
   const Time = window.MacAnalyzerTime;
-  const Ddio = window.MacAnalyzerDdioOverlay;
   const cache = new Map();
   const inflight = new Map();
   const selectedRoomKey = "mac-analyzer-selected-smartroom-id";
@@ -93,7 +92,7 @@
         const persistence = await Promise.allSettled([
           Store?.syncEquipment(current, options?.getLastAnalysis?.() || new Date().toISOString()),
           Store?.appendHistory(
-            (value.ipHistory || []).map((item) => ({
+            (value.criticalSwitchChanges || []).map((item) => ({
               entity_type: "ip_switch",
               smartroomId: item.smartroomId,
               mac: item.mac,
@@ -189,45 +188,6 @@
       fillRoomSelect(value);
     } catch (error) {
       body.innerHTML = '<tr><td colspan="8" class="empty-state">Не удалось построить историю.</td></tr>';
-      summary.textContent = error.message;
-      Feedback?.showError(error);
-    }
-  }
-
-  function ipRow(item) {
-    const ips = (item.possibleIps || []).filter((ip) => Ddio?.ipVersion?.(ip));
-    const possible = ips.join(", "),
-      tip = possible ? `Возможные IP из DDIO: ${possible}` : "В DDIO нет корректных дополнительных IP";
-    const badges =
-      ips.map((ip) => `<span class="ip-badge ip-v${Ddio.ipVersion(ip)}">${escapeHtml(ip)}</span>`).join("") ||
-      "не найдены";
-    const dropdown = `<details class="possible-ip-dropdown"><summary class="ip-change-warning" title="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}">❗</summary><div role="note"><strong>Возможные IP из выгрузки:</strong><span class="ip-badge-list">${badges}</span></div></details>`;
-    return `<tr class="ip-changed-row critical-change"><td>${escapeHtml(formatDate(item.date))}</td><td>${escapeHtml(item.smartroomId || "—")}</td><td>${escapeHtml(item.room || "—")}</td><td>${escapeHtml(formatMac(item.mac) || "—")}</td><td><span class="ip-badge ip-v${Ddio?.ipVersion?.(item.previousIp) || 0}">${escapeHtml(item.previousIp || "—")}</span></td><td><span class="ip-badge ip-v${Ddio?.ipVersion?.(item.currentIp) || 0}">${escapeHtml(item.currentIp || "—")}</span>${dropdown}</td><td title="${escapeHtml(possible)}"><span class="ip-badge-list">${badges}</span></td></tr>`;
-  }
-
-  async function renderIpHistory(force = false) {
-    const body = $("#ipHistoryBody"),
-      summary = $("#ipHistorySummary");
-    if (!body || !summary) return;
-    summary.textContent = "Сравнение сохраненных IP в отдельном потоке…";
-    try {
-      const value = await build(force),
-        query = text($("#ipHistorySearchInput")?.value).toLowerCase();
-      const rows = (value.ipHistory || [])
-        .filter(
-          (item) =>
-            !query ||
-            [item.smartroomId, item.room, item.mac, item.previousIp, item.currentIp, ...(item.possibleIps || [])]
-              .join(" ")
-              .toLowerCase()
-              .includes(query),
-        )
-        .slice()
-        .reverse();
-      if (rows.length) VirtualTable?.setData(body, rows, ipRow);
-      else body.innerHTML = '<tr><td colspan="7" class="empty-state">Смен IP коммутатора не найдено.</td></tr>';
-      summary.textContent = `Смен IP относительно предыдущего сохраненного снимка: ${rows.length.toLocaleString("ru-RU")} · ❗ показывает Possible_IPs из DDIO.`;
-    } catch (error) {
       summary.textContent = error.message;
       Feedback?.showError(error);
     }
@@ -332,11 +292,6 @@
       debounce(() => renderRooms(false)),
     );
     $("#roomsCityFilter")?.addEventListener("change", () => renderRooms(false));
-    $("#refreshIpHistoryButton")?.addEventListener("click", () => renderIpHistory(true));
-    $("#ipHistorySearchInput")?.addEventListener(
-      "input",
-      debounce(() => renderIpHistory(false)),
-    );
     $("#roomChronologySelect")?.addEventListener("change", () => renderRoomChronology(false));
     $("#roomChronologyCityFilter")?.addEventListener("change", () => {
       fillRoomSelect(report || { rooms: [] });
@@ -362,7 +317,6 @@
 
   async function render(name, force = false) {
     if (name === "rooms") return renderRooms(force);
-    if (name === "iphistory") return renderIpHistory(force);
     if (name === "roomhistory") return renderRoomChronology(force);
     if (name === "analytics") return renderCharts(force);
   }

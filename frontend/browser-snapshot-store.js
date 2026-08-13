@@ -533,10 +533,27 @@
           const previous = request.result?.device;
           if (!previous && !allowNew) return;
           const merged = previous ? { ...previous } : {};
+          const fieldSources = { ...(merged.fieldSources || {}) };
+          const sourceFiles = Array.from(new Set([...(merged.sourceFiles || []), merged.source, device.source].filter(Boolean)));
+          const sourceRoles = Array.from(new Set([...(merged.sourceRoles || []), device.sourceRole].filter(Boolean)));
+          const conflicts = [...(merged.conflicts || [])];
           for (const [field, value] of Object.entries(device)) {
+            if (["fieldSources", "sourceFiles", "sourceRoles", "conflicts"].includes(field)) continue;
             const hasExisting = merged[field] !== "" && merged[field] !== undefined && merged[field] !== null;
+            if (hasExisting && value !== "" && value !== undefined && String(merged[field]) !== String(value)
+              && ["vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId"].includes(field)) {
+              const conflict = { field, selected: preferExisting ? merged[field] : value, selectedSource: preferExisting ? fieldSources[field] : device.source, alternative: preferExisting ? value : merged[field], alternativeSource: preferExisting ? device.source : fieldSources[field] };
+              if (!conflicts.some((item) => JSON.stringify(item) === JSON.stringify(conflict))) conflicts.push(conflict);
+            }
             if (value !== "" && value !== undefined && (!preferExisting || !hasExisting)) merged[field] = value;
+            if (value !== "" && value !== undefined && (!preferExisting || !hasExisting) && device.source) fieldSources[field] = device.source;
           }
+          merged.fieldSources = fieldSources;
+          merged.sourceFiles = sourceFiles;
+          merged.sourceRoles = sourceRoles;
+          merged.conflicts = conflicts;
+          merged.hasConflict = conflicts.length > 0;
+          merged.source = sourceFiles.length === 1 ? sourceFiles[0] : sourceFiles.join(" + ");
           store.put({ key, jobId: id, mac, device: merged, updatedAt: Date.now() });
           written += 1;
         };
@@ -628,7 +645,10 @@
     return changed;
   }
 
-  const historyFields = ["vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort"];
+  const historyFields = [
+    "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort",
+    "hostname", "serialNumber", "deviceId", "deviceName",
+  ];
 
   function normalizedHistoryValue(field, value) {
     const text = String(value ?? "").trim();
@@ -767,7 +787,12 @@
           for (const field of historyFields) {
             const currentValue = normalizedHistoryValue(field, device[field]);
             const historicalValue = normalizedHistoryValue(field, history[field]);
-            if (!currentValue && historicalValue) { device[field] = historicalValue; rowChanged = true; }
+            if (!currentValue && historicalValue) {
+              device[field] = historicalValue;
+              device.fieldSources = { ...(device.fieldSources || {}), [field]: "previous-final" };
+              device.previousFinalMatched = true;
+              rowChanged = true;
+            }
           }
           if (rowChanged) changed += 1;
         };
@@ -1146,13 +1171,18 @@
       smartroomId: String(device?.smartroomId || device?.smartroom_id || ""),
       switchIp: String(device?.switchIp || device?.switch_ip || ""),
       switchPort: String(device?.switchPort || device?.switch_port || ""),
+      hostname: String(device?.hostname || device?.host_name || ""),
+      serialNumber: String(device?.serialNumber || device?.serial_number || device?.serial || ""),
+      deviceId: String(device?.deviceId || device?.device_id || ""),
+      hasConflict: Boolean(device?.hasConflict || (device?.conflicts || []).length),
     };
   }
 
   function comparisonIdentity(device) {
-    const room = String(device?.smartroomId || device?.smartroom_id || "").trim();
     const mac = String(device?.mac || device?.macFormatted || "").toUpperCase().replace(/[^0-9A-F]/g, "");
-    return `${room}|${mac}`;
+    const serial = String(device?.serialNumber || device?.serial_number || device?.serial || "").trim().toLowerCase();
+    const deviceId = String(device?.deviceId || device?.device_id || "").trim().toLowerCase();
+    return mac ? `mac:${mac}` : serial ? `serial:${serial}` : `device:${deviceId}`;
   }
 
   async function compareCurrentChunk(jobId, rows, result, limit) {
@@ -1178,13 +1208,12 @@
             return;
           }
           let modified = false;
-          const criticalMove = String(previous.switchIp || "") !== String(device.switchIp || "")
-            && String(previous.ip || "") === String(device.ip || "")
-            && String(previous.room || "") === String(device.room || "");
+          const criticalMove = Boolean(previous.switchIp && device.switchIp && previous.switchIp !== device.switchIp);
           for (const field of result.fields) {
             const before = String(previous[field] || "");
             const after = String(device[field] || "");
             if (before === after) continue;
+            if (before && !after) continue;
             modified = true;
             result.modifiedFields += 1;
             result.fieldCounts.set(field, (result.fieldCounts.get(field) || 0) + 1);
@@ -1193,10 +1222,19 @@
               beforeDevice: { ...previous }, afterDevice: { ...device },
             });
           }
+          if (device.hasConflict) {
+            modified = true;
+            result.modifiedFields += 1;
+            result.fieldCounts.set("identityConflict", (result.fieldCounts.get("identityConflict") || 0) + 1);
+            if (result.changes.length < limit) result.changes.push({
+              mac: device.mac, type: "modified", field: "identityConflict", before: "", after: "Обнаружен конфликт источников",
+              beforeDevice: { ...previous }, afterDevice: { ...device },
+            });
+          }
           if (modified) {
             result.modifiedDevices += 1;
             result.changedDevices += 1;
-            if (criticalMove) result.critical += 1;
+            if (criticalMove || device.hasConflict) result.critical += 1;
             tallyRows(result.changedVendors, device.vendor);
           } else {
             result.unchanged += 1;
@@ -1239,7 +1277,7 @@
     const jobId = `snapshot-compare-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const limit = Math.max(100, Math.min(20000, Number(options.limit || 5000)));
     const result = {
-      fields: ["vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort"],
+      fields: ["vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId"],
       added: 0, removed: 0, modifiedDevices: 0, modifiedFields: 0, changedDevices: 0, unchanged: 0, critical: 0,
       changes: [], fieldCounts: new Map(), changedVendors: new Map(), unchangedVendors: new Map(), missingVendors: new Map(),
     };

@@ -1,10 +1,15 @@
 import re
 from typing import Any, Callable, Iterable
 
+from backend.services.identity.device_identity_service import merge_device_records
+
 from .workspace_cache_service import WorkspaceFileCache, workspace_row_iterator
 
 
-ENRICH_FIELDS = ["vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort"]
+ENRICH_FIELDS = [
+    "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp",
+    "switchPort", "hostname", "serialNumber", "deviceId", "deviceName",
+]
 
 
 def normalize_mac(value: Any) -> str:
@@ -65,6 +70,7 @@ def row_to_device(row: list[Any], file_info: dict[str, Any], row_index: int, com
         "macFormatted": format_mac(mac),
         "oui": mac[:6],
         "source": file_info.get("name", ""),
+        "sourceRole": file_info.get("role", "primary" if not file_info.get("role") else file_info.get("role")),
         "row": row_index + 2,
     }
     for field in ENRICH_FIELDS:
@@ -75,14 +81,13 @@ def row_to_device(row: list[Any], file_info: dict[str, Any], row_index: int, com
 def merge_device(
     previous: dict[str, Any], current: dict[str, Any], *, prefer_existing: bool = False
 ) -> dict[str, Any]:
-    merged = dict(previous)
-    for key, value in current.items():
-        if value in ("", None):
-            continue
-        if prefer_existing and merged.get(key) not in ("", None):
-            continue
-        merged[key] = value
-    return merged
+    return merge_device_records(
+        previous,
+        current,
+        source=str(current.get("source") or ""),
+        role=str(current.get("sourceRole") or ""),
+        prefer_existing=prefer_existing,
+    )
 
 
 def _inline_rows(file_info: dict[str, Any]) -> Iterable[list[Any]]:
@@ -110,7 +115,10 @@ def _enrich_row_streams(
 ) -> dict[str, Any]:
     if not files:
         return {"devices": [], "invalid": [], "progress": {"files": 0, "rows": 0, "valid": 0, "invalid": 0, "status": "completed", "percent": 100}}
-    allow_new_from_secondary = strategy == "merge"
+    # Enrichment files are authoritative sources for devices that may be
+    # missing from SR. They always contribute unique devices; the strategy
+    # controls value precedence, never row survival.
+    allow_new_from_secondary = True
     by_mac: dict[str, dict[str, Any]] = {}
     switch_state: dict[str, dict[str, str]] = {}
     invalid: list[dict[str, Any]] = []
@@ -168,9 +176,6 @@ def _enrich_row_streams(
                     "percent": round(rows_processed / total_rows * 100) if total_rows else 100,
                 })
     devices = sorted(by_mac.values(), key=lambda item: item["mac"])
-    final_source = str(files[0].get("name") or "")
-    for device in devices:
-        device["source"] = final_source
     switch_ip_changes = [
         {"mac": mac, "before": values["before"], "after": values["after"]}
         for mac, values in switch_state.items()

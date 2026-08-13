@@ -94,18 +94,20 @@ numbers, IP-like values, and dates use natural ordering.
 The Smartroom monitoring stage adds lazy tab mounting through
 `DocumentFragment`, Web Worker aggregation, and a 20-row virtual window for
 tables over 100 rows. `Smartroom ID` is the room identity, while its display
-name remains a separate field. The **Rooms**, **IP history**, and **Room
-chronology** views show missing equipment, switch-IP changes with DDIO
-`Possible_IPs`, and the full replacement chain. Three locally bundled Chart.js
+name remains a separate field. The **Rooms** and **Room chronology** views show
+missing equipment and the full replacement chain. Switch-IP changes and DDIO
+device IP candidates are part of **Critical change analytics**; there is no
+separate IP-history page. Three locally bundled Chart.js
 4.5.1 charts update from snapshot history. A configurable DDIO URL is fetched
 on startup; the newest IndexedDB `DDIO_Snapshot` is used when the URL is not
 available. The browser database also exposes the requested `Equipment`,
 `History`, and `DDIO_Snapshot` object stores.
 
-Version v1.0.47 completes the full frontend/backend audit in the original
+Version v1.0.47 completed the preceding frontend/backend audit in the original
 `vlasthaus22-cyber/Mac_analyzer_Pro` release line. Null or blank Smartroom IDs are
-skipped safely, while added and removed devices are counted by
-the composite `smartroom_id + mac` identity. The selected room survives tab
+handled safely, while that release counted added and removed devices by
+the composite `smartroom_id + mac` identity. Version v1.0.48 supersedes this
+with strong device identity and retains identifiable rows outside SR. The selected room survives tab
 switches through `sessionStorage`. IP warnings are emitted only when a trimmed
 switch IP differs from the preceding persisted snapshot. MAC history is merged
 into a complete first-to-current chain, and the separate `RoomTimeline` module
@@ -131,6 +133,21 @@ In backend mode, the Data screen can upload a `.db`, `.sqlite`, or `.sqlite3`
 file. The server verifies the SQLite header and integrity, stores the uploaded
 copy under `data/imports`, and additively merges supported MAC Analyzer tables;
 it never replaces or truncates the active user database.
+
+Version v1.0.48 unifies device identity across imports, enrichment, final
+snapshots, comparisons, and critical analytics. Devices found only in an
+enrichment file are retained with source provenance. If their device IP is
+missing there, a matching DDIO reservation/lease supplies it and records DDIO
+as the field source. Strong matching uses normalized MAC first and then an
+unambiguous serial number or device ID, so Smartroom or switch-IP changes do
+not create false device replacements. Blank current fields inherit trusted
+values from the latest final snapshot without overwriting conflicting current
+evidence. Conflicts retain the selected value, alternative, and both sources.
+SQLite inventory/history now persist hostname, serial number, device ID/name,
+field provenance, and conflict metadata through additive migrations. Duplicate
+observations with the same source and timestamp are idempotent. User mode opens
+directly on the searchable device table, and backend final snapshots are the
+authoritative cross-browser restore source.
 
 ## Primary autonomous mode
 

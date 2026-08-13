@@ -234,6 +234,13 @@
   function buildPossibleIpIndex(rows = [], mapping = {}) {
     const compiled = compileMapping(mapping),
       index = new Map();
+    for (const row of rows || []) collectPossibleIp(row, compiled, index);
+    return index;
+  }
+
+  function collectPossibleIp(row, mapping = {}, index = new Map()) {
+    const compiled =
+      mapping && Object.values(mapping).every((value) => Number.isInteger(value)) ? mapping : compileMapping(mapping);
     const add = (key, ip) => {
       const normalizedKey = text(key).toLowerCase(),
         normalizedIp = normalizeIp(ip);
@@ -242,19 +249,34 @@
       if (!values.includes(normalizedIp)) values.push(normalizedIp);
       index.set(normalizedKey, values);
     };
-    for (const row of rows || []) {
-      if (!Array.isArray(row)) continue;
-      const deviceId = compiled.deviceId === undefined ? "" : row[compiled.deviceId];
-      const reservationMac = compiled.reservationMac === undefined ? "" : normalizeMac(row[compiled.reservationMac]);
-      const leaseMac = compiled.leaseMac === undefined ? "" : normalizeMac(row[compiled.leaseMac]);
-      const reservationIp = row[compiled.reservationIp ?? compiled.ip];
-      const leaseIp = row[compiled.leaseIp ?? compiled.ip];
-      add(deviceId, reservationIp);
-      add(deviceId, leaseIp);
-      add(reservationMac, reservationIp);
-      add(leaseMac, leaseIp);
+    if (!Array.isArray(row)) return 0;
+    const deviceId = compiled.deviceId === undefined ? "" : row[compiled.deviceId];
+    const reservationMac = compiled.reservationMac === undefined ? "" : normalizeMac(row[compiled.reservationMac]);
+    const leaseMac = compiled.leaseMac === undefined ? "" : normalizeMac(row[compiled.leaseMac]);
+    const reservationIp = row[compiled.reservationIp ?? compiled.ip];
+    const leaseIp = row[compiled.leaseIp ?? compiled.ip];
+    add(deviceId, reservationIp);
+    add(deviceId, leaseIp);
+    add(reservationMac, reservationIp);
+    add(leaseMac, leaseIp);
+    return index.size;
+  }
+
+  function applyIpFallback(devices = [], index = new Map()) {
+    let updated = 0;
+    for (const device of devices || []) {
+      if (normalizeIp(device?.ip)) continue;
+      const mac = normalizeMac(device?.mac || device?.macFormatted);
+      const deviceId = text(device?.deviceId || device?.device_id).toLowerCase();
+      const values = index.get(mac) || (deviceId ? index.get(deviceId) : null) || [];
+      if (!values.length) continue;
+      device.ip = values.at(-1);
+      device.ipSource = "ddio";
+      device.fieldSources = { ...(device.fieldSources || {}), ip: "DDIO" };
+      device.possibleIps = [...values];
+      updated += 1;
     }
-    return index;
+    return updated;
   }
 
   function buildOverlay(changes, candidates, currentIpByMac = new Map()) {
@@ -263,15 +285,15 @@
     for (const [mac, change] of changes.entries()) {
       const candidate = candidates.get(mac);
       if (!candidate?.ip) continue;
-      const currentIp = normalizeIp(currentIpByMac instanceof Map ? currentIpByMac.get(mac) : currentIpByMac?.[mac]);
       const possibleIps = Array.from(
-        new Set((candidate.possibleIps || [candidate.ip]).map(normalizeIp).filter((ip) => ip && ip !== currentIp)),
+        new Set((candidate.possibleIps || [candidate.ip]).map(normalizeIp).filter(Boolean)),
       );
       if (!possibleIps.length) continue;
       overlay[mac] = {
         ip: possibleIps.includes(candidate.ip) ? candidate.ip : possibleIps[0],
         possibleIps,
         match: candidate.match,
+        source: "DDIO",
         previousSwitchIp: text(change.before),
         currentSwitchIp: text(change.after),
       };
@@ -282,6 +304,8 @@
   const api = Object.freeze({
     buildOverlay,
     buildPossibleIpIndex,
+    collectPossibleIp,
+    applyIpFallback,
     collectCandidate,
     compileMapping,
     createSwitchTracker,

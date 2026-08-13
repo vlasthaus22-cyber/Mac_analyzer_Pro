@@ -12,7 +12,17 @@ def test_device_inventory_preserves_known_fields_and_exports_every_mac():
             server.init_database()
             server.save_history([{
                 "mac": "AABBCC000001", "vendor": "Vendor One", "model": "Model One",
-                "address": "Building A", "switchIp": "10.0.0.1",
+                "address": "Building A", "switchIp": "10.0.0.1", "hostname": "codec-1",
+                "serialNumber": "SER-001", "deviceId": "DEV-001", "deviceName": "Codec",
+                "fieldSources": {"address": "SR", "ip": "DDIO"},
+                "conflicts": [{"field": "ip", "selected": "192.0.2.10", "alternative": "192.0.2.11"}],
+            }], "first.csv", "2026-08-01T10:00:00Z")
+            server.save_history([{
+                "mac": "AABBCC000001", "vendor": "Vendor One", "model": "Model One",
+                "address": "Building A", "switchIp": "10.0.0.1", "hostname": "codec-1",
+                "serialNumber": "SER-001", "deviceId": "DEV-001", "deviceName": "Codec",
+                "fieldSources": {"address": "SR", "ip": "DDIO"},
+                "conflicts": [{"field": "ip", "selected": "192.0.2.10", "alternative": "192.0.2.11"}],
             }], "first.csv", "2026-08-01T10:00:00Z")
             server.save_history([{
                 "mac": "AABBCC000001", "ip": "192.0.2.10", "switchIp": "10.0.0.2",
@@ -33,6 +43,12 @@ def test_device_inventory_preserves_known_fields_and_exports_every_mac():
             assert first["ip"] == "192.0.2.10"
             assert first["switchIp"] == "10.0.0.2"
             assert first["seenCount"] == 2
+            assert first["hostname"] == "codec-1"
+            assert first["serialNumber"] == "SER-001"
+            assert first["deviceId"] == "DEV-001"
+            assert first["deviceName"] == "Codec"
+            assert first["fieldSources"]["address"] == "SR"
+            assert first["hasConflict"] is True
 
             second_page = server.all_devices_page(page["nextOffset"], 10)
             assert len(second_page["items"]) == 1
