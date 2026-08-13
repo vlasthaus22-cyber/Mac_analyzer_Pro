@@ -9,6 +9,7 @@ const headers = [
 const mapping = DDIO.detectMapping(headers);
 assert.deepStrictEqual(mapping, {
   deviceId: "",
+  possibleIps: "",
   reservationMac: 1,
   reservationIp: "",
   leaseMac: 2,
@@ -29,6 +30,7 @@ wideHeaders[13].name = "Lease IP Address";
 const wideMapping = DDIO.detectMapping(wideHeaders);
 assert.deepStrictEqual(wideMapping, {
   deviceId: "",
+  possibleIps: "",
   reservationMac: 9,
   reservationIp: 10,
   leaseMac: 12,
@@ -110,6 +112,7 @@ const deviceHeaders = [
 const deviceMapping = DDIO.detectMapping(deviceHeaders);
 assert.deepStrictEqual(deviceMapping, {
   deviceId: 0,
+  possibleIps: "",
   reservationMac: "",
   reservationIp: 1,
   leaseMac: "",

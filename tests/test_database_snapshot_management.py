@@ -167,6 +167,32 @@ def test_dashboard_context_hydrates_only_previous_and_current_final_results():
     cleanup()
 
 
+def test_compact_snapshot_supports_strong_identity_without_mac():
+    cleanup()
+    with db_connection() as conn:
+        conn.execute(
+            "INSERT INTO snapshots (id, name, source, device_count, devices_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                LARGE_SNAPSHOT,
+                "Analysis: no MAC",
+                "smartroom.xlsx",
+                1,
+                json.dumps([{
+                    "internalDeviceId": "dev-no-mac",
+                    "serialNumber": "SERIAL-NO-MAC",
+                    "deviceId": "DEVICE-NO-MAC",
+                    "vendor": "Known vendor",
+                }]),
+                "2026-01-03T00:00:00Z",
+            ),
+        )
+    compact = open_compact_snapshot_payload(LARGE_SNAPSHOT, [], 25)
+    assert compact["resultReference"]["deviceCount"] == 1
+    assert compact["resultSummary"]["oui3"] == 0
+    assert compact["devices"][0]["serialNumber"] == "SERIAL-NO-MAC"
+    cleanup()
+
+
 if __name__ == "__main__":
     test_database_snapshot_bulk_delete()
     test_database_summary_and_maintenance()
@@ -174,4 +200,5 @@ if __name__ == "__main__":
     test_snapshot_select_payload_prepares_ready_options()
     test_large_snapshot_open_is_compact_for_browser()
     test_dashboard_context_hydrates_only_previous_and_current_final_results()
+    test_compact_snapshot_supports_strong_identity_without_mac()
     print("database snapshot management test passed")

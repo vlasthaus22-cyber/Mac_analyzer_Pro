@@ -1,7 +1,13 @@
 import re
 from typing import Any, Callable, Iterable
 
-from backend.services.identity.device_identity_service import merge_device_records
+from backend.services.identity.device_identity_service import (
+    add_identity_to_index,
+    identity_candidates,
+    merge_device_records,
+    resolve_identity,
+    stable_device_id,
+)
 
 from .workspace_cache_service import WorkspaceFileCache, workspace_row_iterator
 
@@ -10,6 +16,20 @@ ENRICH_FIELDS = [
     "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp",
     "switchPort", "hostname", "serialNumber", "deviceId", "deviceName",
 ]
+
+
+def normalize_source_role(value: Any, fallback: str = "primary") -> str:
+    """Use the product's three unambiguous source roles.
+
+    ``enrichment`` remains an accepted input alias for workspaces saved before
+    v1.0.49, but is normalized to ``smartroom`` before domain processing.
+    """
+    role = str(value or fallback).strip().casefold()
+    if role in {"smartroom", "smart-room", "sr", "enrichment", "secondary"}:
+        return "smartroom"
+    if role == "ddio":
+        return "ddio"
+    return "primary"
 
 
 def normalize_mac(value: Any) -> str:
@@ -58,23 +78,27 @@ def row_to_device(row: list[Any], file_info: dict[str, Any], row_index: int, com
     mapping = compiled_mapping if compiled_mapping is not None else compile_mapping(file_info.get("mapping") or {})
     raw_mac = read_mapped(row, mapping, "mac")
     mac = normalize_mac(raw_mac)
-    if not mac:
-        return {
-            "invalid": True,
-            "row": row_index + 2,
-            "source": file_info.get("name", ""),
-            "raw": raw_mac,
-        }
+    role = normalize_source_role(file_info.get("role"))
     device = {
         "mac": mac,
-        "macFormatted": format_mac(mac),
-        "oui": mac[:6],
+        "macFormatted": format_mac(mac) if mac else "",
+        "oui": mac[:6] if mac else "",
         "source": file_info.get("name", ""),
-        "sourceRole": file_info.get("role", "primary" if not file_info.get("role") else file_info.get("role")),
+        "sourceRole": role,
         "row": row_index + 2,
     }
     for field in ENRICH_FIELDS:
         device[field] = read_mapped(row, mapping, field)
+    if not [candidate for candidate in identity_candidates(device) if not candidate.startswith("internal-id:")]:
+        return {
+            "invalid": True,
+            "row": row_index + 2,
+            "source": file_info.get("name", ""),
+            "sourceRole": role,
+            "raw": raw_mac,
+            "error": "Нет корректного MAC, серийного номера или Device ID",
+        }
+    device["internalDeviceId"] = stable_device_id(device)
     return device
 
 
@@ -115,12 +139,11 @@ def _enrich_row_streams(
 ) -> dict[str, Any]:
     if not files:
         return {"devices": [], "invalid": [], "progress": {"files": 0, "rows": 0, "valid": 0, "invalid": 0, "status": "completed", "percent": 100}}
-    # Enrichment files are authoritative sources for devices that may be
-    # missing from SR. They always contribute unique devices; the strategy
-    # controls value precedence, never row survival.
-    allow_new_from_secondary = True
-    by_mac: dict[str, dict[str, Any]] = {}
-    switch_state: dict[str, dict[str, str]] = {}
+    # File 1 is primary. File 2 is SmartRoom: it enriches matching devices and
+    # contributes its own identifiable devices. DDIO is processed separately
+    # and therefore can never create an independent final device here.
+    resolved_devices: list[dict[str, Any]] = []
+    identity_index: dict[str, dict[str, Any]] = {}
     invalid: list[dict[str, Any]] = []
     rows_processed = 0
     total_rows = 0
@@ -137,7 +160,7 @@ def _enrich_row_streams(
                     "files": len(files),
                     "rows": rows_processed,
                     "totalRows": total_rows,
-                    "valid": len(by_mac),
+                    "valid": len(resolved_devices),
                     "invalid": len(invalid),
                     "strategy": strategy,
                     "status": "cancelled",
@@ -145,42 +168,62 @@ def _enrich_row_streams(
                 }
                 if progress_callback:
                     progress_callback(progress)
-                return {"devices": sorted(by_mac.values(), key=lambda item: item["mac"]), "invalid": invalid, "progress": progress}
+                return {"devices": sorted(resolved_devices, key=lambda item: (item.get("mac") or "", item.get("internalDeviceId") or "")), "invalid": invalid, "progress": progress}
             if not isinstance(row, list):
                 continue
             rows_processed += 1
             current = row_to_device(row, file_info, row_index, compiled_mapping)
             if current.get("invalid"):
-                if file_index == 0:
-                    invalid.append(current)
+                # Data-quality accounting covers both authoritative inputs.
+                # The source role tells the user whether the bad record came
+                # from File 1 or SmartRoom.
+                invalid.append(current)
                 continue
-            existing = by_mac.get(current["mac"])
-            if file_index == 0 or allow_new_from_secondary or existing:
-                by_mac[current["mac"]] = merge_device(
-                    existing or {}, current, prefer_existing=file_index > 0
-                )
-                switch_ip = str(current.get("switchIp") or "").strip()
-                if switch_ip:
-                    if file_index == 0:
-                        switch_state[current["mac"]] = {"before": switch_ip, "after": switch_ip}
+            resolution = resolve_identity(current, identity_index)
+            existing = resolution.get("match")
+            if resolution.get("status") == "conflict":
+                current = merge_device_records({}, current, source=str(current.get("source") or ""), role=str(current.get("sourceRole") or ""))
+                current.setdefault("conflicts", []).append({
+                    "field": "identity",
+                    "selected": current.get("internalDeviceId"),
+                    "selectedSource": current.get("source"),
+                    "alternative": "Несколько устройств соответствуют сильным идентификаторам",
+                    "alternativeSource": "identity-resolver",
+                    "confidence": "Conflict",
+                    "evidence": resolution.get("evidence") or [],
+                })
+                current["hasConflict"] = True
+                current["matchConfidence"] = "Conflict"
+                resolved_devices.append(current)
+                add_identity_to_index(identity_index, current)
+            elif existing:
+                existing_internal_id = existing.get("internalDeviceId")
+                merged_device = merge_device(existing, current, prefer_existing=True)
+                merged_device["internalDeviceId"] = existing_internal_id or stable_device_id(merged_device)
+                merged_device["matchConfidence"] = resolution.get("confidence") or "High"
+                existing.clear()
+                existing.update(merged_device)
+                add_identity_to_index(identity_index, existing)
+            else:
+                current = merge_device({}, current, prefer_existing=False)
+                current["internalDeviceId"] = stable_device_id(current)
+                current["matchConfidence"] = "Exact" if current.get("mac") else "High"
+                resolved_devices.append(current)
+                add_identity_to_index(identity_index, current)
             if progress_callback and (rows_processed % progress_interval == 0 or rows_processed == total_rows):
                 progress_callback({
                     "files": len(files),
                     "currentFile": file_index + 1,
                     "rows": rows_processed,
                     "totalRows": total_rows,
-                    "valid": len(by_mac),
+                    "valid": len(resolved_devices),
                     "invalid": len(invalid),
                     "strategy": strategy,
                     "status": "running",
                     "percent": round(rows_processed / total_rows * 100) if total_rows else 100,
                 })
-    devices = sorted(by_mac.values(), key=lambda item: item["mac"])
-    switch_ip_changes = [
-        {"mac": mac, "before": values["before"], "after": values["after"]}
-        for mac, values in switch_state.items()
-        if values.get("before") and values.get("after") and values["before"] != values["after"]
-    ]
+    devices = sorted(resolved_devices, key=lambda item: (item.get("mac") or "", item.get("internalDeviceId") or ""))
+    switch_ip_changes: list[dict[str, str]] = []
     return {
         "devices": devices,
         "invalid": invalid,

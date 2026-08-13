@@ -25,6 +25,11 @@
     return ipVersion(candidate) ? candidate : "";
   }
 
+  function parsePossibleIps(value) {
+    const values = Array.isArray(value) ? value : text(value).replace(/\r?\n/g, ";").replace(/,/g, ";").split(";");
+    return Array.from(new Set(values.map(normalizeIp).filter(Boolean)));
+  }
+
   function normalizeMac(value) {
     let normalized = text(value)
       .toUpperCase()
@@ -64,6 +69,9 @@
       return /(device id|device identifier|идентификатор устройства|id устройства|устройство id)/.test(normalized)
         ? 40
         : -1;
+    }
+    if (field === "possibleIps") {
+      return /(possible ips?|possible addresses|возможн.*ip|вариант.*ip)/.test(normalized) ? 45 : -1;
     }
     if (field === "reservationMac") {
       if (!hasMac) return -1;
@@ -109,6 +117,7 @@
     const leaseMac = pick("leaseMac", new Set(reservationMac === "" ? [] : [reservationMac]));
     return {
       deviceId: pick("deviceId"),
+      possibleIps: pick("possibleIps"),
       reservationMac,
       reservationIp: pick("reservationIp"),
       leaseMac,
@@ -119,7 +128,7 @@
 
   function compileMapping(mapping = {}) {
     const result = {};
-    for (const field of ["deviceId", "reservationMac", "reservationIp", "leaseMac", "leaseIp", "ip"]) {
+    for (const field of ["deviceId", "reservationMac", "reservationIp", "leaseMac", "leaseIp", "ip", "possibleIps"]) {
       if (mapping[field] === "" || mapping[field] === undefined || mapping[field] === null) continue;
       const index = Number(mapping[field]);
       if (Number.isInteger(index) && index >= 0) result[field] = index;
@@ -135,7 +144,7 @@
       compiled.leaseMac !== undefined && (compiled.leaseIp !== undefined || compiled.ip !== undefined);
     const deviceComplete =
       compiled.deviceId !== undefined &&
-      (compiled.reservationIp !== undefined || compiled.leaseIp !== undefined || compiled.ip !== undefined);
+      (compiled.reservationIp !== undefined || compiled.leaseIp !== undefined || compiled.ip !== undefined || compiled.possibleIps !== undefined);
     return {
       valid: reservationComplete || leaseComplete || deviceComplete,
       hasIp: compiled.reservationIp !== undefined || compiled.leaseIp !== undefined || compiled.ip !== undefined,
@@ -153,10 +162,12 @@
 
   function seedSwitchChange(tracker, macValue, beforeValue, afterValue, currentIpValue = "", deviceIdValue = "") {
     const mac = normalizeMac(macValue);
+    const deviceId = text(deviceIdValue).toLowerCase();
+    const identity = mac || (deviceId ? `device-id:${deviceId}` : "");
     const before = text(beforeValue);
     const after = text(afterValue);
-    if (!mac || !before || !after || before === after || !(tracker instanceof Map)) return false;
-    tracker.set(mac, { before, after, currentIp: text(currentIpValue), deviceId: text(deviceIdValue).toLowerCase() });
+    if (!identity || !before || !after || before === after || !(tracker instanceof Map)) return false;
+    tracker.set(identity, { before, after, currentIp: text(currentIpValue), deviceId });
     return true;
   }
 
@@ -187,15 +198,15 @@
     const deviceIds = new Map();
     Object.defineProperty(changes, "deviceIds", { value: deviceIds, enumerable: false });
     if (!(tracker instanceof Map)) return changes;
-    for (const [mac, item] of tracker.entries()) {
+    for (const [identity, item] of tracker.entries()) {
       const before = text(item?.before);
       const after = text(item?.after);
       if (before && after && before !== after) {
         const deviceId = text(item?.deviceId).toLowerCase();
-        changes.set(mac, { before, after, deviceId });
+        changes.set(identity, { before, after, deviceId });
         if (deviceId) {
           const macs = deviceIds.get(deviceId) || new Set();
-          macs.add(mac);
+          macs.add(identity);
           deviceIds.set(deviceId, macs);
         }
       }
@@ -215,6 +226,7 @@
     const leaseIpIndex = compiled.leaseIp ?? compiled.ip;
     const reservationIp = reservationIpIndex === undefined ? "" : normalizeIp(row[reservationIpIndex]);
     const leaseIp = leaseIpIndex === undefined ? "" : normalizeIp(row[leaseIpIndex]);
+    const explicitPossible = compiled.possibleIps === undefined ? [] : parsePossibleIps(row[compiled.possibleIps]);
     const addCandidate = (mac, ip, match) => {
       if (!mac || !ip || !changes.has(mac)) return;
       const existing = candidates.get(mac),
@@ -228,6 +240,17 @@
       addCandidate(mac, reservationIp, "device-id/reservation");
       addCandidate(mac, leaseIp, "device-id/lease");
     }
+    const addPossible = (mac, match) => {
+      if (!mac || !changes.has(mac) || !explicitPossible.length) return;
+      const existing = candidates.get(mac) || { ip: "", match, possibleIps: [] };
+      existing.possibleIps = Array.from(new Set([...(existing.possibleIps || []), ...explicitPossible]));
+      if (!existing.match) existing.match = match;
+      candidates.set(mac, existing);
+      matched += 1;
+    };
+    addPossible(reservationMac, "reservation/possible-ips");
+    addPossible(leaseMac, "lease/possible-ips");
+    for (const mac of deviceMacs) addPossible(mac, "device-id/possible-ips");
     return matched;
   }
 
@@ -259,6 +282,8 @@
     add(deviceId, leaseIp);
     add(reservationMac, reservationIp);
     add(leaseMac, leaseIp);
+    // Possible IPs are intentionally excluded from the fallback index: they
+    // are diagnostic alternatives and never become the current device IP.
     return index.size;
   }
 
@@ -284,7 +309,7 @@
     if (!(changes instanceof Map) || !(candidates instanceof Map)) return overlay;
     for (const [mac, change] of changes.entries()) {
       const candidate = candidates.get(mac);
-      if (!candidate?.ip) continue;
+      if (!candidate || !(candidate.possibleIps || []).length && !candidate.ip) continue;
       const possibleIps = Array.from(
         new Set((candidate.possibleIps || [candidate.ip]).map(normalizeIp).filter(Boolean)),
       );
@@ -312,6 +337,7 @@
     detectMapping,
     normalizeHeader,
     normalizeIp,
+    parsePossibleIps,
     normalizeMac,
     ipVersion,
     observeCurrentIp,

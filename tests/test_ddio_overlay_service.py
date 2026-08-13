@@ -1,5 +1,6 @@
 from copy import deepcopy
 
+from backend.services.identity.device_identity_service import build_identity_index
 from backend.services.workspace.ddio_overlay_service import build_ddio_overlay
 from backend.services.workspace.enrichment_service import enrich_files
 from server import merge_switch_ip_changes_with_history
@@ -94,13 +95,13 @@ def test_ddio_uses_independent_reservation_and_lease_ip_columns_after_h():
     }
 
 
-def test_ddio_switch_change_is_derived_from_saved_exact_mac_history():
+def test_ddio_switch_change_is_derived_from_previous_final_state():
     changes = merge_switch_ip_changes_with_history(
         [{"mac": "00:11:22:33:44:55", "switchIp": "10.0.0.9", "ip": "192.168.1.10"}],
-        {"latestHistory": {"001122334455": {"switch_ip": "10.0.0.1"}}},
+        {"previousFinalIndex": build_identity_index([{"mac": "001122334455", "switchIp": "10.0.0.1"}])},
         [],
     )
-    assert changes == [{"mac": "001122334455", "before": "10.0.0.1", "after": "10.0.0.9"}]
+    assert changes == [{"mac": "001122334455", "internalDeviceId": "", "deviceId": "", "before": "10.0.0.1", "after": "10.0.0.9", "source": "previous-final"}]
     overlay = build_ddio_overlay(
         [["00:11:22:33:44:55", "192.168.1.50"]],
         {"leaseMac": 0, "leaseIp": 1},
@@ -136,6 +137,6 @@ if __name__ == "__main__":
     test_ddio_uses_reservation_and_lease_mac_without_mutating_devices()
     test_ddio_requires_ip_and_at_least_one_mac_column()
     test_ddio_uses_independent_reservation_and_lease_ip_columns_after_h()
-    test_ddio_switch_change_is_derived_from_saved_exact_mac_history()
+    test_ddio_switch_change_is_derived_from_previous_final_state()
     test_enrichment_fills_blanks_without_overwriting_primary_values()
     print("DDIO overlay service test passed")

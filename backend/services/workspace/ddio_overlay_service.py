@@ -7,7 +7,15 @@ from backend.services.identity.device_identity_service import normalize_ip
 from .enrichment_service import compile_mapping, normalize_mac, read_mapped
 
 
-DDIO_FIELDS = ("deviceId", "reservationMac", "reservationIp", "leaseMac", "leaseIp", "ip")
+DDIO_FIELDS = ("deviceId", "reservationMac", "reservationIp", "leaseMac", "leaseIp", "ip", "possibleIps")
+
+
+def parse_possible_ips(value: Any) -> list[str]:
+    if isinstance(value, list):
+        values = value
+    else:
+        values = str(value or "").replace("\n", ";").replace(",", ";").split(";")
+    return list(dict.fromkeys(normalized for item in values if (normalized := normalize_ip(item))))
 
 
 def normalize_switch_changes(changes: Any) -> dict[str, dict[str, str]]:
@@ -16,10 +24,12 @@ def normalize_switch_changes(changes: Any) -> dict[str, dict[str, str]]:
         if not isinstance(item, dict):
             continue
         mac = normalize_mac(item.get("mac"))
+        device_id = str(item.get("deviceId") or item.get("device_id") or "").strip().casefold()
         before = str(item.get("before") or "").strip()
         after = str(item.get("after") or "").strip()
-        if mac and before and after and before != after:
-            normalized[mac] = {"before": before, "after": after}
+        key = mac or ("device-id:" + device_id if device_id else "")
+        if key and before and after and before != after:
+            normalized[key] = {"before": before, "after": after, "deviceId": device_id}
     return normalized
 
 
@@ -28,9 +38,12 @@ def validate_ddio_mapping(mapping: Any) -> dict[str, int]:
     result = {field: compiled[field] for field in DDIO_FIELDS if field in compiled}
     reservation_complete = "reservationMac" in result and ("reservationIp" in result or "ip" in result)
     lease_complete = "leaseMac" in result and ("leaseIp" in result or "ip" in result)
-    device_complete = "deviceId" in result and any(field in result for field in ("reservationIp", "leaseIp", "ip"))
+    device_complete = "deviceId" in result and any(field in result for field in ("reservationIp", "leaseIp", "ip", "possibleIps"))
     if not reservation_complete and not lease_complete and not device_complete:
-        raise ValueError("DDIO: выберите полную пару MAC + IP для резервации или аренды")
+        raise ValueError(
+            "DDIO: выберите пару MAC + IP для резервации/аренды "
+            "или Device ID + IP/Possible IPs"
+        )
     return result
 
 
@@ -64,6 +77,7 @@ def build_ddio_device_index(
         reservation_ip = normalize_ip(read_mapped(row, compiled, reservation_ip_field))
         lease_ip = normalize_ip(read_mapped(row, compiled, lease_ip_field))
         device_id = read_mapped(row, compiled, "deviceId").casefold() if "deviceId" in compiled else ""
+        explicit_possible = parse_possible_ips(read_mapped(row, compiled, "possibleIps")) if "possibleIps" in compiled else []
         if reservation_mac and reservation_ip:
             candidate = candidates.setdefault(reservation_mac, {"ip": reservation_ip, "match": "reservation", "possibleIps": []})
             candidate["possibleIps"] = list(dict.fromkeys([*candidate.get("possibleIps", []), reservation_ip]))
@@ -73,12 +87,16 @@ def build_ddio_device_index(
             candidate["possibleIps"] = list(dict.fromkeys([*candidate.get("possibleIps", []), lease_ip]))
         if device_id:
             values = [value for value in (reservation_ip, lease_ip) if value]
-            if values:
+            if values or explicit_possible:
                 candidates["device-id:" + device_id] = {
-                    "ip": values[-1],
-                    "match": "device-id",
-                    "possibleIps": list(dict.fromkeys(values)),
+                    "ip": values[-1] if values else "",
+                    "match": "device-id" if values else "device-id/possible-ips",
+                    "possibleIps": list(dict.fromkeys([*values, *explicit_possible])),
                 }
+        for mac in (reservation_mac, lease_mac):
+            if mac and explicit_possible:
+                candidate = candidates.setdefault(mac, {"ip": "", "match": "possible-ips", "possibleIps": []})
+                candidate["possibleIps"] = list(dict.fromkeys([*candidate.get("possibleIps", []), *explicit_possible]))
     return candidates
 
 
@@ -93,6 +111,7 @@ def apply_ddio_ip_fallback(
         mac = normalize_mac(device.get("mac") or device.get("macFormatted"))
         device_id = str(device.get("deviceId") or device.get("device_id") or "").strip().casefold()
         candidate = index.get(mac) or (index.get("device-id:" + device_id) if device_id else None)
+        # Possible IPs are diagnostic alternatives, not a confirmed current IP.
         if not candidate or not candidate.get("ip"):
             continue
         device["ip"] = candidate["ip"]
@@ -111,15 +130,16 @@ def build_ddio_overlay_from_index(
     changes = switch_changes if isinstance(switch_changes, dict) else normalize_switch_changes(switch_changes)
 
     overlay: dict[str, dict[str, Any]] = {}
-    for mac, change in changes.items():
-        candidate = candidates.get(mac)
+    for identity, change in changes.items():
+        device_id = str(change.get("deviceId") or "").strip().casefold()
+        candidate = candidates.get(identity) or (candidates.get("device-id:" + device_id) if device_id else None)
         if not candidate:
             continue
-        possible_ips = [value for value in candidate.get("possibleIps", [candidate["ip"]]) if value]
+        possible_ips = [value for value in candidate.get("possibleIps", [candidate.get("ip")]) if value]
         if not possible_ips:
             continue
-        overlay[mac] = {
-            "ip": candidate["ip"] if candidate["ip"] in possible_ips else possible_ips[0],
+        overlay[identity] = {
+            "ip": candidate.get("ip") if candidate.get("ip") in possible_ips else possible_ips[0],
             "possibleIps": possible_ips,
             "match": candidate["match"],
             "source": "DDIO",

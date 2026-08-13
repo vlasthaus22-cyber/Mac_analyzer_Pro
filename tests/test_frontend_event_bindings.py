@@ -18,7 +18,7 @@ def test_ddio_third_export_is_display_only_and_bound_in_primary_frontend():
     assert '<script src="frontend/ddio-overlay.js?v=20260813.1"></script>' in html
     assert 'loadDdioFile(e.target.files,e.target)' in app
     assert all(field in ddio for field in ('reservationMac', 'reservationIp', 'leaseMac', 'leaseIp'))
-    assert '[["deviceId","Device ID"],["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"]]' in app
+    assert '[["deviceId","Device ID"],["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"],["possibleIps","Возможные IP"]]' in app
     assert 'mappingOptionLabel(header,"letter")' in app
     assert 'headers = Array.from({ length: columnCount }' in Path("frontend/file-readers.js").read_text(encoding="utf-8")
     assert 'applyDdioOverlayToResults(body,columns)' in app
@@ -288,7 +288,7 @@ def test_backend_export_paths_are_still_wired():
     for marker in (
         'api("/bootstrap")',
         'api("/export",{method:"POST",body:JSON.stringify(currentDevicePayload({format:type,columns,ouiSettings}))})',
-        'files:enrichmentFilesPayload(true)',
+        'files:sourceFilesPayload(true)',
         'if(cacheError.status!==409)throw cacheError;',
         'await refreshWorkspaceFileCache((value,detail)=>updateProcess(processId,38+Math.round(value*0.12),detail));',
         'api("/columns/detect",{method:"POST",body:JSON.stringify({headers:file.headers.map((h)=>h.name),rows:file.rows.slice(1,101),ai,mode})})',
@@ -361,7 +361,7 @@ def test_excel_files_are_selectable_in_main_import():
     assert 'loadFiles(e.target.files,e.target,"primary")' in app
     assert '$("#browseFilesButton")?.addEventListener("click",()=>$("#fileInput")?.click())' in app
     assert '$("#browseEnrichmentFilesButton")?.addEventListener("click",()=>$("#enrichFileInput")?.click())' in app
-    assert '$("#enrichFileInput")?.addEventListener("change",(e)=>loadFiles(e.target.files,e.target,"enrichment"))' in app
+    assert '$("#enrichFileInput")?.addEventListener("change",(e)=>loadFiles(e.target.files,e.target,"smartroom"))' in app
     assert '$("#singleBrowseFileButton")?.addEventListener("click",()=>$("#singleFileInput")?.click())' in app
     assert 'const importStatus=$("#fileImportStatus");' in app
 
@@ -379,7 +379,7 @@ def test_html_has_startup_fallback_for_tabs_and_file_choice():
     assert '$("#singleBrowseFileButton")?.addEventListener("click", () => $("#singleFileInput")?.click());' in html
     assert '$("#fileImportStatus").textContent = "Чтение файлов: " + files.map((file) => file.name).join(", ");' in html
     assert '$("#fileInput")?.addEventListener("change", (event) => loadFallbackFiles(event.target.files, event.target, "primary"))' in html
-    assert '$("#enrichFileInput")?.addEventListener("change", (event) => loadFallbackFiles(event.target.files, event.target, "enrichment"))' in html
+    assert '$("#enrichFileInput")?.addEventListener("change", (event) => loadFallbackFiles(event.target.files, event.target, "smartroom"))' in html
     assert "fallbackState.files = []" not in html
     assert "const beforeCount = fallbackState.files.length;" in html
     assert "Всего файлов: ${fallbackState.files.length}, добавлено: ${fallbackState.files.length - beforeCount}" in html
@@ -929,7 +929,7 @@ def test_main_file_import_uses_backend_service():
     assert 'async function ensureWorkspaceFileCache(onProgress=()=>{})' in app
     assert 'await ensureWorkspaceFileCache((value,detail)=>updateProcess(processId,32+Math.round(value*0.08),detail));' in app
     assert 'const keyName=String(event.key||"").toLowerCase()' in app
-    assert 'files:enrichmentFilesPayload(false),refreshFileCache:true' not in app
+    assert 'files:sourceFilesPayload(false),refreshFileCache:true' not in app
     assert "function fileInfoDate(file)" in app
     assert "function primaryFileCreatedAt()" in app
     assert "const fileCreatedAt=fileInfoDate(pendingSingleFile);" in app
@@ -963,7 +963,8 @@ def test_browser_mode_enrichment_keeps_basic_workflow_alive():
 
     assert "async function localAnalyzeFiles(fields,strategy,onProgress=()=>{})" in app
     assert "function mergeAnalysisDevice(previous,incoming,{preferExisting=false}={})" in app
-    assert "mergeAnalysisDevice(previous,result.device,{preferExisting:fileIndex>0})" in app
+    assert "accumulateResolvedDevice(resolvedDevices,identityIndex,result.device,fileIndex>0)" in app
+    assert "const resolution=DeviceIdentity.resolve(incoming,index)" in app
     assert "BrowserSnapshots.mergeEnrichmentRows(jobId,devices,{allowNew,preferExisting})" in app
     assert "async function visitLocalRowsForAnalysis(file,fileIndex,fileCount,onProgress,onRow)" in app
     assert "const sourceFile=await restoreSourceFile(file);" in app
@@ -1025,9 +1026,10 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert app.index('await BrowserSnapshots.prune(keepIds);') < app.index('await BrowserSnapshots.save(record,(percent)=>')
     assert 'browserSnapshotRows: 1_000_000' in memory_guard
     assert 'const snapshotStore = "snapshots";' in snapshot_store
-    assert 'const databaseVersion = 8;' in snapshot_store
+    assert 'const databaseVersion = 10;' in snapshot_store
     smartroom_store = Path("frontend/smartroom-store.js").read_text(encoding="utf-8")
     smartroom_ui = Path("frontend/smartroom-ui.js").read_text(encoding="utf-8")
+    assert 'const databaseVersion = 10;' in smartroom_store
     assert 'const knownModelsStore = "KnownModels";' in smartroom_store
     assert '["by_smartroom", "smartroom_id"]' in smartroom_store
     assert '["by_mac", "mac"]' in smartroom_store
@@ -1228,7 +1230,7 @@ def test_enrichment_progress_uses_backend_html_payload():
 def test_scheduler_queue_uses_backend_file_packer():
     app = read_app_js()
 
-    assert 'api("/tasks/queue",{method:"POST",body:JSON.stringify({taskId:task.id,files:enrichmentFilesPayload(true)})})' in app
+    assert 'api("/tasks/queue",{method:"POST",body:JSON.stringify({taskId:task.id,files:sourceFilesPayload(true)})})' in app
     assert 'function queuedFilesFromState()' not in app
     assert 'function textToBase64(' not in app
     assert 'textToBase64(rows)' not in app
@@ -1253,8 +1255,8 @@ def test_ip_mapping_import_uses_backend_base64_payload():
     assert 'function exportLocalIpMappings()' in app
     assert 'function autodetectLocalIpMappings()' in app
     assert 'function inferSwitchAddressMappings(devices=state.devices, source="analysis")' in app
-    assert 'if(device.switchIp&&device.address&&upsertLocalIpMapping(device.switchIp,device.address,source))imported++;' in app
-    assert 'if(address&&!device.address)device.address=address;' in app
+    assert 'if(count>=2&&upsertLocalIpMapping(ip,address,"inferred-consensus"))imported++;' in app
+    assert 'if(address&&!device.address){device.address=address;device.addressSource="switch-address-mapping";}' in app
     assert 'inferSwitchAddressMappings(state.devices,source);' in app
     assert 'ipMappings:[]' in app
     assert 'accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm"' in html
@@ -2198,13 +2200,13 @@ def test_primary_and_enrichment_files_are_grouped_in_browser_only_html():
         'function normalizeFileRoles(files=[])',
         'function insertImportedFile(fileRecord,requestedRole="auto",batchIndex=0)',
         'loadFiles(e.target.files,e.target,"primary")',
-        'loadFiles(e.target.files,e.target,"enrichment")',
+        'loadFiles(e.target.files,e.target,"smartroom")',
         'data-file-group="${role}"',
         'data-file-role="${role}"',
-        'Сначала добавьте основной файл, затем выберите файл обогащения.',
+        'Сначала добавьте файл №1 — основной, затем выберите файл №2 — SmartRoom.',
     ):
         assert marker in app
-    assert 'loadFallbackFiles(event.target.files, event.target, "enrichment")' in html
+    assert 'loadFallbackFiles(event.target.files, event.target, "smartroom")' in html
     assert 'function normalizeFallbackFileRoles()' in html
     assert 'const file=state.files[fileIndex],allowNew=true;' in app
     assert 'if(fileIndex&&strategy==="primary")return' not in app

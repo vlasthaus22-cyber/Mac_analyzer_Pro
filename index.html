@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
   <meta name="application-build" content="2026.08.12.2">
-  <meta name="application-version" content="1.0.48">
+  <meta name="application-version" content="1.0.49">
   <link rel="stylesheet" href="styles.css?v=20260812.1">
 </head>
 <body>
@@ -116,17 +116,18 @@
             <label class="drop-zone" id="dropZone" for="fileInput" role="button" tabindex="0" title="CSV, TSV, TXT, JSON, XLSX, XLSM, XLS">
               <input id="fileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls" multiple hidden>
               <strong>Выберите или перетащите файлы</strong>
-              <span>Поддерживаются CSV, TSV, TXT, JSON, XLSX, XLSM и XLS. Первый файл станет основным, дополнительные используются для обогащения.</span>
+              <span>Файл №1 — основной набор устройств. Файл №2 — SmartRoom. Файл №3 — DDIO и загружается отдельно.</span>
             </label>
+            <p class="muted">Поддерживаются CSV, TSV, TXT, JSON, XLSX, XLSM и XLS.</p>
             <input id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls" multiple hidden>
             <input id="ddioFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls" hidden>
             <div class="file-actions">
               <button class="button secondary" id="browseFilesButton" type="button">Добавить основной файл</button>
-              <button class="button secondary" id="browseEnrichmentFilesButton" type="button">Добавить файл обогащения</button>
+              <button class="button secondary" id="browseEnrichmentFilesButton" type="button">Добавить файл №2 — SmartRoom</button>
             </div>
-            <div class="file-role-summary" aria-live="polite"><span id="primaryFileSummary">Основной файл не выбран</span><span id="enrichmentFileSummary">Файлов обогащения: 0</span></div>
+            <div class="file-role-summary" aria-live="polite"><span id="primaryFileSummary">Файл №1 — основной не выбран</span><span id="enrichmentFileSummary">Файл №2 — SmartRoom не выбран</span></div>
             <section class="ddio-panel" aria-labelledby="ddioPanelTitle">
-              <div class="ddio-panel-head"><div><strong id="ddioPanelTitle">DDIO — третья выгрузка</strong><small>Только визуальная подсказка, основные данные не изменяются</small></div><button class="button secondary" id="browseDdioFileButton" type="button">Загрузить DDIO</button></div>
+              <div class="ddio-panel-head"><div><strong id="ddioPanelTitle">Файл №3 — DDIO</strong><small>Дополняет подтверждённый IP и Possible IPs, но самостоятельно не создаёт устройства</small></div><button class="button secondary" id="browseDdioFileButton" type="button">Загрузить DDIO</button></div>
               <div id="ddioFileSummary" class="muted">Файл DDIO не выбран.</div>
               <div id="ddioMappingGrid" class="ddio-mapping-grid" hidden></div>
               <div class="ddio-panel-actions"><button class="button secondary" id="clearDdioFileButton" type="button" hidden>Убрать DDIO</button><span id="ddioOverlaySummary" class="muted"></span></div>
@@ -136,8 +137,7 @@
             <div class="form-row">
               <label>Стратегия
                 <select id="strategySelect">
-                  <option value="primary">Только строки основного файла</option>
-                  <option value="merge">Добавлять новые MAC из файлов</option>
+                  <option value="primary">Файл №1 + устройства и дополнения SmartRoom</option>
                 </select>
               </label>
             </div>
@@ -655,7 +655,7 @@
           <aside class="guide-callout"><strong>Smartroom и DDIO</strong><p>Вкладка «Помещения» использует Smartroom ID как ключ и выделяет пропавшие устройства красным. Смена IP коммутатора и IP устройства из DDIO отображаются в «Аналитике критических изменений» со знаком ❗. В «Хронологии помещения» доступна вся цепочка замен.</p><div class="guide-action-row"><button class="button secondary" type="button" data-guide-view="rooms">Открыть помещения</button><button class="button secondary" type="button" data-guide-view="analytics">Открыть критические изменения</button><button class="button secondary" type="button" data-guide-view="roomhistory">Открыть хронологию помещения</button></div></aside>
           <h3>Рабочий цикл</h3>
           <ol class="guide-flow">
-            <li><span>1</span><div><strong>Загрузить</strong><p>Основной XLSX/CSV и при необходимости один или несколько файлов обогащения.</p></div></li>
+            <li><span>1</span><div><strong>Загрузить</strong><p>Файл №1 — основной, файл №2 — SmartRoom и при необходимости файл №3 — DDIO.</p></div></li>
             <li><span>2</span><div><strong>Сопоставить</strong><p>Проверить колонки по имени или букве и выбрать поля для дополнения.</p></div></li>
             <li><span>3</span><div><strong>Проанализировать</strong><p>Получить vendor/model, адресные данные, ошибки, dashboard и снимок истории.</p></div></li>
             <li><span>4</span><div><strong>Сравнить и выгрузить</strong><p>Найти критические изменения и экспортировать результат в нужном формате.</p></div></li>
@@ -682,7 +682,7 @@
         <section class="guide-panel" id="guideEngineerPanel" data-guide-panel="engineer" role="tabpanel" hidden>
           <header class="guide-section-head"><div><p class="guide-eyebrow">Инженерный режим</p><h2>Полный цикл импорта, обогащения и сопровождения данных</h2></div><span class="guide-access-badge engineering">Расширенный доступ</span></header>
           <div class="guide-step-list">
-            <article class="guide-step"><span class="guide-step-number">1</span><div><h3>Подготовьте файлы</h3><p>В «Анализе» добавьте основной файл и отдельной кнопкой файл обогащения. Второй файл сразу отображается со своей ролью; XLSX поддерживается и без backend.</p><button class="button secondary" type="button" data-guide-view="workspace" data-guide-requires-engineering>Открыть анализ</button></div></article>
+            <article class="guide-step"><span class="guide-step-number">1</span><div><h3>Подготовьте файлы</h3><p>Добавьте файл №1 — основной и отдельной кнопкой файл №2 — SmartRoom. DDIO загружается как файл №3 и не расширяет список устройств самостоятельно.</p><button class="button secondary" type="button" data-guide-view="workspace" data-guide-requires-engineering>Открыть анализ</button></div></article>
             <article class="guide-step"><span class="guide-step-number">2</span><div><h3>Проверьте сопоставление</h3><p>Для каждого файла выберите колонки вручную по заголовку или букве. MAC обязателен; vendor, model, IP, адрес, помещение, switch IP и порт можно брать из разных источников.</p></div></article>
             <article class="guide-step"><span class="guide-step-number">3</span><div><h3>Запустите обогащение</h3><p>Выберите стратегию и поля. Приоритеты: точное правило модели, OUI 3/4/5, сохранённая история, данные дополнительных файлов и IP-маппинг. Ход операции виден на общей шкале.</p></div></article>
             <article class="guide-step"><span class="guide-step-number">4</span><div><h3>Сопровождайте справочники</h3><p>Во вкладке «Данные» загружайте IP коммутатора и адрес, правила vendor/model, управляйте колонками и SQLite-историей. Повторные выгрузки не заменяют прошлое, а создают новую точку хронологии.</p><button class="button secondary" type="button" data-guide-view="data" data-guide-requires-engineering>Открыть данные</button></div></article>
@@ -701,7 +701,7 @@
           <div class="guide-checklist" aria-label="Проверка перед обогащением">
             <h3>Перед запуском обогащения</h3>
             <label><input type="checkbox"> Основной файл виден с ролью «Основной»</label>
-            <label><input type="checkbox"> Второй файл виден в списке «Файлы обогащения»</label>
+            <label><input type="checkbox"> Файл №2 отображается с ролью «SmartRoom»</label>
             <label><input type="checkbox"> Для каждого файла указана колонка MAC</label>
             <label><input type="checkbox"> На диске достаточно места для SQLite и кэша импорта</label>
           </div>
@@ -1046,18 +1046,19 @@
         if (!files.length) { fallbackState.files = files; return; }
         let primaryIndex = files.findIndex((file) => file.role === "primary");
         if (primaryIndex < 0) primaryIndex = 0;
-        files.forEach((file, index) => { file.role = index === primaryIndex ? "primary" : "enrichment"; });
+        files.forEach((file, index) => { file.role = index === primaryIndex ? "primary" : "smartroom"; });
         fallbackState.files = [files[primaryIndex], ...files.filter((_file, index) => index !== primaryIndex)];
       }
 
       function insertFallbackFile(file, requestedRole = "auto", batchIndex = 0) {
         normalizeFallbackFileRoles();
         let role = requestedRole;
-        if (role === "primary" && batchIndex > 0) role = "enrichment";
-        if (role === "auto") role = fallbackState.files.some((item) => item.role === "primary") ? "enrichment" : "primary";
+        if (role === "primary" && batchIndex > 0) role = "smartroom";
+        if (role === "auto") role = fallbackState.files.some((item) => item.role === "primary") ? "smartroom" : "primary";
+        if (role === "enrichment") role = "smartroom";
         file.role = role;
         if (role === "primary") {
-          fallbackState.files.forEach((item) => { if (item.role === "primary") item.role = "enrichment"; });
+          fallbackState.files.forEach((item) => { if (item.role === "primary") item.role = "smartroom"; });
           fallbackState.files.unshift(file);
         } else fallbackState.files.push(file);
         normalizeFallbackFileRoles();
@@ -1254,14 +1255,14 @@
         const file = selectedFallbackFile();
         const fileGroup = (role, title, emptyText) => {
           const files = fallbackState.files.filter((item) => item.role === role);
-          return `<section class="file-group" data-file-group="${role}"><div class="file-group-head"><strong>${title}</strong><span>${files.length}</span></div>${files.length ? files.map((item) => `<div class="file-row${item.id === fallbackState.activeMappingFileId ? " active-file" : ""}" data-file-id="${esc(item.id)}" data-file-role="${role}"><span><strong>${esc(item.filename)}</strong><small>${item.rows.length} строк, ${item.headers.length} колонок · ${role === "primary" ? "основной" : "файл обогащения"}</small></span><button type="button" data-remove-fallback-file="${esc(item.id)}" title="Удалить файл">×</button></div>`).join("") : `<span class="muted">${emptyText}</span>`}</section>`;
+          return `<section class="file-group" data-file-group="${role}"><div class="file-group-head"><strong>${title}</strong><span>${files.length}</span></div>${files.length ? files.map((item) => `<div class="file-row${item.id === fallbackState.activeMappingFileId ? " active-file" : ""}" data-file-id="${esc(item.id)}" data-file-role="${role}"><span><strong>${esc(item.filename)}</strong><small>${item.rows.length} строк, ${item.headers.length} колонок · ${role === "primary" ? "файл №1 — основной" : "файл №2 — SmartRoom"}</small></span><button type="button" data-remove-fallback-file="${esc(item.id)}" title="Удалить файл">×</button></div>`).join("") : `<span class="muted">${emptyText}</span>`}</section>`;
         };
-        if ($("#fileList")) $("#fileList").innerHTML = fileGroup("primary", "Основной файл", "Основной файл не выбран") + fileGroup("enrichment", "Файлы обогащения", "Файлы обогащения не добавлены");
+        if ($("#fileList")) $("#fileList").innerHTML = fileGroup("primary", "Файл №1 — основной", "Основной файл не выбран") + fileGroup("smartroom", "Файл №2 — SmartRoom", "SmartRoom не добавлен");
         if ($("#primaryFileSummary")) $("#primaryFileSummary").textContent = fallbackState.files.some((item) => item.role === "primary") ? "Основной файл выбран" : "Основной файл не выбран";
-        if ($("#enrichmentFileSummary")) $("#enrichmentFileSummary").textContent = "Файлов обогащения: " + fallbackState.files.filter((item) => item.role === "enrichment").length;
+        if ($("#enrichmentFileSummary")) $("#enrichmentFileSummary").textContent = "Файлов SmartRoom: " + fallbackState.files.filter((item) => item.role === "smartroom").length;
         if ($("#mappingFileSelect")) {
           $("#mappingFileSelect").innerHTML = fallbackState.files.length
-            ? fallbackState.files.map((item, index) => `<option value="${esc(item.id)}"${item.id === fallbackState.activeMappingFileId ? " selected" : ""}>${item.role === "primary" ? "Основной" : "Обогащение " + Math.max(1, fallbackState.files.slice(0, index + 1).filter((entry) => entry.role === "enrichment").length)}: ${esc(item.filename)}</option>`).join("")
+            ? fallbackState.files.map((item) => `<option value="${esc(item.id)}"${item.id === fallbackState.activeMappingFileId ? " selected" : ""}>${item.role === "primary" ? "Файл №1 — основной" : "Файл №2 — SmartRoom"}: ${esc(item.filename)}</option>`).join("")
             : "<option value=\"\">Основной файл</option>";
           $("#mappingFileSelect").disabled = !fallbackState.files.length;
         }
@@ -2318,7 +2319,7 @@
               merged[field] = value;
             }
             merged.sourceFiles = Array.from(new Set([...(existing?.sourceFiles || []), existing?.source, file.filename].filter(Boolean)));
-            merged.sourceRoles = Array.from(new Set([...(existing?.sourceRoles || []), file.role || (fileIndex ? "enrichment" : "primary")]));
+            merged.sourceRoles = Array.from(new Set([...(existing?.sourceRoles || []), file.role || (fileIndex ? "smartroom" : "primary")]));
             merged.source = merged.sourceFiles.join(" + ");
             byMac.set(mac, merged);
             if (index % 250 === 0) {
@@ -2353,8 +2354,8 @@
         if (!files.length) return;
         const processId = fallbackBeginProcess("Загрузка файлов", "Подготовка списка файлов", 2);
         normalizeFallbackFileRoles();
-        if (requestedRole === "enrichment" && !fallbackState.files.some((file) => file.role === "primary")) {
-          const message = "Сначала добавьте основной файл, затем выберите файл обогащения.";
+        if (["smartroom", "enrichment"].includes(requestedRole) && !fallbackState.files.some((file) => file.role === "primary")) {
+          const message = "Сначала добавьте файл №1 — основной, затем файл №2 — SmartRoom.";
           if ($("#fileImportStatus")) $("#fileImportStatus").textContent = message;
           if (input) input.value = "";
           toast(message);
@@ -2477,7 +2478,7 @@
       $("#browseEnrichmentFilesButton")?.addEventListener("click", () => $("#enrichFileInput")?.click());
       $("#singleBrowseFileButton")?.addEventListener("click", () => $("#singleFileInput")?.click());
       $("#fileInput")?.addEventListener("change", (event) => loadFallbackFiles(event.target.files, event.target, "primary"));
-      $("#enrichFileInput")?.addEventListener("change", (event) => loadFallbackFiles(event.target.files, event.target, "enrichment"));
+      $("#enrichFileInput")?.addEventListener("change", (event) => loadFallbackFiles(event.target.files, event.target, "smartroom"));
       $("#dropZone")?.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();

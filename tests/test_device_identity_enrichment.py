@@ -1,4 +1,5 @@
 from backend.services.identity.device_identity_service import (
+    add_identity_to_index,
     build_identity_index,
     find_identity_match,
     merge_device_records,
@@ -21,7 +22,7 @@ def test_secondary_only_device_is_preserved_with_provenance():
     secondary = next(item for item in result["devices"] if item["mac"] == "001122334466")
     assert secondary["ip"] == "192.0.2.66"
     assert secondary["sourceFiles"] == ["enrichment.csv"]
-    assert secondary["sourceRoles"] == ["enrichment"]
+    assert secondary["sourceRoles"] == ["smartroom"]
 
 
 def test_ddio_fills_missing_ip_and_retains_source():
@@ -97,6 +98,24 @@ def test_conflicting_sources_are_explicit_and_deterministic():
     assert merged["conflicts"][0]["alternative"] == "192.0.2.2"
 
 
+def test_same_serial_with_two_simultaneous_macs_is_not_silently_merged():
+    result = enrich_files([{
+        "name": "primary.csv", "role": "primary", "mapping": {"mac": 0, "serialNumber": 1},
+        "rows": [["mac", "serial"], ["00:11:22:33:44:55", "SERIAL-1"], ["AA:BB:CC:DD:EE:FF", "serial-1"]],
+    }])
+    assert len(result["devices"]) == 2
+    assert sum(bool(item.get("hasConflict")) for item in result["devices"]) == 1
+
+
+def test_ambiguous_alias_is_retained_as_conflict_in_incremental_index():
+    first = {"mac": "001122334455", "serialNumber": "SERIAL-1"}
+    second = {"mac": "AABBCCDDEEFF", "serialNumber": "serial-1"}
+    index = {}
+    add_identity_to_index(index, first)
+    add_identity_to_index(index, second)
+    assert find_identity_match({"serialNumber": "SERIAL-1"}, index) is None
+
+
 if __name__ == "__main__":
     test_secondary_only_device_is_preserved_with_provenance()
     test_ddio_fills_missing_ip_and_retains_source()
@@ -104,4 +123,6 @@ if __name__ == "__main__":
     test_previous_physical_address_is_reused_only_by_strong_serial_identity()
     test_repeated_identical_enrichment_is_idempotent()
     test_conflicting_sources_are_explicit_and_deterministic()
+    test_same_serial_with_two_simultaneous_macs_is_not_silently_merged()
+    test_ambiguous_alias_is_retained_as_conflict_in_incremental_index()
     print("device identity enrichment tests passed")

@@ -36,7 +36,7 @@ def post_json(base_url, path, payload):
     )
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
-            assert response.status == 200
+            assert response.status in {200, 201}
             assert response.headers["Access-Control-Allow-Origin"] == "null"
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as error:
@@ -154,7 +154,7 @@ def test_two_xlsx_files_are_visible_and_enrich_matching_primary_mac():
         assert device["switchIp"] == "192.168.21.1"
         secondary_only = next(item for item in result["devices"] if item["mac"] == "AABBCC000099")
         assert secondary_only["ip"] == "10.99.0.5"
-        assert "enrichment" in secondary_only["sourceRoles"]
+        assert "smartroom" in secondary_only["sourceRoles"]
 
         WORKSPACE_FILE_CACHE.discard(main["fileToken"])
         WORKSPACE_FILE_CACHE.discard(enrichment["fileToken"])
@@ -198,13 +198,13 @@ def test_third_ddio_xlsx_returns_display_only_ip_hint_after_switch_change():
         base_url = f"http://{host}:{port}"
         post_json(
             base_url,
-            "/api/analyze",
+            "/api/snapshots",
             {
                 "devices": [{"mac": "00:11:22:33:44:55", "ip": "192.168.1.10", "switchIp": "10.0.0.1"}],
                 "source": "saved-ddio-baseline",
-                "saveHistory": True,
-                "saveSnapshot": False,
-                "notify": False,
+                # Switch-change diagnostics compare final snapshots, not transient
+                # legacy history observations.
+                "name": "Analysis: saved-ddio-baseline",
             },
         )
         main = post_binary_file(
@@ -278,7 +278,7 @@ def test_third_ddio_xlsx_returns_display_only_ip_hint_after_switch_change():
         )
         assert result["devices"][0]["ip"] == "192.168.1.10"
         assert result["devices"][0]["switchIp"] == "10.0.0.2"
-        assert result["ddioOverlay"] == {
+        expected_overlay = {
             "001122334455": {
                 "ip": "192.168.1.30",
                 "possibleIps": ["192.168.1.20", "192.168.1.30"],
@@ -288,6 +288,7 @@ def test_third_ddio_xlsx_returns_display_only_ip_hint_after_switch_change():
                 "currentSwitchIp": "10.0.0.2",
             }
         }
+        assert result["ddioOverlay"] == expected_overlay, result["ddioOverlay"]
         assert result["ddioSummary"] == {"loaded": True, "switchIpChanges": 1, "newIpHints": 1}
     finally:
         for item in imported:
