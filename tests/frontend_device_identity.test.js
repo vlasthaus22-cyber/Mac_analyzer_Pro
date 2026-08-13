@@ -14,4 +14,10 @@ const paired = Identity.pairSets(
 assert.strictEqual(paired.pairs.length, 1, "serial number must retain identity when MAC changes");
 assert.strictEqual(paired.added.length, 0);
 assert.strictEqual(paired.removed.length, 0);
+assert.strictEqual(Identity.stableId({ serialNumber: "СЕРИЯ-1" }), "dev-01651d51");
+const ambiguous = Identity.buildIndex([
+  { mac: "001122334455", serialNumber: "SERIAL-X" },
+  { mac: "AABBCCDDEEFF", serialNumber: "serial-x" },
+]);
+assert.strictEqual(Identity.resolve({ serialNumber: "SERIAL-X" }, ambiguous).status, "conflict");
 console.log("frontend_device_identity.test.js: ok");

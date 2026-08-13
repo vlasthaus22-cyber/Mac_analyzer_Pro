@@ -21,6 +21,14 @@ MERGE_FIELDS = (
     "switchPort", "hostname", "serialNumber", "deviceId", "deviceName",
 )
 
+MATCH_CONFIDENCE = {
+    "internal-id": ("Exact", 1.0),
+    "mac": ("Exact", 1.0),
+    "serial": ("High", 0.96),
+    "device": ("High", 0.95),
+    "host-serial": ("High", 0.92),
+}
+
 
 def text(value: Any) -> str:
     return str(value or "").strip()
@@ -68,7 +76,10 @@ def identity_candidates(device: dict[str, Any]) -> list[str]:
     serial = canonical_value(device, "serialNumber")
     device_id = canonical_value(device, "deviceId")
     hostname = canonical_value(device, "hostname")
+    internal_id = text(device.get("internalDeviceId") or device.get("internal_device_id"))
     candidates: list[str] = []
+    if internal_id:
+        candidates.append("internal-id:" + normalize_token(internal_id))
     if mac:
         candidates.append("mac:" + mac)
     if serial:
@@ -81,30 +92,94 @@ def identity_candidates(device: dict[str, Any]) -> list[str]:
 
 
 def identity_key(device: dict[str, Any]) -> str:
-    candidates = identity_candidates(device)
+    candidates = [candidate for candidate in identity_candidates(device) if not candidate.startswith("internal-id:")]
     return candidates[0] if candidates else ""
+
+
+def stable_device_id(device: dict[str, Any], namespace: str = "") -> str:
+    """Return a deterministic persistent ID without using an Excel row index."""
+    existing = text(device.get("internalDeviceId") or device.get("internal_device_id"))
+    if existing:
+        return existing
+    strongest = identity_key(device)
+    if not strongest:
+        return ""
+    seed = "|".join([normalize_token(namespace), strongest])
+    hash_value = 2166136261
+    for byte in seed.encode("utf-8"):
+        hash_value ^= byte
+        hash_value = (hash_value * 16777619) & 0xFFFFFFFF
+    return f"dev-{hash_value:08x}"
+
+
+def resolve_identity(
+    device: dict[str, Any], index: dict[str, dict[str, Any]], *, allow_identifier_changes: bool = False
+) -> dict[str, Any]:
+    """Resolve a record deterministically and expose ambiguity instead of picking the first row."""
+    evidence: list[dict[str, Any]] = []
+    matches: dict[int, dict[str, Any]] = {}
+    ambiguous_candidates = index.get("__ambiguous_candidates__", set())
+    ambiguous_evidence: list[str] = []
+    for candidate in identity_candidates(device):
+        if candidate in ambiguous_candidates:
+            ambiguous_evidence.append(candidate)
+            continue
+        match = index.get(candidate)
+        if match is None:
+            continue
+        kind = candidate.split(":", 1)[0]
+        label, score = MATCH_CONFIDENCE.get(kind, ("Medium", 0.75))
+        evidence.append({"candidate": candidate, "kind": kind, "confidence": label, "score": score})
+        matches[id(match)] = match
+    if len(matches) > 1:
+        return {"status": "conflict", "match": None, "confidence": "Conflict", "score": 0.0, "evidence": evidence}
+    match = next(iter(matches.values())) if matches else None
+    if not match:
+        if ambiguous_evidence:
+            return {
+                "status": "conflict", "match": None, "confidence": "Conflict", "score": 0.0,
+                "evidence": [{"candidate": candidate, "kind": candidate.split(":", 1)[0], "confidence": "Conflict", "score": 0.0} for candidate in ambiguous_evidence],
+            }
+        return {"status": "unmatched", "match": None, "confidence": "Low", "score": 0.0, "evidence": []}
+    incoming_mac = normalize_mac(device.get("mac") or device.get("macFormatted"))
+    matched_mac = normalize_mac(match.get("mac") or match.get("macFormatted"))
+    matched_by_exact_id = any(item["kind"] in {"internal-id", "mac"} for item in evidence)
+    if incoming_mac and matched_mac and incoming_mac != matched_mac and not matched_by_exact_id and not allow_identifier_changes:
+        return {"status": "conflict", "match": None, "confidence": "Conflict", "score": 0.0, "evidence": evidence}
+    best = max(evidence, key=lambda item: item["score"])
+    return {
+        "status": "matched", "match": match, "confidence": best["confidence"], "score": best["score"],
+        "evidence": evidence, "ambiguousEvidence": ambiguous_evidence,
+    }
+
+
+def add_identity_to_index(index: dict[str, dict[str, Any]], device: dict[str, Any]) -> None:
+    """Add aliases while remembering collisions for subsequent conflict reporting."""
+    ambiguous = index.setdefault("__ambiguous_candidates__", set())
+    for candidate in identity_candidates(device):
+        if candidate in ambiguous:
+            continue
+        previous = index.get(candidate)
+        if previous is not None and previous is not device:
+            index.pop(candidate, None)
+            ambiguous.add(candidate)
+        else:
+            index[candidate] = device
 
 
 def build_identity_index(devices: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     index: dict[str, dict[str, Any]] = {}
-    ambiguous: set[str] = set()
     for device in devices:
         if not isinstance(device, dict):
             continue
-        for candidate in identity_candidates(device):
-            previous = index.get(candidate)
-            if previous is not None and previous is not device:
-                ambiguous.add(candidate)
-            else:
-                index[candidate] = device
-    for candidate in ambiguous:
-        index.pop(candidate, None)
+        add_identity_to_index(index, device)
     return index
 
 
-def find_identity_match(device: dict[str, Any], index: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
-    matches = {id(index[candidate]): index[candidate] for candidate in identity_candidates(device) if candidate in index}
-    return next(iter(matches.values())) if len(matches) == 1 else None
+def find_identity_match(
+    device: dict[str, Any], index: dict[str, dict[str, Any]], *, allow_identifier_changes: bool = False
+) -> dict[str, Any] | None:
+    return resolve_identity(device, index, allow_identifier_changes=allow_identifier_changes)["match"]
 
 
 def pair_device_sets(
@@ -122,7 +197,7 @@ def pair_device_sets(
     pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
     added: list[dict[str, Any]] = []
     for device in current:
-        match = find_identity_match(device, previous_index)
+        match = find_identity_match(device, previous_index, allow_identifier_changes=True)
         if match is None or id(match) in used_previous:
             added.append(device)
             continue
@@ -179,7 +254,11 @@ def merge_device_records(
     merged["sourceRoles"] = source_roles
     merged["conflicts"] = conflicts
     merged["hasConflict"] = bool(conflicts)
+    merged.setdefault("mac", "")
+    merged.setdefault("macFormatted", "")
+    merged.setdefault("oui", "")
     merged["identityKey"] = identity_key(merged)
+    merged["internalDeviceId"] = stable_device_id(merged)
     merged["source"] = source_files[0] if len(source_files) == 1 else " + ".join(source_files)
     return merged
 
@@ -189,10 +268,14 @@ def preserve_known_values(current: dict[str, Any], previous: dict[str, Any] | No
     if not previous:
         return current
     result = merge_device_records(current, previous, source="previous-final", role="history", prefer_existing=True)
+    previous_internal_id = text(previous.get("internalDeviceId") or previous.get("internal_device_id")) or stable_device_id(previous)
+    if previous_internal_id:
+        result["internalDeviceId"] = previous_internal_id
     for field in MERGE_FIELDS:
         if text(current.get(field)):
             continue
         if text(previous.get(field)):
             result.setdefault("fieldSources", {})[field] = "previous-final"
     result["previousFinalMatched"] = True
+    result["matchConfidence"] = "Exact" if normalize_mac(current.get("mac")) else "High"
     return result

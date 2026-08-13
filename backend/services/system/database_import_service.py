@@ -8,6 +8,8 @@ from typing import Any
 
 
 IMPORTABLE_TABLES = (
+    "resolved_device_inventory",
+    "resolved_device_history",
     "device_inventory",
     "mac_history",
     "mac_movements",

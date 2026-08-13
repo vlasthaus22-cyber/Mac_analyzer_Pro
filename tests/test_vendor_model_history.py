@@ -9,6 +9,7 @@ from server import (
     save_history_enrichment_settings,
     save_history,
     save_statistics_snapshot,
+    stable_device_id,
     vendor_model_history_suggestion,
     vendor_model_history,
     vendor_model_upload_history,
@@ -19,9 +20,13 @@ from server import (
 def cleanup(*macs):
     with db_connection() as conn:
         for mac in macs:
+            internal_device_id = stable_device_id({"mac": mac})
             conn.execute("DELETE FROM vendor_model_history WHERE mac = ?", (mac,))
             conn.execute("DELETE FROM mac_movements WHERE mac = ?", (mac,))
             conn.execute("DELETE FROM mac_history WHERE mac = ?", (mac,))
+            conn.execute("DELETE FROM device_inventory WHERE mac = ?", (mac,))
+            conn.execute("DELETE FROM resolved_device_history WHERE internal_device_id = ?", (internal_device_id,))
+            conn.execute("DELETE FROM resolved_device_inventory WHERE internal_device_id = ?", (internal_device_id,))
             for prefix_length in (6, 8, 10):
                 conn.execute("DELETE FROM vendor_mappings WHERE oui = ? AND source = 'learned'", (mac[:prefix_length],))
             conn.execute("DELETE FROM model_mappings WHERE prefix = ? AND source = 'learned'", (mac[:10],))
@@ -251,10 +256,10 @@ def test_enrichment_restores_latest_non_empty_history_fields_and_switch_address(
     assert restored["switchPort"] == "Gi1/0/7"
     assert enrich_device({"mac": source_mac})["switchIp"] == switch_ip
 
-    # The learned physical location also applies to another device observed
-    # on the same switch IP, without requiring a manually imported mapping.
+    # A switch IP alone is not a sufficiently strong identity signal. The
+    # location must not leak to a different device without a trusted mapping.
     same_switch = enrich_device({"mac": same_switch_mac, "switchIp": switch_ip})
-    assert same_switch["address"] == "Корпус А, этаж 3"
+    assert same_switch["address"] == ""
 
     # Values supplied by the current export always remain authoritative.
     current = enrich_device({
@@ -273,7 +278,7 @@ def test_enrichment_restores_latest_non_empty_history_fields_and_switch_address(
         conn.execute("DELETE FROM ip_address_mappings WHERE switch_ip = ?", (switch_ip,))
 
 
-def test_save_history_learns_switch_address_and_smartroom_room_mapping():
+def test_save_history_keeps_switch_address_identity_scoped_and_learns_smartroom_room_mapping():
     init_database()
     source_mac = "F2E3D4C5B611"
     target_mac = "F2E3D4C5B612"
@@ -288,7 +293,10 @@ def test_save_history_learns_switch_address_and_smartroom_room_mapping():
         "smartroomId": smartroom_id, "room": "B-402",
     })], "mapping-learning-test")
     enriched = enrich_device({"mac": target_mac, "switchIp": switch_ip, "smartroomId": smartroom_id})
-    assert enriched["address"] == "Building B, floor 4"
+    # A switch IP identifies network attachment, not a unique physical device.
+    # The address remains scoped to the source device, while the explicit
+    # Smartroom ID -> room-name relationship is reusable.
+    assert enriched["address"] == ""
     assert enriched["room"] == "B-402"
     assert enriched["smartroomId"] == smartroom_id
 
@@ -297,7 +305,7 @@ def test_save_history_learns_switch_address_and_smartroom_room_mapping():
         {"mac": target_mac, "switchIp": "198.51.100.243", "smartroomId": "TEST-SR-403"},
     ])
     batch_enriched = enrich_device({"mac": target_mac, "switchIp": "198.51.100.243", "smartroomId": "TEST-SR-403"}, batch_context)
-    assert batch_enriched["address"] == "Building C"
+    assert batch_enriched["address"] == ""
     assert batch_enriched["room"] == "C-403"
     assert batch_enriched["smartroomId"] == "TEST-SR-403"
 
@@ -336,6 +344,6 @@ if __name__ == "__main__":
     test_save_history_records_enrichment_before_after_even_when_value_is_cleared()
     test_save_history_uses_file_date_for_records_movements_and_vendor_model_history()
     test_enrichment_restores_latest_non_empty_history_fields_and_switch_address()
-    test_save_history_learns_switch_address_and_smartroom_room_mapping()
+    test_save_history_keeps_switch_address_identity_scoped_and_learns_smartroom_room_mapping()
     test_explicit_ddio_switch_change_uses_export_pair_instead_of_stale_database_state()
     print("vendor model history test passed")

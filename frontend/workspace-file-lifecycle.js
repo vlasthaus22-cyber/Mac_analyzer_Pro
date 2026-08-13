@@ -6,10 +6,10 @@
   function selectForNextImport(files, requestedRole = "auto") {
     const source = list(files);
     const primaryExists = source.some((file) => file?.role === "primary");
-    const incomingIsEnrichment = requestedRole === "enrichment"
+    const incomingIsSmartRoom = ["smartroom", "enrichment"].includes(requestedRole)
       || (requestedRole === "auto" && primaryExists);
-    if (!incomingIsEnrichment) return { files: source, removed: [] };
-    const removed = source.filter((file) => file?.role === "enrichment" && file?.consumedAt);
+    if (!incomingIsSmartRoom) return { files: source, removed: [] };
+    const removed = source.filter((file) => ["smartroom", "enrichment"].includes(file?.role) && file?.consumedAt);
     if (!removed.length) return { files: source, removed };
     const removedIds = new Set(removed.map((file) => file.id));
     return { files: source.filter((file) => !removedIds.has(file.id)), removed };
@@ -18,7 +18,7 @@
   function markConsumed(files, consumedAt = new Date().toISOString()) {
     let marked = 0;
     for (const file of list(files)) {
-      if (file?.role !== "enrichment") continue;
+      if (!["smartroom", "enrichment"].includes(file?.role)) continue;
       file.consumedAt = consumedAt;
       marked += 1;
     }

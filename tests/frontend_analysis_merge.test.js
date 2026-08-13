@@ -3,9 +3,9 @@ const fs = require("fs");
 const path = require("path");
 
 const app = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
-const match = app.match(/function mergeAnalysisDevice[\s\S]*?\r?\n  }\r?\n  async function visitLocalRowsForAnalysis/);
+const match = app.match(/function mergeAnalysisDevice[\s\S]*?\r?\n  }\r?\n  function accumulateResolvedDevice/);
 assert(match, "mergeAnalysisDevice must remain available to browser enrichment");
-const definition = match[0].replace(/\r?\n  async function visitLocalRowsForAnalysis$/, "");
+const definition = match[0].replace(/\r?\n  function accumulateResolvedDevice$/, "");
 const DeviceIdentity = require("../frontend/device-identity.js");
 const mergeAnalysisDevice = Function("DeviceIdentity", `"use strict"; ${definition}; return mergeAnalysisDevice;`)(DeviceIdentity);
 
@@ -35,7 +35,7 @@ assert.ok(merged.conflicts.some((item) => item.field === "model" && item.alterna
 assert.strictEqual(
   mergeAnalysisDevice(current, { model: "Apple TV 5K" }, { preferExisting: false }).model,
   "Apple TV 5K",
-  "a later row in the primary file may update its own value",
+  "an explicit replacement mode may update the selected value",
 );
 
 console.log("frontend_analysis_merge.test.js: ok");

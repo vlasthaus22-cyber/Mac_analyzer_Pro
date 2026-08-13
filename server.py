@@ -52,6 +52,8 @@ from backend.services.identity.device_identity_service import (
     find_identity_match,
     identity_key,
     preserve_known_values,
+    resolve_identity,
+    stable_device_id,
 )
 from backend.services.detection.oui_service import format_oui_for_devices
 from backend.services.workspace.single_file_service import analyze_single_file, analyze_single_file_table, summarize_single_file
@@ -609,6 +611,36 @@ def init_database() -> None:
                 seen_count INTEGER NOT NULL DEFAULT 1
             );
             CREATE INDEX IF NOT EXISTS idx_device_inventory_updated ON device_inventory(updated_at);
+            CREATE TABLE IF NOT EXISTS resolved_device_inventory (
+                internal_device_id TEXT PRIMARY KEY,
+                mac TEXT,
+                serial_number TEXT,
+                device_id TEXT,
+                hostname TEXT,
+                smartroom_id TEXT,
+                room TEXT,
+                ip TEXT,
+                switch_ip TEXT,
+                payload_json TEXT NOT NULL,
+                first_seen TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                seen_count INTEGER NOT NULL DEFAULT 1
+            );
+            CREATE INDEX IF NOT EXISTS idx_resolved_inventory_mac ON resolved_device_inventory(mac);
+            CREATE INDEX IF NOT EXISTS idx_resolved_inventory_serial ON resolved_device_inventory(serial_number);
+            CREATE INDEX IF NOT EXISTS idx_resolved_inventory_device_id ON resolved_device_inventory(device_id);
+            CREATE INDEX IF NOT EXISTS idx_resolved_inventory_hostname ON resolved_device_inventory(hostname);
+            CREATE INDEX IF NOT EXISTS idx_resolved_inventory_updated ON resolved_device_inventory(updated_at);
+            CREATE TABLE IF NOT EXISTS resolved_device_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                observation_key TEXT NOT NULL UNIQUE,
+                internal_device_id TEXT NOT NULL,
+                source TEXT,
+                payload_json TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_resolved_history_device ON resolved_device_history(internal_device_id);
+            CREATE INDEX IF NOT EXISTS idx_resolved_history_recorded ON resolved_device_history(recorded_at);
             CREATE TABLE IF NOT EXISTS mac_movements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 mac TEXT NOT NULL,
@@ -755,6 +787,26 @@ def init_database() -> None:
                   ON first_seen.latest_id = history.id
                 """
             )
+        resolved_inventory_count = int(conn.execute("SELECT COUNT(*) FROM resolved_device_inventory").fetchone()[0])
+        if not resolved_inventory_count:
+            for row in conn.execute("SELECT * FROM device_inventory ORDER BY mac").fetchall():
+                legacy = dict(row)
+                device = {
+                    "mac": legacy.get("mac") or "", "macFormatted": legacy.get("mac_formatted") or "",
+                    "vendor": legacy.get("vendor") or "", "model": legacy.get("model") or "", "ip": legacy.get("ip") or "",
+                    "address": legacy.get("address") or "", "room": legacy.get("room") or "", "smartroomId": legacy.get("smartroom_id") or "",
+                    "switchIp": legacy.get("switch_ip") or "", "switchPort": legacy.get("switch_port") or "", "hostname": legacy.get("hostname") or "",
+                    "serialNumber": legacy.get("serial_number") or "", "deviceId": legacy.get("device_id") or "", "deviceName": legacy.get("device_name") or "",
+                    "source": legacy.get("source") or "",
+                }
+                internal_id = stable_device_id(device)
+                if not internal_id:
+                    continue
+                device["internalDeviceId"] = internal_id
+                conn.execute(
+                    "INSERT OR IGNORE INTO resolved_device_inventory (internal_device_id, mac, serial_number, device_id, hostname, smartroom_id, room, ip, switch_ip, payload_json, first_seen, updated_at, seen_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (internal_id, device["mac"], device["serialNumber"], device["deviceId"], device["hostname"], device["smartroomId"], device["room"], device["ip"], device["switchIp"], json.dumps(device, ensure_ascii=False, separators=(",", ":")), legacy.get("first_seen") or legacy.get("updated_at") or utc_now(), legacy.get("updated_at") or utc_now(), int(legacy.get("seen_count") or 1)),
+                )
         # Versions before v1.0.41 seeded illustrative vendor/model examples as
         # if they were authoritative. Remove only those synthetic rows; user,
         # learned, and imported reference rules are never touched.
@@ -857,11 +909,15 @@ def result_table_rows_html(rows: list[dict[str, Any]], columns: list[str]) -> st
     for row in rows:
         if row.get("valid"):
             mac = html_lib.escape(as_text(row.get("mac")))
+            device_key = as_text(row.get("mac")) or (
+                "device-id:" + as_text(row.get("deviceId") or row.get("device_id")).casefold()
+                if as_text(row.get("deviceId") or row.get("device_id")) else as_text(row.get("internalDeviceId"))
+            )
             cells = "".join(
                 f"<td>{html_lib.escape(result_cell_value(row, column))}</td>"
                 for column in columns
             )
-            rendered.append(f'<tr data-mac="{mac}">{cells}</tr>')
+            rendered.append(f'<tr data-mac="{mac}" data-device-key="{html_lib.escape(device_key, quote=True)}">{cells}</tr>')
         else:
             line = html_lib.escape(as_text(row.get("row")))
             source = html_lib.escape(as_text(row.get("source")))
@@ -1008,7 +1064,11 @@ def result_dataset_summary(devices: list[dict[str, Any]], invalid: list[dict[str
         device for device in devices
         if as_text(device.get("vendor")) not in {"", "Unknown", "Не определено"}
     ]
-    normalized_macs = [normalize_mac(device.get("mac") or device.get("macFormatted")) for device in devices]
+    normalized_macs = [
+        mac
+        for device in devices
+        if (mac := normalize_mac(device.get("mac") or device.get("macFormatted")))
+    ]
     return {
         "devices": len(devices),
         "invalid": len(invalid),
@@ -1904,7 +1964,7 @@ def _json_setting(rows: dict[str, str], key: str) -> dict[str, Any]:
 def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
     """Load every detector dependency once for an entire analysis batch."""
     normalized_devices = [item for item in devices if isinstance(item, dict)]
-    macs = sorted({normalize_mac(item.get("mac") or item.get("macFormatted")) for item in normalized_devices} - {""})
+    macs = sorted({normalize_mac(item.get("mac") or item.get("macFormatted")) for item in normalized_devices} - {"", None})
     target_macs = set(macs)
     ouis = sorted({mac[:6] for mac in macs})
     switch_ips = sorted({as_text(item.get("switchIp") or item.get("switch_ip")) for item in normalized_devices} - {""})
@@ -1919,11 +1979,10 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
     history_similarity_rows: list[dict[str, Any]] = []
     vendor_model_rows: list[dict[str, Any]] = []
     previous_final_devices: list[dict[str, Any]] = []
-    ip_mappings: dict[str, str] = {
-        as_text(item.get("switchIp") or item.get("switch_ip")): as_text(item.get("address") or item.get("physicalAddress") or item.get("physical_address"))
-        for item in normalized_devices
-        if as_text(item.get("switchIp") or item.get("switch_ip")) and as_text(item.get("address") or item.get("physicalAddress") or item.get("physical_address"))
-    }
+    # Automatic address reuse is identity-based. A switch IP alone is a weak
+    # signal and must not spread one device's physical address to neighbours.
+    # Only explicitly confirmed manual mappings remain eligible here.
+    ip_mappings: dict[str, str] = {}
     smartroom_mappings: dict[str, str] = {
         as_text(item.get("smartroomId") or item.get("smartroom_id")): as_text(item.get("room"))
         for item in normalized_devices
@@ -2034,25 +2093,10 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
         for chunk in _chunks(switch_ips):
             placeholders = ",".join("?" for _ in chunk)
             for row in conn.execute(
-                f"SELECT switch_ip, physical_address FROM ip_address_mappings WHERE switch_ip IN ({placeholders})",
+                f"SELECT switch_ip, physical_address FROM ip_address_mappings WHERE switch_ip IN ({placeholders}) AND LOWER(TRIM(COALESCE(source, ''))) NOT IN ('analysis', 'current-file', 'automatic', 'inferred')",
                 chunk,
             ).fetchall():
                 ip_mappings.setdefault(row["switch_ip"], as_text(row["physical_address"]))
-            for row in conn.execute(
-                f"""
-                SELECT history.switch_ip, history.address
-                FROM mac_history AS history
-                JOIN (
-                    SELECT switch_ip, MAX(id) AS latest_id
-                    FROM mac_history
-                    WHERE switch_ip IN ({placeholders})
-                      AND TRIM(COALESCE(address, '')) != ''
-                    GROUP BY switch_ip
-                ) AS latest ON latest.latest_id = history.id
-                """,
-                chunk,
-            ).fetchall():
-                ip_mappings.setdefault(as_text(row["switch_ip"]), as_text(row["address"]))
         for chunk in _chunks(smartroom_ids):
             placeholders = ",".join("?" for _ in chunk)
             for row in conn.execute(
@@ -2129,25 +2173,46 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
 
 def enrich_device(device: dict[str, Any], context: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     mac = normalize_mac(device.get("mac") or device.get("macFormatted"))
-    if not mac:
-        return {"valid": False, "raw": device.get("mac") or device.get("macFormatted") or ""}
     batch = context or build_enrichment_context([device])
-    previous_final = find_identity_match(device, batch.get("previousFinalIndex") or {})
+    previous_resolution = resolve_identity(
+        device, batch.get("previousFinalIndex") or {}, allow_identifier_changes=True
+    )
+    previous_final = previous_resolution.get("match")
+    if previous_resolution.get("status") == "conflict" or previous_resolution.get("ambiguousEvidence"):
+        device = dict(device)
+        device.setdefault("conflicts", []).append({
+            "field": "identity",
+            "selected": as_text(device.get("internalDeviceId")) or stable_device_id(device),
+            "selectedSource": as_text(device.get("source")),
+            "alternative": "Неоднозначное соответствие предыдущему финальному состоянию",
+            "alternativeSource": "previous-final",
+            "confidence": "Conflict",
+            "evidence": previous_resolution.get("evidence") or previous_resolution.get("ambiguousEvidence") or [],
+        })
+        device["hasConflict"] = True
+        device["matchConfidence"] = "Conflict"
     device = preserve_known_values(device, previous_final)
+    mac = normalize_mac(device.get("mac") or device.get("macFormatted"))
+    if not mac and not identity_key(device):
+        return {"valid": False, "raw": device.get("mac") or device.get("macFormatted") or "", "error": "Нет сильного идентификатора устройства"}
     vendor_rules = batch.get("vendorRules") or []
     model_rules = batch.get("modelRules") or []
     history = dict((batch.get("latestHistory") or {}).get(mac) or {})
     value = lambda key, history_key=None: as_text(device.get(key)) or as_text(history.get(history_key or key))
     history_settings = batch.get("historySettings") or normalize_history_enrichment_settings({})
-    vendor_model_suggestion = indexed_history_suggestion(mac, batch.get("vendorModelHistoryIndex"), history_settings)
+    vendor_model_suggestion = indexed_history_suggestion(mac, batch.get("vendorModelHistoryIndex"), history_settings) if mac else {}
     priority_history = history_settings.get("enabled") and history_settings.get("priorityHistory")
     history_vendor = as_text(history.get("vendor")) or (as_text(vendor_model_suggestion.get("vendor")) if priority_history else "")
     history_model = as_text(history.get("model")) or (as_text(vendor_model_suggestion.get("model")) if priority_history else "")
     text_values = [device.get(field) for field in ("model", "description", "name", "hostname", "device_name")]
     detector_settings = batch.get("detectorSettings") or normalize_detector_settings({})
-    similar_result = similarity_detection(mac, batch.get("similarityIndex"))
-    vendor_detection = detect_vendor(mac, device.get("vendor"), history_vendor, vendor_rules, [], text_values, detector_settings, batch.get("vendorRuleIndex"), similar_result)
-    model_detection = detect_model(mac, device.get("model"), history_model, model_rules, detector_settings, batch.get("modelRuleIndex"), similar_result)
+    similar_result = similarity_detection(mac, batch.get("similarityIndex")) if mac else {}
+    if mac:
+        vendor_detection = detect_vendor(mac, device.get("vendor"), history_vendor, vendor_rules, [], text_values, detector_settings, batch.get("vendorRuleIndex"), similar_result)
+        model_detection = detect_model(mac, device.get("model"), history_model, model_rules, detector_settings, batch.get("modelRuleIndex"), similar_result)
+    else:
+        vendor_detection = {"value": as_text(device.get("vendor")) or "Unknown", "source": "file" if as_text(device.get("vendor")) else "unknown", "confidence": 1.0 if as_text(device.get("vendor")) else 0.0, "matchedPrefix": ""}
+        model_detection = {"value": as_text(device.get("model")), "source": "file" if as_text(device.get("model")) else "unknown", "confidence": 1.0 if as_text(device.get("model")) else 0.0, "matchedPrefix": ""}
     if vendor_detection.get("source") == "history" and not as_text(history.get("vendor")) and history_vendor:
         vendor_detection["source"] = vendor_model_suggestion.get("source", "vendor_model_history")
         vendor_detection["confidence"] = vendor_model_suggestion.get("confidence", vendor_detection.get("confidence", 0.0))
@@ -2182,9 +2247,9 @@ def enrich_device(device: dict[str, Any], context: Optional[dict[str, Any]] = No
     room, smartroom_id = smartroom_identity(room, smartroom_id, batch.get("smartroomMappings"))
     enriched = {
         "valid": True,
-        "mac": mac,
-        "macFormatted": format_mac(mac),
-        "oui": mac[:6],
+        "mac": mac or "",
+        "macFormatted": format_mac(mac) if mac else "",
+        "oui": mac[:6] if mac else "",
         "vendor": vendor_detection["value"],
         "vendorSource": vendor_detection["source"],
         "vendorConfidence": vendor_detection["confidence"],
@@ -2209,6 +2274,8 @@ def enrich_device(device: dict[str, Any], context: Optional[dict[str, Any]] = No
         "conflicts": list(device.get("conflicts") or []),
         "hasConflict": bool(device.get("hasConflict")),
         "identityKey": identity_key(device),
+        "internalDeviceId": stable_device_id(device),
+        "matchConfidence": as_text(device.get("matchConfidence")) or ("Exact" if mac else "High"),
         "previousFinalMatched": bool(device.get("previousFinalMatched")),
         "ipSource": as_text(device.get("ipSource")),
         "possibleIps": list(device.get("possibleIps") or []),
@@ -2216,6 +2283,92 @@ def enrich_device(device: dict[str, Any], context: Optional[dict[str, Any]] = No
         "row": device.get("row"),
     }
     return enriched
+
+
+def _save_resolved_inventory_rows(
+    conn: sqlite3.Connection,
+    devices: list[dict[str, Any]],
+    source: str,
+    timestamp: str,
+    *,
+    record_history: bool = True,
+) -> int:
+    """Persist every strongly identified final device, including rows without MAC."""
+    saved = 0
+    for raw in devices:
+        if not isinstance(raw, dict) or not identity_key(raw):
+            continue
+        current = dict(raw)
+        internal_id = as_text(current.get("internalDeviceId") or current.get("internal_device_id")) or stable_device_id(current)
+        if not internal_id:
+            continue
+        existing_row = conn.execute(
+            "SELECT payload_json, first_seen, seen_count FROM resolved_device_inventory WHERE internal_device_id = ?",
+            (internal_id,),
+        ).fetchone()
+        existing: dict[str, Any] = {}
+        if existing_row:
+            try:
+                decoded = json.loads(existing_row["payload_json"] or "{}")
+                existing = decoded if isinstance(decoded, dict) else {}
+            except (TypeError, ValueError, json.JSONDecodeError):
+                existing = {}
+        for field, value in existing.items():
+            if current.get(field) in (None, "", []):
+                current[field] = value
+        current["internalDeviceId"] = internal_id
+        current["identityKey"] = identity_key(current)
+        payload_text = json.dumps(current, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        observation_key = hashlib.sha256(f"{internal_id}|{as_text(source)}|{timestamp}|{payload_text}".encode("utf-8")).hexdigest()
+        inserted = 0
+        if record_history:
+            latest_observation = conn.execute(
+                "SELECT payload_json, source FROM resolved_device_history WHERE internal_device_id = ? ORDER BY id DESC LIMIT 1",
+                (internal_id,),
+            ).fetchone()
+            observation_source = as_text(source or current.get("source"))
+            if not latest_observation or latest_observation["payload_json"] != payload_text or as_text(latest_observation["source"]) != observation_source:
+                inserted = conn.execute(
+                    "INSERT OR IGNORE INTO resolved_device_history (observation_key, internal_device_id, source, payload_json, recorded_at) VALUES (?, ?, ?, ?, ?)",
+                    (observation_key, internal_id, observation_source, payload_text, timestamp),
+                ).rowcount
+        first_seen = existing_row["first_seen"] if existing_row else timestamp
+        existing_seen_count = int(existing_row["seen_count"] or 0) if existing_row else 0
+        seen_count = existing_seen_count + (1 if inserted or not existing_row else 0)
+        conn.execute(
+            """
+            INSERT INTO resolved_device_inventory
+                (internal_device_id, mac, serial_number, device_id, hostname, smartroom_id, room, ip, switch_ip, payload_json, first_seen, updated_at, seen_count)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(internal_device_id) DO UPDATE SET
+                mac=COALESCE(NULLIF(excluded.mac, ''), resolved_device_inventory.mac),
+                serial_number=COALESCE(NULLIF(excluded.serial_number, ''), resolved_device_inventory.serial_number),
+                device_id=COALESCE(NULLIF(excluded.device_id, ''), resolved_device_inventory.device_id),
+                hostname=COALESCE(NULLIF(excluded.hostname, ''), resolved_device_inventory.hostname),
+                smartroom_id=COALESCE(NULLIF(excluded.smartroom_id, ''), resolved_device_inventory.smartroom_id),
+                room=COALESCE(NULLIF(excluded.room, ''), resolved_device_inventory.room),
+                ip=COALESCE(NULLIF(excluded.ip, ''), resolved_device_inventory.ip),
+                switch_ip=COALESCE(NULLIF(excluded.switch_ip, ''), resolved_device_inventory.switch_ip),
+                payload_json=excluded.payload_json,
+                updated_at=excluded.updated_at,
+                seen_count=excluded.seen_count
+            """,
+            (
+                internal_id, as_text(current.get("mac") or current.get("macFormatted")),
+                as_text(current.get("serialNumber") or current.get("serial_number")), as_text(current.get("deviceId") or current.get("device_id")),
+                as_text(current.get("hostname") or current.get("host_name")), as_text(current.get("smartroomId") or current.get("smartroom_id")),
+                as_text(current.get("room")), as_text(current.get("ip")), as_text(current.get("switchIp") or current.get("switch_ip")),
+                payload_text, first_seen, timestamp, seen_count,
+            ),
+        )
+        saved += 1
+    return saved
+
+
+def save_resolved_inventory(devices: list[dict[str, Any]], source: str, recorded_at: str = "", *, record_history: bool = True) -> int:
+    timestamp = as_text(recorded_at) or utc_now()
+    with db_connection() as conn:
+        return _save_resolved_inventory_rows(conn, devices, source, timestamp, record_history=record_history)
 
 
 def save_history(
@@ -2226,7 +2379,8 @@ def save_history(
     switch_ip_changes: Optional[list[dict[str, Any]]] = None,
 ) -> None:
     timestamp = as_text(recorded_at) or utc_now()
-    valid_devices = [device for device in devices if normalize_mac(device.get("mac") or device.get("macFormatted"))]
+    identified_devices = [device for device in devices if isinstance(device, dict) and identity_key(device)]
+    valid_devices = [device for device in identified_devices if normalize_mac(device.get("mac") or device.get("macFormatted"))]
     smartroom_aliases = {
         normalized_room_name(device.get("smartroomId") or device.get("smartroom_id")): normalized_room_name(device.get("room"))
         for device in valid_devices
@@ -2238,6 +2392,7 @@ def save_history(
     macs = sorted({normalize_mac(device.get("mac") or device.get("macFormatted")) for device in valid_devices})
     previous_by_mac: dict[str, dict[str, Any]] = {}
     with db_connection() as conn:
+        _save_resolved_inventory_rows(conn, identified_devices, source, timestamp, record_history=True)
         existing_observations: set[str] = set()
         for chunk in _chunks(macs):
             placeholders = ",".join("?" for _ in chunk)
@@ -2366,19 +2521,30 @@ def save_history(
                 "INSERT INTO mac_movements (mac, field_name, from_value, to_value, ddio_candidate_ip, ddio_match, source, changed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 movement_rows,
             )
-        switch_mapping_rows = []
-        smartroom_mapping_rows = []
+        switch_mapping_observations: dict[str, dict[str, int]] = {}
+        smartroom_mapping_observations: dict[str, set[str]] = {}
         for device in valid_devices:
             switch_ip = as_text(device.get("switchIp") or device.get("switch_ip"))
             address = as_text(device.get("address") or device.get("physicalAddress") or device.get("physical_address"))
             smartroom_id = as_text(device.get("smartroomId") or device.get("smartroom_id"))
             room = as_text(device.get("room"))
             if valid_ipv4(switch_ip) and address:
-                switch_mapping_rows.append((switch_ip, address, source or "analysis", timestamp))
+                addresses = switch_mapping_observations.setdefault(switch_ip, {})
+                addresses[address] = addresses.get(address, 0) + 1
             if smartroom_id and room:
-                smartroom_mapping_rows.append((smartroom_id, room, source or "analysis", timestamp))
+                smartroom_mapping_observations.setdefault(smartroom_id, set()).add(room)
         for smartroom_id, room in smartroom_aliases.items():
-            smartroom_mapping_rows.append((smartroom_id, room, source or "analysis", timestamp))
+            smartroom_mapping_observations.setdefault(smartroom_id, set()).add(room)
+        switch_mapping_rows = [
+            (switch_ip, next(iter(addresses)), "inferred-consensus", timestamp)
+            for switch_ip, addresses in switch_mapping_observations.items()
+            if len(addresses) == 1 and sum(addresses.values()) >= 2
+        ]
+        smartroom_mapping_rows = [
+            (smartroom_id, next(iter(rooms)), source or "analysis", timestamp)
+            for smartroom_id, rooms in smartroom_mapping_observations.items()
+            if len(rooms) == 1
+        ]
         if switch_mapping_rows:
             conn.executemany(
                 "INSERT INTO ip_address_mappings (switch_ip, physical_address, source, updated_at) VALUES (?, ?, ?, ?) "
@@ -3859,8 +4025,9 @@ def delete_snapshots(source: str = "", before: str = "", ids: Optional[list[Any]
 
 def database_summary() -> dict[str, Any]:
     table_queries = {
-        "devices": "SELECT COUNT(*) FROM device_inventory",
-        "history": "SELECT COUNT(*) FROM mac_history",
+        "devices": "SELECT COUNT(*) FROM resolved_device_inventory",
+        "history": "SELECT COUNT(*) FROM resolved_device_history",
+        "legacyMacHistory": "SELECT COUNT(*) FROM mac_history",
         "movements": "SELECT COUNT(*) FROM mac_movements",
         "vendorModelHistory": "SELECT COUNT(*) FROM vendor_model_history",
         "autosaves": "SELECT COUNT(*) FROM app_autosaves",
@@ -3935,6 +4102,66 @@ def legacy_migration_status(dry_run: bool = True) -> dict[str, Any]:
     return result
 
 
+def _save_statistics_snapshot_row(
+    conn: sqlite3.Connection,
+    devices: list[dict[str, Any]],
+    name: str = "",
+    source: str = "",
+    snapshot_id: str = "",
+    created_at: str = "",
+) -> dict[str, Any]:
+    normalized_id = as_text(snapshot_id) or str(uuid.uuid4())
+    normalized_name = as_text(name) or "Snapshot"
+    normalized_source = as_text(source)
+    timestamp = as_text(created_at) or utc_now()
+    saved_at = utc_now()
+    payload = json.dumps(devices, ensure_ascii=False, separators=(",", ":"))
+    signature_payload = json.dumps(devices, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    # Consecutive identical runs are idempotent, but a state that reappears
+    # after another snapshot remains a real timeline event.
+    signature = hashlib.sha256((normalized_source + "\n" + signature_payload).encode("utf-8")).hexdigest()
+    existing = conn.execute(
+        "SELECT rowid AS snapshot_order, id, name, source, device_count, created_at, signature FROM snapshots ORDER BY rowid DESC LIMIT 1",
+    ).fetchone()
+    if existing and as_text(existing["signature"]) == signature:
+        return {
+            "id": existing["id"], "name": existing["name"], "source": existing["source"],
+            "deviceCount": int(existing["device_count"] or 0), "createdAt": existing["created_at"],
+            "savedAt": saved_at, "snapshotOrder": int(existing["snapshot_order"] or 0),
+            "kind": "analysis" if as_text(existing["name"]).casefold().startswith(("анализ:", "analysis:")) else "snapshot",
+            "deduplicated": True, "signature": signature,
+        }
+    conn.execute(
+        "INSERT INTO snapshots (id, name, source, device_count, devices_json, created_at, signature) VALUES (?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(id) DO UPDATE SET name=excluded.name, source=excluded.source, device_count=excluded.device_count, devices_json=excluded.devices_json, created_at=excluded.created_at, signature=excluded.signature",
+        (normalized_id, normalized_name, normalized_source, len(devices), payload, timestamp, signature),
+    )
+    snapshot_order = int(conn.execute("SELECT rowid FROM snapshots WHERE id = ?", (normalized_id,)).fetchone()[0])
+    return {
+        "id": normalized_id, "name": normalized_name, "source": normalized_source, "deviceCount": len(devices),
+        "createdAt": timestamp, "savedAt": saved_at, "snapshotOrder": snapshot_order,
+        "kind": "analysis" if normalized_name.casefold().startswith(("анализ:", "analysis:")) else "snapshot",
+        "signature": signature, "deduplicated": False,
+    }
+
+
+def save_final_state_atomic(
+    devices: list[dict[str, Any]],
+    name: str,
+    source: str,
+    created_at: str,
+    *,
+    record_history: bool = True,
+) -> dict[str, Any]:
+    """Commit authoritative inventory, state history and final snapshot together."""
+    timestamp = as_text(created_at) or utc_now()
+    with db_connection() as conn:
+        _save_resolved_inventory_rows(conn, devices, source, timestamp, record_history=record_history)
+        snapshot = _save_statistics_snapshot_row(conn, devices, name, source, created_at=timestamp)
+    log_action("Save final state", f"id={snapshot['id']}, source={as_text(source) or '*'}, devices={len(devices)}")
+    return snapshot
+
+
 def save_statistics_snapshot(
     devices: list[dict[str, Any]],
     name: str = "",
@@ -3944,56 +4171,10 @@ def save_statistics_snapshot(
 ) -> dict[str, Any]:
     if not isinstance(devices, list):
         raise ValueError("devices must be a list")
-    normalized_id = as_text(snapshot_id) or str(uuid.uuid4())
-    normalized_name = as_text(name) or "Snapshot"
-    normalized_source = as_text(source)
-    timestamp = as_text(created_at) or utc_now()
-    saved_at = utc_now()
-    payload = json.dumps(devices, ensure_ascii=False, separators=(",", ":"))
-    signature_payload = json.dumps(devices, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    signature = hashlib.sha256(
-        (normalized_source + "\n" + timestamp + "\n" + signature_payload).encode("utf-8")
-    ).hexdigest()
     with db_connection() as conn:
-        existing = conn.execute(
-            "SELECT rowid AS snapshot_order, id, name, source, device_count, created_at FROM snapshots WHERE signature = ? LIMIT 1",
-            (signature,),
-        ).fetchone()
-        if existing:
-            return {
-                "id": existing["id"],
-                "name": existing["name"],
-                "source": existing["source"],
-                "deviceCount": int(existing["device_count"] or 0),
-                "createdAt": existing["created_at"],
-                "savedAt": saved_at,
-                "snapshotOrder": int(existing["snapshot_order"] or 0),
-                "kind": "analysis" if as_text(existing["name"]).casefold().startswith(("анализ:", "analysis:")) else "snapshot",
-                "deduplicated": True,
-                "signature": signature,
-            }
-        conn.execute(
-            "INSERT INTO snapshots (id, name, source, device_count, devices_json, created_at, signature) VALUES (?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(id) DO UPDATE SET name=excluded.name, source=excluded.source, device_count=excluded.device_count, "
-            "devices_json=excluded.devices_json, created_at=excluded.created_at, signature=excluded.signature",
-            (normalized_id, normalized_name, normalized_source, len(devices), payload, timestamp, signature),
-        )
-        snapshot_order = int(conn.execute(
-            "SELECT rowid FROM snapshots WHERE id = ?", (normalized_id,)
-        ).fetchone()[0])
-    log_action("Save statistics snapshot", f"id={normalized_id}, source={normalized_source or '*'}, devices={len(devices)}")
-    return {
-        "id": normalized_id,
-        "name": normalized_name,
-        "source": normalized_source,
-        "deviceCount": len(devices),
-        "createdAt": timestamp,
-        "savedAt": saved_at,
-        "snapshotOrder": snapshot_order,
-        "kind": "analysis" if normalized_name.casefold().startswith(("анализ:", "analysis:")) else "snapshot",
-        "signature": signature,
-        "deduplicated": False,
-    }
+        result = _save_statistics_snapshot_row(conn, devices, name, source, snapshot_id, created_at)
+    log_action("Save statistics snapshot", f"id={result['id']}, source={result.get('source') or '*'}, devices={len(devices)}")
+    return result
 
 
 def merge_switch_ip_changes_with_history(
@@ -4001,15 +4182,21 @@ def merge_switch_ip_changes_with_history(
     context: dict[str, Any],
     current_changes: Optional[list[dict[str, Any]]] = None,
 ) -> list[dict[str, str]]:
-    """Compare switch moves only with the stored exact-MAC baseline."""
+    """Compare switch moves with the previous successful final snapshot."""
     merged: dict[str, dict[str, str]] = {}
-    latest = context.get("latestHistory") or {}
+    previous_index = context.get("previousFinalIndex") or {}
     for device in devices:
         mac = normalize_mac(device.get("mac") or device.get("macFormatted"))
-        before = as_text((latest.get(mac) or {}).get("switch_ip"))
+        previous = find_identity_match(device, previous_index, allow_identifier_changes=True)
+        before = as_text((previous or {}).get("switchIp") or (previous or {}).get("switch_ip"))
         after = as_text(device.get("switchIp") or device.get("switch_ip"))
-        if mac and before and after and before != after:
-            merged[mac] = {"mac": mac, "before": before, "after": after}
+        identity = as_text(device.get("internalDeviceId")) or (mac or identity_key(device))
+        if identity and before and after and before.strip() != after.strip():
+            merged[identity] = {
+                "mac": mac or "", "internalDeviceId": as_text(device.get("internalDeviceId")),
+                "deviceId": as_text(device.get("deviceId") or device.get("device_id")),
+                "before": before.strip(), "after": after.strip(), "source": "previous-final",
+            }
     return list(merged.values())
 
 
@@ -4017,27 +4204,27 @@ def all_devices_page(offset: Any = 0, limit: Any = 1000) -> dict[str, Any]:
     safe_offset = max(0, int(offset or 0))
     safe_limit = max(1, min(5000, int(limit or 1000)))
     with db_connection() as conn:
-        total = int(conn.execute("SELECT COUNT(*) FROM device_inventory").fetchone()[0])
+        total = int(conn.execute("SELECT COUNT(*) FROM resolved_device_inventory").fetchone()[0])
         rows = conn.execute(
             """
-            SELECT mac, mac_formatted AS macFormatted, vendor, model, ip, address, room,
-                   smartroom_id AS smartroomId, switch_ip AS switchIp, switch_port AS switchPort,
-                   hostname, serial_number AS serialNumber, device_id AS deviceId, device_name AS deviceName,
-                   field_sources_json AS fieldSourcesJson, conflicts_json AS conflictsJson,
-                   source, first_seen AS firstSeen, updated_at AS updatedAt, seen_count AS seenCount
-            FROM device_inventory ORDER BY mac LIMIT ? OFFSET ?
+            SELECT internal_device_id, payload_json, first_seen, updated_at, seen_count
+            FROM resolved_device_inventory ORDER BY internal_device_id LIMIT ? OFFSET ?
             """,
             (safe_limit, safe_offset),
         ).fetchall()
     next_offset = safe_offset + len(rows)
     items = []
     for row in rows:
-        device = synchronize_smartroom_device(dict(row))
-        for source_key, target_key, fallback in (("fieldSourcesJson", "fieldSources", {}), ("conflictsJson", "conflicts", [])):
-            try:
-                device[target_key] = json.loads(device.pop(source_key) or json.dumps(fallback))
-            except (TypeError, ValueError, json.JSONDecodeError):
-                device[target_key] = fallback
+        try:
+            decoded = json.loads(row["payload_json"] or "{}")
+            device = decoded if isinstance(decoded, dict) else {}
+        except (TypeError, ValueError, json.JSONDecodeError):
+            device = {}
+        device = synchronize_smartroom_device(device)
+        device["internalDeviceId"] = as_text(device.get("internalDeviceId")) or row["internal_device_id"]
+        device["firstSeen"] = row["first_seen"]
+        device["updatedAt"] = row["updated_at"]
+        device["seenCount"] = row["seen_count"]
         device["hasConflict"] = bool(device.get("conflicts"))
         items.append(device)
     return {
@@ -5504,9 +5691,9 @@ def decorate_single_file_payload(result: dict[str, Any]) -> dict[str, Any]:
 def workspace_files_panel_payload(files: list[Any]) -> dict[str, Any]:
     safe_files = [item for item in files if isinstance(item, dict)] if isinstance(files, list) else []
     primary_index = next((index for index, item in enumerate(safe_files) if as_text(item.get("role")) == "primary"), 0)
-    normalized_rows: dict[str, list[str]] = {"primary": [], "enrichment": []}
+    normalized_rows: dict[str, list[str]] = {"primary": [], "smartroom": []}
     for index, file_item in enumerate(safe_files):
-        role = "primary" if index == primary_index else "enrichment"
+        role = "primary" if index == primary_index else "smartroom"
         file_item["role"] = role
         file_date = as_text(file_item.get("createdAt")) or as_text(file_item.get("fileDate"))
         date_label = format_display_datetime(file_date) if file_date else "-"
@@ -5531,14 +5718,15 @@ def workspace_files_panel_payload(files: list[Any]) -> dict[str, Any]:
             + "</section>"
         )
 
-    rows_html = group_html("primary", "Основной файл", "Основной файл не выбран") + group_html(
-        "enrichment", "Файлы обогащения", "Файлы обогащения не добавлены"
+    rows_html = group_html("primary", "Файл №1 — основной", "Файл №1 — основной не выбран") + group_html(
+        "smartroom", "Файл №2 — SmartRoom", "Файл №2 — SmartRoom не добавлен"
     )
     return {
         "files": safe_files,
         "count": len(safe_files),
         "primaryCount": len(normalized_rows["primary"]),
-        "enrichmentCount": len(normalized_rows["enrichment"]),
+        "smartroomCount": len(normalized_rows["smartroom"]),
+        "enrichmentCount": len(normalized_rows["smartroom"]),
         "fileRowsHtml": rows_html,
         "emptyFilesHtml": '<span class="muted">Файлы пока не добавлены</span>',
     }
@@ -6341,29 +6529,30 @@ class AppHandler(BaseHTTPRequestHandler):
                     if fields.get(field, True) is False:
                         for item in valid:
                             item[field] = "Не определено" if field == "vendor" else ""
-                if payload.get("saveHistory", True):
-                    save_history(valid, source, source_created_at, ddio_overlay, switch_ip_changes)
+                record_history = payload.get("saveHistory", True) is not False
+                compact_result = payload.get("compactResult") is True
+                should_save_snapshot = payload.get("saveSnapshot", True) is not False or compact_result
+                snapshot = save_final_state_atomic(
+                    valid,
+                    as_text(payload.get("snapshotName")) or f"Анализ: {source}",
+                    source,
+                    source_created_at,
+                    record_history=record_history,
+                ) if should_save_snapshot else None
+                if not should_save_snapshot:
+                    save_resolved_inventory(valid, source, source_created_at, record_history=record_history)
+                if record_history:
+                    try:
+                        # Compatibility MAC chronology is secondary; the
+                        # authoritative final state above is already atomic.
+                        save_history(valid, source, source_created_at, ddio_overlay, switch_ip_changes)
+                    except (sqlite3.Error, ValueError, TypeError) as error:
+                        log_action("Legacy MAC history synchronization failed", str(error))
                 if payload.get("notify", True):
                     try:
                         notify_analysis_completed(valid, invalid, source)
                     except Exception as error:  # noqa: BLE001
                         log_action("Analysis notification failed", str(error))
-                snapshot = None
-                if payload.get("saveSnapshot", True):
-                    snapshot = save_statistics_snapshot(
-                        valid,
-                        as_text(payload.get("snapshotName")) or f"Анализ: {source}",
-                        source,
-                        created_at=source_created_at,
-                    )
-                compact_result = payload.get("compactResult") is True
-                if compact_result and snapshot is None:
-                    snapshot = save_statistics_snapshot(
-                        valid,
-                        as_text(payload.get("snapshotName")) or f"Анализ: {source}",
-                        source,
-                        created_at=source_created_at,
-                    )
                 update_enrichment_job(job["id"], merged["progress"], "completed")
                 progress_payload = {**merged["progress"], "fields": enrichment_field_summary(fields)}
                 duration_ms = round((time.perf_counter() - started_at) * 1000, 2)

@@ -2,13 +2,14 @@
   "use strict";
 
   const databaseName = "mac-analyzer-browser-storage-v1";
-  const databaseVersion = 8;
+  const databaseVersion = 10;
   const workspaceStore = "workspaces";
   const snapshotStore = "snapshots";
   const snapshotChunkStore = "snapshotChunks";
   const sourceFileStore = "sourceFiles";
   const enrichmentRowStore = "enrichmentRows";
   const deviceHistoryStore = "deviceHistory";
+  const resolvedDeviceStore = "DeviceInventory";
   const snapshotChunkRows = 1_000;
 
   function openDatabase() {
@@ -30,13 +31,32 @@
         if (!database.objectStoreNames.contains(sourceFileStore)) {
           database.createObjectStore(sourceFileStore, { keyPath: "id" });
         }
+        let enrichmentRows;
         if (!database.objectStoreNames.contains(enrichmentRowStore)) {
-          const rows = database.createObjectStore(enrichmentRowStore, { keyPath: "key" });
-          rows.createIndex("jobId", "jobId", { unique: false });
-        }
+          enrichmentRows = database.createObjectStore(enrichmentRowStore, { keyPath: "key" });
+          enrichmentRows.createIndex("jobId", "jobId", { unique: false });
+        } else enrichmentRows = request.transaction.objectStore(enrichmentRowStore);
+        if (!enrichmentRows.indexNames.contains("aliases")) enrichmentRows.createIndex("aliases", "aliases", { unique: false, multiEntry: true });
         if (!database.objectStoreNames.contains(deviceHistoryStore)) {
           database.createObjectStore(deviceHistoryStore, { keyPath: "mac" });
         }
+        let resolvedInventory;
+        if (!database.objectStoreNames.contains(resolvedDeviceStore)) {
+          const resolved = database.createObjectStore(resolvedDeviceStore, { keyPath: "internalDeviceId" });
+          resolved.createIndex("by_mac", "mac", { unique: false });
+          resolved.createIndex("by_serial", "serialKey", { unique: false });
+          resolved.createIndex("by_device_id", "deviceIdKey", { unique: false });
+          resolved.createIndex("by_updated_at", "updatedAt", { unique: false });
+          resolvedInventory = resolved;
+        } else resolvedInventory = request.transaction.objectStore(resolvedDeviceStore);
+        const legacyInventory = request.transaction.objectStore(deviceHistoryStore);
+        legacyInventory.openCursor().onsuccess = (event) => {
+          const cursor = event.target.result;
+          if (!cursor) return;
+          const item = cursor.value || {}, mac = String(item.mac || "").toUpperCase().replace(/[^0-9A-F]/g, "");
+          if (mac.length === 12) resolvedInventory.put({ ...item, mac, internalDeviceId: item.internalDeviceId || `dev-mac-${mac}` });
+          cursor.continue();
+        };
         const equipment = database.objectStoreNames.contains("Equipment")
           ? request.transaction.objectStore("Equipment")
           : database.createObjectStore("Equipment", { keyPath: "id" });
@@ -523,15 +543,25 @@
     return new Promise((resolve, reject) => {
       const current = database.transaction(enrichmentRowStore, "readwrite");
       const store = current.objectStore(enrichmentRowStore);
-      let written = 0;
-      for (const device of rows) {
-        const mac = String(device?.mac || "");
-        if (!mac) continue;
-        const key = `${id}:${String(device?.storageIdentity || mac)}`;
-        const request = store.get(key);
-        request.onsuccess = () => {
-          const previous = request.result?.device;
-          if (!previous && !allowNew) return;
+      const identityApi = window.MacAnalyzerDeviceIdentity;
+      const aliasesFor = (device) => (identityApi?.candidates?.(device) || []).map((alias) => `${id}:${alias}`);
+      let written = 0, position = 0;
+      const processNext = () => {
+        if (position >= rows.length) return;
+        const device = rows[position++], mac = String(device?.mac || ""), aliases = aliasesFor(device);
+        const fallbackIdentity = String(device?.storageIdentity || device?.internalDeviceId || device?.identityKey || mac);
+        if (!aliases.length && !fallbackIdentity) { processNext(); return; }
+        const matches = new Map(), aliasIndex = store.index("aliases");
+        let pending = aliases.length;
+        const finishLookup = () => {
+          if (pending > 0) return;
+          const records = Array.from(matches.values());
+          const resolutionIndex = identityApi?.buildIndex?.(records.map((record) => record.device));
+          const resolution = resolutionIndex ? identityApi.resolve(device, resolutionIndex) : { status: records.length > 1 ? "conflict" : records.length ? "matched" : "unmatched", match: records[0]?.device };
+          let record = records.find((item) => item.device === resolution.match);
+          if (resolution.status === "conflict") record = null;
+          const previous = record?.device;
+          if (!previous && !allowNew) { processNext(); return; }
           const merged = previous ? { ...previous } : {};
           const fieldSources = { ...(merged.fieldSources || {}) };
           const sourceFiles = Array.from(new Set([...(merged.sourceFiles || []), merged.source, device.source].filter(Boolean)));
@@ -553,12 +583,26 @@
           merged.sourceRoles = sourceRoles;
           merged.conflicts = conflicts;
           merged.hasConflict = conflicts.length > 0;
+          if (resolution.status === "conflict") {
+            conflicts.push({ field: "identity", selected: device.internalDeviceId || fallbackIdentity, selectedSource: device.source || "", alternative: "Неоднозначное сопоставление потоковых записей", alternativeSource: "identity-resolver", confidence: "Conflict", evidence: resolution.evidence || [] });
+            merged.conflicts = conflicts;
+            merged.hasConflict = true;
+            merged.matchConfidence = "Conflict";
+          }
           merged.source = sourceFiles.length === 1 ? sourceFiles[0] : sourceFiles.join(" + ");
-          store.put({ key, jobId: id, mac, device: merged, updatedAt: Date.now() });
+          const storageIdentity = String(record?.key || `${id}:${device.internalDeviceId || fallbackIdentity}`);
+          store.put({ key: storageIdentity, jobId: id, mac: String(merged.mac || mac), aliases: aliasesFor(merged), device: merged, updatedAt: Date.now() });
           written += 1;
+          processNext();
         };
-        request.onerror = () => current.abort();
-      }
+        if (!pending) { finishLookup(); return; }
+        for (const alias of aliases) {
+          const request = aliasIndex.getAll(IDBKeyRange.only(alias));
+          request.onsuccess = () => { for (const item of request.result || []) matches.set(item.key, item); pending -= 1; finishLookup(); };
+          request.onerror = () => current.abort();
+        }
+      };
+      processNext();
       current.oncomplete = () => { database.close(); resolve(written); };
       current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Temporary enrichment merge failed")); };
       current.onabort = current.onerror;
@@ -661,29 +705,47 @@
     if (!devices.length) return 0;
     const database = await openDatabase();
     return new Promise((resolve, reject) => {
-      const current = database.transaction(deviceHistoryStore, "readwrite");
+      const current = database.transaction([deviceHistoryStore, resolvedDeviceStore], "readwrite");
       const store = current.objectStore(deviceHistoryStore);
+      const inventory = current.objectStore(resolvedDeviceStore);
       let updated = 0;
+      const mergeKnown = (previous, device, identity) => {
+        const next = { ...(previous || {}), internalDeviceId: identity };
+        let changed = !previous;
+        const mac = String(device?.mac || device?.macFormatted || "").toUpperCase().replace(/[^0-9A-F]/g, "");
+        if (mac.length === 12 && next.mac !== mac) { next.mac = mac; changed = true; }
+        for (const field of historyFields) {
+          const value = normalizedHistoryValue(field, device[field]);
+          if (value && value !== next[field]) { next[field] = value; changed = true; }
+        }
+        if (changed) {
+          next.source = String(source || device.source || "browser-history");
+          next.updatedAt = new Date().toISOString();
+          next.firstSeen ||= next.updatedAt;
+          next.seenCount = Number(next.seenCount || 0) + 1;
+        }
+        next.serialKey = String(next.serialNumber || "").trim().toLowerCase();
+        next.deviceIdKey = String(next.deviceId || "").trim().toLowerCase();
+        return { next, changed, mac };
+      };
       for (const device of devices) {
         const mac = String(device?.mac || device?.macFormatted || "").toUpperCase().replace(/[^0-9A-F]/g, "");
-        if (mac.length !== 12) continue;
-        const request = store.get(mac);
-        request.onsuccess = () => {
-          const previous = request.result || { mac };
-          const next = { ...previous, mac };
-          let changed = !request.result;
-          for (const field of historyFields) {
-            const value = normalizedHistoryValue(field, device[field]);
-            if (value && value !== next[field]) { next[field] = value; changed = true; }
-          }
-          if (changed) {
-            next.source = String(source || device.source || "browser-history");
-            next.updatedAt = new Date().toISOString();
-            store.put(next);
-            updated += 1;
-          }
+        const identity = String(device?.internalDeviceId || (mac.length === 12 ? `dev-mac-${mac}` : ""));
+        if (!identity) continue;
+        const inventoryRequest = inventory.get(identity);
+        inventoryRequest.onsuccess = () => {
+          const merged = mergeKnown(inventoryRequest.result, device, identity);
+          if (merged.changed) { inventory.put(merged.next); updated += 1; }
         };
-        request.onerror = () => reject(request.error || new Error("Unable to read device history"));
+        inventoryRequest.onerror = () => reject(inventoryRequest.error || new Error("Unable to read device inventory"));
+        if (mac.length === 12) {
+          const legacyRequest = store.get(mac);
+          legacyRequest.onsuccess = () => {
+            const merged = mergeKnown(legacyRequest.result, device, identity);
+            if (merged.changed) store.put({ ...merged.next, mac });
+          };
+          legacyRequest.onerror = () => reject(legacyRequest.error || new Error("Unable to read MAC history"));
+        }
       }
       current.oncomplete = () => { database.close(); resolve(updated); };
       current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Device history write failed")); };
@@ -694,8 +756,8 @@
   async function readDeviceHistoryPage(afterMac = "", limit = snapshotChunkRows) {
     const database = await openDatabase();
     return new Promise((resolve, reject) => {
-      const current = database.transaction(deviceHistoryStore, "readonly");
-      const store = current.objectStore(deviceHistoryStore);
+      const current = database.transaction(resolvedDeviceStore, "readonly");
+      const store = current.objectStore(resolvedDeviceStore);
       const range = afterMac ? IDBKeyRange.lowerBound(afterMac, true) : undefined;
       const request = store.openCursor(range);
       const rows = [];
@@ -704,7 +766,7 @@
         const cursor = request.result;
         if (!cursor || rows.length >= Math.max(1, Number(limit) || snapshotChunkRows)) return;
         lastMac = String(cursor.key || "");
-        if (lastMac !== "__snapshot_backfill__") rows.push(cursor.value);
+        rows.push(cursor.value);
         cursor.continue();
       };
       request.onerror = () => reject(request.error || new Error("Unable to read device inventory"));
@@ -731,15 +793,12 @@
   async function countDeviceHistory() {
     const database = await openDatabase();
     return new Promise((resolve, reject) => {
-      const current = database.transaction(deviceHistoryStore, "readonly");
-      const store = current.objectStore(deviceHistoryStore);
+      const current = database.transaction(resolvedDeviceStore, "readonly");
+      const store = current.objectStore(resolvedDeviceStore);
       const countRequest = store.count();
-      const sentinelRequest = store.get("__snapshot_backfill__");
       let count = 0;
-      let sentinel = false;
       countRequest.onsuccess = () => { count = Number(countRequest.result || 0); };
-      sentinelRequest.onsuccess = () => { sentinel = Boolean(sentinelRequest.result); };
-      current.oncomplete = () => { database.close(); resolve(Math.max(0, count - (sentinel ? 1 : 0))); };
+      current.oncomplete = () => { database.close(); resolve(Math.max(0, count)); };
       current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Device inventory count failed")); };
     });
   }
@@ -750,16 +809,19 @@
     if (!devices.length) return changes;
     const database = await openDatabase();
     return new Promise((resolve, reject) => {
-      const current = database.transaction(deviceHistoryStore, "readonly");
-      const store = current.objectStore(deviceHistoryStore);
+      const current = database.transaction(resolvedDeviceStore, "readonly");
+      const store = current.objectStore(resolvedDeviceStore);
       for (const device of devices) {
         const mac = String(device?.mac || device?.macFormatted || "").toUpperCase().replace(/[^0-9A-F]/g, "");
+        const internalId = String(device?.internalDeviceId || ""), deviceId = String(device?.deviceId || device?.device_id || "").trim().toLowerCase();
         const after = String(device?.switchIp || device?.switch_ip || "").trim();
-        if (mac.length !== 12 || !after) continue;
-        const request = store.get(mac);
+        if (!after || (!internalId && mac.length !== 12 && !deviceId)) continue;
+        const request = internalId ? store.get(internalId) : mac.length === 12 ? store.index("by_mac").getAll(mac) : store.index("by_device_id").getAll(deviceId);
         request.onsuccess = () => {
-          const before = String(request.result?.switchIp || "").trim();
-          if (before && before !== after) changes.set(mac, { before, after, currentIp: String(device?.ip || "").trim(), deviceId: String(device?.deviceId || device?.device_id || "").trim() });
+          const values = Array.isArray(request.result) ? request.result : request.result ? [request.result] : [];
+          if (values.length !== 1) return;
+          const before = String(values[0]?.switchIp || "").trim(), key = mac.length === 12 ? mac : `device-id:${deviceId}`;
+          if (before && before !== after) changes.set(key, { before, after, currentIp: String(device?.ip || "").trim(), deviceId });
         };
         request.onerror = () => reject(request.error || new Error("Unable to compare switch history"));
       }
@@ -773,16 +835,29 @@
     if (!devices.length) return 0;
     const database = await openDatabase();
     return new Promise((resolve, reject) => {
-      const current = database.transaction(deviceHistoryStore, "readonly");
+      const current = database.transaction([deviceHistoryStore, resolvedDeviceStore], "readonly");
       const store = current.objectStore(deviceHistoryStore);
+      const inventory = current.objectStore(resolvedDeviceStore);
       let changed = 0;
       for (const device of devices) {
         const mac = String(device?.mac || device?.macFormatted || "").toUpperCase().replace(/[^0-9A-F]/g, "");
-        if (mac.length !== 12) continue;
-        const request = store.get(mac);
-        request.onsuccess = () => {
-          const history = request.result;
-          if (!history) return;
+        const internalId = String(device?.internalDeviceId || ""), serialKey = String(device?.serialNumber || device?.serial_number || "").trim().toLowerCase(), deviceIdKey = String(device?.deviceId || device?.device_id || "").trim().toLowerCase();
+        const requests = [];
+        if (internalId) requests.push(inventory.get(internalId));
+        if (mac.length === 12) requests.push(inventory.index("by_mac").getAll(mac));
+        if (serialKey) requests.push(inventory.index("by_serial").getAll(serialKey));
+        if (deviceIdKey) requests.push(inventory.index("by_device_id").getAll(deviceIdKey));
+        if (!requests.length && mac.length === 12) requests.push(store.get(mac));
+        if (!requests.length) continue;
+        const matches = new Map(); let pending = requests.length;
+        const finish = () => {
+          pending -= 1;
+          if (pending) return;
+          if (matches.size !== 1) {
+            if (matches.size > 1) { device.hasConflict = true; device.conflicts = [...(device.conflicts || []), { field: "identity", selected: "", alternative: "Неоднозначная локальная история", source: "IndexedDB" }]; }
+            return;
+          }
+          const history = matches.values().next().value;
           let rowChanged = false;
           for (const field of historyFields) {
             const currentValue = normalizedHistoryValue(field, device[field]);
@@ -794,9 +869,17 @@
               rowChanged = true;
             }
           }
+          if (history.internalDeviceId) device.internalDeviceId = history.internalDeviceId;
           if (rowChanged) changed += 1;
         };
-        request.onerror = () => reject(request.error || new Error("Unable to read device history"));
+        for (const request of requests) {
+          request.onsuccess = () => {
+            const values = Array.isArray(request.result) ? request.result : request.result ? [request.result] : [];
+            for (const value of values) matches.set(String(value.internalDeviceId || value.mac), value);
+            finish();
+          };
+          request.onerror = () => reject(request.error || new Error("Unable to read device history"));
+        }
       }
       current.oncomplete = () => { database.close(); resolve(changed); };
       current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Device history enrichment failed")); };
@@ -946,6 +1029,8 @@
       if (!query) return true;
       const searchable = [row?.mac, row?.macFormatted, row?.vendor, row?.model, row?.ip, row?.address, row?.room,
         row?.smartroomId, row?.smartroom_id, row?.switchIp, row?.switch_ip, row?.switchPort, row?.switch_port,
+        row?.hostname, row?.host_name, row?.serialNumber, row?.serial_number, row?.serial,
+        row?.deviceId, row?.device_id, row?.deviceName, row?.device_name, row?.internalDeviceId,
         row?.source, row?.raw, row?.row].map((value) => String(value || "")).join(" ").toLowerCase();
       const queryMac = query.replace(/[^0-9a-f]/gi, ""), rowMac = String(row?.mac || row?.macFormatted || "").replace(/[^0-9a-f]/gi, "").toLowerCase();
       return searchable.includes(query) || (queryMac && rowMac.includes(queryMac));
@@ -1029,7 +1114,10 @@
     const deviceMac = String(device?.mac || device?.macFormatted || device?.mac_formatted || "").replace(/[^0-9a-f]/gi, "").toUpperCase();
     const searchable = [device?.mac, device?.macFormatted, device?.vendor, device?.model, device?.ip, device?.address,
       device?.room, device?.smartroomId, device?.smartroom_id, device?.switchIp, device?.switch_ip,
-      device?.switchPort, device?.switch_port, device?.source].map((value) => String(value || "")).join(" ").toLowerCase();
+      device?.switchPort, device?.switch_port, device?.hostname, device?.host_name,
+      device?.serialNumber, device?.serial_number, device?.serial, device?.deviceId, device?.device_id,
+      device?.deviceName, device?.device_name, device?.internalDeviceId, device?.source]
+      .map((value) => String(value || "")).join(" ").toLowerCase();
     const unknown = new Set(["", "unknown", "не определено", "неизвестный вендор", "unknown vendor"]);
     return (!vendorFilter || vendor === vendorFilter)
       && (!roomFilter || room === roomFilter)
@@ -1134,7 +1222,7 @@
         let currentCount = 0;
         const metadata = await streamSnapshot(snapshotId, async (kind, chunk) => {
           if (kind !== "device") return;
-          const compact = chunk.filter((device) => matchesDashboardFilter(device, options)).map(compactComparisonDevice).filter((device) => device.mac).map((device) => ({ mac: device.mac }));
+          const compact = chunk.filter((device) => matchesDashboardFilter(device, options)).map(compactComparisonDevice).filter((device) => comparisonIdentity(device)).map((device) => ({ storageIdentity: comparisonIdentity(device), internalDeviceId: device.internalDeviceId, mac: device.mac, serialNumber: device.serialNumber, deviceId: device.deviceId }));
           currentCount += compact.length;
           await mergeEnrichmentRows(jobId, compact, { allowNew: true });
           compact.length = 0;
@@ -1162,6 +1250,7 @@
 
   function compactComparisonDevice(device) {
     return {
+      internalDeviceId: String(device?.internalDeviceId || device?.internal_device_id || ""),
       mac: String(device?.mac || device?.macFormatted || "").toUpperCase().replace(/[^0-9A-F]/g, ""),
       vendor: String(device?.vendor || ""),
       model: String(device?.model || ""),
@@ -1179,10 +1268,11 @@
   }
 
   function comparisonIdentity(device) {
+    const internalId = String(device?.internalDeviceId || device?.internal_device_id || "").trim().toLowerCase();
     const mac = String(device?.mac || device?.macFormatted || "").toUpperCase().replace(/[^0-9A-F]/g, "");
     const serial = String(device?.serialNumber || device?.serial_number || device?.serial || "").trim().toLowerCase();
     const deviceId = String(device?.deviceId || device?.device_id || "").trim().toLowerCase();
-    return mac ? `mac:${mac}` : serial ? `serial:${serial}` : `device:${deviceId}`;
+    return internalId ? `internal-id:${internalId}` : mac ? `mac:${mac}` : serial ? `serial:${serial}` : deviceId ? `device:${deviceId}` : "";
   }
 
   async function compareCurrentChunk(jobId, rows, result, limit) {
@@ -1192,8 +1282,9 @@
       const store = current.objectStore(enrichmentRowStore);
       for (const source of rows) {
         const device = compactComparisonDevice(source);
-        if (!device.mac) continue;
-        const key = `${jobId}:${comparisonIdentity(device)}`;
+        const identity = comparisonIdentity(device);
+        if (!identity) continue;
+        const key = `${jobId}:${identity}`;
         const request = store.get(key);
         request.onsuccess = () => {
           const previous = request.result?.device;
@@ -1285,7 +1376,7 @@
     try {
       const baseline = await streamSnapshot(baselineId, async (kind, rows) => {
         if (kind !== "device") return;
-        const compact = rows.map(compactComparisonDevice).filter((device) => device.mac).map((device) => ({ ...device, storageIdentity: comparisonIdentity(device) }));
+        const compact = rows.map(compactComparisonDevice).filter((device) => comparisonIdentity(device)).map((device) => ({ ...device, storageIdentity: comparisonIdentity(device) }));
         await mergeEnrichmentRows(jobId, compact, { allowNew: true });
         compact.length = 0;
       });

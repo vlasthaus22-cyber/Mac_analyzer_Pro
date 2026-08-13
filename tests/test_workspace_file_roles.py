@@ -6,7 +6,7 @@ from http.server import ThreadingHTTPServer
 from server import AppHandler, workspace_files_panel_payload
 
 
-def test_workspace_panel_groups_primary_and_enrichment_files():
+def test_workspace_panel_groups_primary_and_smartroom_files():
     payload = workspace_files_panel_payload(
         [
             {"id": "main", "name": "main.xlsx", "role": "primary", "rows": [["MAC"], ["AABBCCDDEEFF"]]},
@@ -17,9 +17,10 @@ def test_workspace_panel_groups_primary_and_enrichment_files():
     assert payload["primaryCount"] == 1
     assert payload["enrichmentCount"] == 1
     assert 'data-file-group="primary"' in payload["fileRowsHtml"]
-    assert 'data-file-group="enrichment"' in payload["fileRowsHtml"]
+    assert payload["smartroomCount"] == 1
+    assert 'data-file-group="smartroom"' in payload["fileRowsHtml"]
     assert 'data-file-role="primary"' in payload["fileRowsHtml"]
-    assert 'data-file-role="enrichment"' in payload["fileRowsHtml"]
+    assert 'data-file-role="smartroom"' in payload["fileRowsHtml"]
     assert "main.xlsx" in payload["fileRowsHtml"]
     assert "extra.xlsx" in payload["fileRowsHtml"]
 
@@ -61,6 +62,6 @@ def test_local_html_origin_can_call_backend_api():
 
 
 if __name__ == "__main__":
-    test_workspace_panel_groups_primary_and_enrichment_files()
+    test_workspace_panel_groups_primary_and_smartroom_files()
     test_local_html_origin_can_call_backend_api()
     print("workspace file roles test passed")

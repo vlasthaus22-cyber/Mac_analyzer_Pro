@@ -19,12 +19,13 @@ all, critical, added, missing, or modified devices. Reopening the journal
 clears stale category filters; the same behavior is available without backend.
 
 Repeated enrichment restores the newest non-empty manufacturer, model, IP,
-physical address, room, SmartRoom identifier, switch IP, and switch port for
-the exact MAC from earlier exports. A known physical address is also reused for
-other devices on the same switch IP. Values present in the current export are
-never overwritten by historical values. The backend uses indexed SQLite
-lookups; autonomous mode keeps the exact device history in IndexedDB and
-processes it in bounded chunks.
+physical address, room, SmartRoom identifier, switch IP, and switch port from
+the preceding final state only after a strong identity match by normalized MAC,
+serial number, or Device ID. A switch IP or hostname alone never propagates a
+physical address to another device. Values present in the current export are
+never overwritten by historical values; contradictory strong identifiers are
+reported as conflicts. The backend uses indexed SQLite lookups; autonomous mode
+keeps resolved device history in IndexedDB and processes it in bounded chunks.
 
 Version v1.0.40 also learns persistent Smartroom ID-to-room and switch
 IP-to-physical-address relationships during normal analysis. DDIO switch moves
@@ -148,6 +149,27 @@ field provenance, and conflict metadata through additive migrations. Duplicate
 observations with the same source and timestamp are idempotent. User mode opens
 directly on the searchable device table, and backend final snapshots are the
 authoritative cross-browser restore source.
+
+The audited three-source pipeline has fixed source semantics: File 1 is the
+primary device set, File 2 is SmartRoom and may enrich or add its own strongly
+identifiable devices, and File 3 is DDIO. DDIO may fill a missing device IP for
+an already resolved device and may provide diagnostic `Possible_IPs`, but it
+never creates a DDIO-only device. Each final row has a deterministic internal
+device ID, field-level provenance, match confidence, and explicit conflict
+metadata. SQLite writes the resolved inventory, its append-only history, and
+the final snapshot in one transaction. Blank later values do not erase trusted
+known values, and repeating the same input is idempotent. Invalid rows from
+both File 1 and SmartRoom remain visible with their source role. Search includes
+MAC, hostname, serial number, Device ID/name, device/switch IP, physical address,
+room, SmartRoom ID, and internal device ID.
+
+Version v1.0.49 is the fully audited release of that pipeline. It also fixes
+two runtime failures found during an interactive browser verification: every
+module now opens the shared IndexedDB schema at version 10, and a final snapshot
+containing a strongly identified device without a MAC no longer breaks summary
+calculation or backend restoration. The release is covered by 98 test files,
+317 automated test functions, a 200,000-row repeated-enrichment stress test,
+ESLint, API/UI smoke coverage, and a rebuilt autonomous HTML package.
 
 ## Primary autonomous mode
 
