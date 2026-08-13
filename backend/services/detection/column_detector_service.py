@@ -4,7 +4,7 @@ from collections import defaultdict
 
 
 FIELD_PATTERNS = {
-    "mac": r"mac|mac.?address|hardware|ethernet|device.?id|client.?id|mac.?Р°РґСЂРµСЃ",
+    "mac": r"mac|mac.?address|hardware|ethernet|client.?mac|mac.?Р°РґСЂРµСЃ",
     "vendor": r"vendor|manufacturer|brand|maker|producer|РїСЂРѕРёР·РІРѕРґРёС‚РµР»СЊ",
     "model": r"model|device|type|equipment|platform|РјРѕРґРµР»СЊ|СѓСЃС‚СЂРѕР№СЃС‚РІРѕ",
     "switchIp": r"switch.*ip|ip.*switch|switch|gateway|node.?ip|РєРѕРјРјСѓС‚Р°С‚РѕСЂ",
@@ -13,9 +13,13 @@ FIELD_PATTERNS = {
     "room": r"room|office|cabinet|floor|auditorium|РїРѕРјРµС‰|РєР°Р±РёРЅРµС‚",
     "smartroomId": r"smart.?room.*id|id.*smart.?room|smartroom",
     "switchPort": r"switch.*port|port|interface|iface|ifname|if.?name|РїРѕСЂС‚",
+    "hostname": r"host.?name|dns.?name|fqdn|РёРјСЏ.?С…РѕСЃС‚Р°",
+    "serialNumber": r"serial|serial.?number|serial.?no|СЃРµСЂРёР№",
+    "deviceId": r"device.?id|equipment.?id|asset.?id|id.?device|РёРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ.?СѓСЃС‚СЂРѕР№СЃС‚РІР°",
+    "deviceName": r"device.?name|equipment.?name|asset.?name|РЅР°Р·РІР°РЅРёРµ.?СѓСЃС‚СЂРѕР№СЃС‚РІР°",
 }
 
-FIELD_ORDER = ["mac", "vendor", "model", "switchIp", "ip", "address", "room", "smartroomId", "switchPort"]
+FIELD_ORDER = ["mac", "vendor", "model", "switchIp", "ip", "address", "room", "smartroomId", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName"]
 
 FIELD_LABELS = {
     "mac": "MAC address",
@@ -27,6 +31,10 @@ FIELD_LABELS = {
     "room": "room",
     "smartroomId": "Smartroom ID",
     "switchPort": "switch port",
+    "hostname": "hostname",
+    "serialNumber": "serial number",
+    "deviceId": "device ID",
+    "deviceName": "device name",
 }
 
 FIELD_KEYWORDS = {
@@ -39,6 +47,10 @@ FIELD_KEYWORDS = {
     "room": {"room", "office", "cabinet", "floor", "auditorium"},
     "smartroomId": {"smartroom", "smart", "room", "id"},
     "switchPort": {"port", "interface", "iface", "ifname", "if"},
+    "hostname": {"hostname", "host", "dns", "fqdn"},
+    "serialNumber": {"serial", "number", "sn"},
+    "deviceId": {"device", "equipment", "asset", "id"},
+    "deviceName": {"device", "equipment", "asset", "name"},
 }
 
 NEGATIVE_KEYWORDS = {
@@ -48,6 +60,10 @@ NEGATIVE_KEYWORDS = {
     "room": {"ip", "mac", "port"},
     "smartroomId": {"ip", "mac", "port"},
     "model": {"ip", "mac", "port"},
+    "hostname": {"ip", "mac", "port"},
+    "serialNumber": {"ip", "mac", "port"},
+    "deviceId": {"ip", "mac", "port", "name"},
+    "deviceName": {"ip", "mac", "port", "id"},
 }
 
 

@@ -6,8 +6,10 @@ import re
 from datetime import datetime
 from typing import Any
 
+from backend.services.identity.device_identity_service import pair_device_sets
 
-DEFAULT_FIELDS = ["vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort"]
+
+DEFAULT_FIELDS = ["mac", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName"]
 FIELD_TITLES = {
     "vendor": "Производитель",
     "model": "Модель",
@@ -18,6 +20,12 @@ FIELD_TITLES = {
     "switchIp": "Коммутатор",
     "switchPort": "Порт",
     "source": "Источник",
+    "mac": "MAC / физический адрес",
+    "hostname": "Hostname",
+    "serialNumber": "Серийный номер",
+    "deviceId": "ID устройства",
+    "deviceName": "Название устройства",
+    "identityConflict": "Конфликт идентификации",
 }
 STATUS_TITLES = {
     "added": "Добавлено",
@@ -123,15 +131,12 @@ def compare_devices(
     fields: list[str] | None = None,
 ) -> dict[str, Any]:
     selected_fields = [field for field in (fields or DEFAULT_FIELDS) if field]
-    baseline = _indexed_devices(baseline_devices)
-    current = _indexed_devices(current_devices)
     changes: list[dict[str, str]] = []
 
-    for mac in sorted(current):
-        current_device = current[mac]
-        baseline_device = baseline.get(mac)
-        if baseline_device is None:
-            changes.append({
+    pairs, added_devices, removed_devices = pair_device_sets(baseline_devices, current_devices)
+    for current_device in added_devices:
+        mac = _device_mac(current_device)
+        changes.append({
                 "mac": mac,
                 "macFormatted": _device_label(current_device, mac),
                 "status": "added",
@@ -141,11 +146,13 @@ def compare_devices(
                 "before": "-",
                 "after": _text(current_device.get("source") or current_device.get("vendor") or "-") or "-",
             })
-            continue
-
+    for baseline_device, current_device in pairs:
+        mac = _device_mac(current_device) or _device_mac(baseline_device)
         for field in selected_fields:
-            before = _text(baseline_device.get(field))
-            after = _text(current_device.get(field))
+            before = _text(_device_mac(baseline_device) if field == "mac" else baseline_device.get(field))
+            after = _text(_device_mac(current_device) if field == "mac" else current_device.get(field))
+            if before and not after:
+                continue
             if before != after:
                 changes.append({
                     "mac": mac,
@@ -157,9 +164,18 @@ def compare_devices(
                     "before": before or "-",
                     "after": after or "-",
                 })
+        if current_device.get("hasConflict"):
+            conflicts = current_device.get("conflicts") if isinstance(current_device.get("conflicts"), list) else []
+            changes.append({
+                "mac": mac,
+                "macFormatted": _device_label(current_device, mac),
+                "status": "modified", "statusTitle": STATUS_TITLES["modified"],
+                "field": "identityConflict", "fieldTitle": FIELD_TITLES["identityConflict"],
+                "before": "-", "after": "; ".join(_text(item.get("field")) for item in conflicts if isinstance(item, dict)) or "Обнаружен конфликт",
+            })
 
-    for mac in sorted(set(baseline) - set(current)):
-        baseline_device = baseline[mac]
+    for baseline_device in removed_devices:
+        mac = _device_mac(baseline_device)
         changes.append({
             "mac": mac,
             "macFormatted": _device_label(baseline_device, mac),

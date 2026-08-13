@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
   <meta name="application-build" content="2026.08.12.2">
+  <meta name="application-version" content="1.0.48">
   <link rel="stylesheet" href="styles.css?v=20260812.1">
 </head>
 <body>
@@ -17,19 +18,24 @@
         <div class="brand-mark">MA</div>
         <div><strong>MAC Analyzer</strong><span>Web Edition</span></div>
       </button>
-      <nav class="nav" aria-label="Разделы" role="tablist">
-        <button class="nav-item active" data-view="workspace" data-engineering-only role="tab" aria-controls="workspaceView" aria-selected="true">Анализ</button>
-        <button class="nav-item" data-view="single" data-engineering-only role="tab" aria-controls="singleView" aria-selected="false">Один файл</button>
-        <button class="nav-item" data-view="compare" data-engineering-only role="tab" aria-controls="compareView" aria-selected="false">Сравнение</button>
-        <button class="nav-item" data-view="analytics" role="tab" aria-controls="analyticsView" aria-selected="false">Аналитика</button>
-        <button class="nav-item" data-view="history" role="tab" aria-controls="historyView" aria-selected="false">Поиск и история</button>
-        <button class="nav-item" data-view="rooms" role="tab" aria-controls="roomsView" aria-selected="false">Помещения</button>
-        <button class="nav-item" data-view="iphistory" role="tab" aria-controls="iphistoryView" aria-selected="false">История IP</button>
-        <button class="nav-item" data-view="roomhistory" role="tab" aria-controls="roomhistoryView" aria-selected="false">Хронология помещения</button>
-        <button class="nav-item" data-view="data" data-engineering-only role="tab" aria-controls="dataView" aria-selected="false">Данные</button>
-        <button class="nav-item" data-view="automation" data-engineering-only role="tab" aria-controls="automationView" aria-selected="false">Автоматизация</button>
-        <button class="nav-item" data-view="settings" data-engineering-only role="tab" aria-controls="settingsView" aria-selected="false">Настройки</button>
-        <button class="nav-item" data-view="guide" role="tab" aria-controls="guideView" aria-selected="false">Руководство</button>
+      <nav class="nav" aria-label="Разделы">
+        <details class="nav-group" open><summary>Обработка</summary><div role="tablist">
+          <button class="nav-item active" data-view="workspace" role="tab" aria-controls="workspaceView" aria-selected="true">Поиск устройств</button>
+          <button class="nav-item" data-view="single" data-engineering-only role="tab" aria-controls="singleView" aria-selected="false">Один файл</button>
+          <button class="nav-item" data-view="compare" data-engineering-only role="tab" aria-controls="compareView" aria-selected="false">Сравнение</button>
+        </div></details>
+        <details class="nav-group" open><summary>Мониторинг</summary><div role="tablist">
+          <button class="nav-item" data-view="analytics" role="tab" aria-controls="analyticsView" aria-selected="false">Аналитика</button>
+          <button class="nav-item" data-view="history" role="tab" aria-controls="historyView" aria-selected="false">Поиск и история</button>
+          <button class="nav-item" data-view="rooms" role="tab" aria-controls="roomsView" aria-selected="false">Помещения</button>
+          <button class="nav-item" data-view="roomhistory" role="tab" aria-controls="roomhistoryView" aria-selected="false">Хронология помещения</button>
+        </div></details>
+        <details class="nav-group"><summary>Управление</summary><div role="tablist">
+          <button class="nav-item" data-view="data" data-engineering-only role="tab" aria-controls="dataView" aria-selected="false">Данные</button>
+          <button class="nav-item" data-view="automation" data-engineering-only role="tab" aria-controls="automationView" aria-selected="false">Автоматизация</button>
+          <button class="nav-item" data-view="settings" data-engineering-only role="tab" aria-controls="settingsView" aria-selected="false">Настройки</button>
+          <button class="nav-item" data-view="guide" role="tab" aria-controls="guideView" aria-selected="false">Руководство</button>
+        </div></details>
       </nav>
       <div class="sidebar-footer">
         <span class="status-dot standalone" id="backendStatusDot"></span><span id="storageStatus">Автономный режим · выберите локальную папку данных</span><button class="backend-reconnect" id="reconnectBackendButton" type="button" title="Открыть локальную базу" hidden>↻</button>
@@ -94,7 +100,7 @@
       <section class="mode-context user-mode" id="modeContext" aria-live="polite"><strong id="modeContextTitle">Пользовательский режим</strong><span id="modeContextText">Доступны универсальный поиск, история и аналитика. Для загрузки файлов и настроек войдите в инженерный режим.</span><button class="button secondary" id="modeContextAction" type="button">Войти</button></section>
 
       <section class="view active" id="workspaceView" role="tabpanel">
-        <section class="metrics" aria-label="Ключевые показатели">
+        <section class="metrics" data-engineering-only aria-label="Ключевые показатели">
           <article class="metric"><span>Устройства</span><strong id="metricDevices">0</strong></article>
           <article class="metric"><span>Вендоры</span><strong id="metricVendors">0</strong></article>
           <article class="metric"><span>Модели</span><strong id="metricModels">0</strong></article>
@@ -104,7 +110,7 @@
           <article class="metric"><span>Некорректные MAC</span><strong id="metricInvalid">0</strong></article>
         </section>
 
-        <section class="workspace-grid">
+        <section class="workspace-grid" data-engineering-only>
           <div class="tool-panel">
             <div class="panel-head"><h2>Файлы</h2><span class="muted">CSV, TSV, JSON, Excel</span></div>
             <label class="drop-zone" id="dropZone" for="fileInput" role="button" tabindex="0" title="CSV, TSV, TXT, JSON, XLSX, XLSM, XLS">
@@ -168,7 +174,7 @@
 
         <section class="results-section">
           <div class="results-toolbar">
-            <div class="search-wrap"><input id="searchInput" type="search" placeholder="Поиск: MAC, вендор, модель, IP, адрес, помещение..."></div>
+            <div class="search-wrap"><input id="searchInput" type="search" placeholder="Поиск: hostname, IP устройства, IP коммутатора, MAC, физический адрес, серийный номер..."></div>
             <select id="vendorFilter"><option value="">Все вендоры</option></select>
             <select id="validityFilter"><option value="">Все записи</option><option value="valid">Только корректные</option><option value="invalid">Только ошибки</option></select>
             <button class="icon-button" id="clearResultFiltersButton" title="Очистить фильтры" aria-label="Очистить фильтры">×</button>
@@ -194,7 +200,7 @@
             <span id="resultCount">0 записей</span>
             <div class="result-pager" aria-label="Навигация по результатам">
               <label for="resultPageSizeSelect">Строк</label>
-              <select id="resultPageSizeSelect"><option value="100">100</option><option value="250" selected>250</option><option value="500">500</option><option value="1000">1000</option></select>
+              <select id="resultPageSizeSelect"><option value="50" selected>50</option><option value="100">100</option><option value="250">250</option><option value="500">500</option><option value="1000">1000</option></select>
               <button class="icon-button" id="resultPreviousPageButton" title="Предыдущая страница" aria-label="Предыдущая страница">&#8592;</button>
               <span id="resultPageStatus">1 / 1</span>
               <button class="icon-button" id="resultNextPageButton" title="Следующая страница" aria-label="Следующая страница">&#8594;</button>
@@ -202,7 +208,7 @@
             <span id="analysisStatus">Готов к работе</span>
           </div>
         </section>
-        <section class="results-section compact" id="analysisDashboardPanel">
+        <section class="results-section compact" id="analysisDashboardPanel" data-engineering-only>
           <div class="results-toolbar"><h2>Dashboard анализа</h2><span class="muted" id="analysisDashboardStatus">Запустите анализ, чтобы построить dashboard.</span></div>
           <section class="metrics analytics-metrics analysis-dashboard-metrics">
             <article class="metric"><span>Устройств</span><strong id="analysisMetricDevices">0</strong></article>
@@ -338,9 +344,9 @@
           <article class="metric"><span>Помещений</span><strong id="roomMetric">0</strong></article>
         </section>
         <section class="analytics-grid">
-          <div class="tool-panel smartroom-chart-panel"><div class="panel-head"><h2>Динамика изменений</h2></div><div class="chart-canvas-wrap"><canvas id="smartroomChangesChart"></canvas></div></div>
-          <div class="tool-panel smartroom-chart-panel"><div class="panel-head"><h2>Добавления и пропажи</h2></div><div class="chart-canvas-wrap"><canvas id="smartroomAddedRemovedChart"></canvas></div></div>
-          <div class="tool-panel smartroom-chart-panel"><div class="panel-head"><h2>Общее число устройств</h2></div><div class="chart-canvas-wrap"><canvas id="smartroomTotalChart"></canvas></div></div>
+          <div class="tool-panel smartroom-chart-panel"><div class="panel-head"><h2>Динамика изменений</h2></div><div class="chart-canvas-wrap"><canvas id="smartroomChangesChart"></canvas><p class="chart-state" data-chart-state="smartroomChangesChart" hidden></p></div></div>
+          <div class="tool-panel smartroom-chart-panel"><div class="panel-head"><h2>Добавления и пропажи</h2></div><div class="chart-canvas-wrap"><canvas id="smartroomAddedRemovedChart"></canvas><p class="chart-state" data-chart-state="smartroomAddedRemovedChart" hidden></p></div></div>
+          <div class="tool-panel smartroom-chart-panel"><div class="panel-head"><h2>Общее число устройств</h2></div><div class="chart-canvas-wrap"><canvas id="smartroomTotalChart"></canvas><p class="chart-state" data-chart-state="smartroomTotalChart" hidden></p></div></div>
           <div class="tool-panel" data-dashboard-chart="dynamics"><div class="panel-head"><h2>Динамика общего числа устройств</h2></div><div class="bar-list" id="dashboardDynamicsChart"></div></div>
           <div class="tool-panel" data-dashboard-chart="vendors"><div class="panel-head"><h2>Топ производителей</h2></div><div class="bar-list" id="dashboardStatusVendorChart"></div></div>
           <div class="tool-panel" data-dashboard-chart="fields"><div class="panel-head"><h2>Изменения по полям</h2></div><div class="bar-list" id="dashboardFieldChangesChart"></div></div>
@@ -402,23 +408,16 @@
 
       <section class="view" id="roomsView" role="tabpanel">
         <section class="results-section">
-          <div class="results-toolbar"><h2>Помещения по Smartroom ID</h2><input id="roomsSearchInput" type="search" placeholder="Smartroom ID, помещение, адрес, MAC"><input id="ddioApiUrlInput" type="url" placeholder="Ссылка на выгрузку DDIO"><button class="button secondary" id="saveDdioApiUrlButton" type="button">Сохранить URL</button><button class="button secondary" id="refreshRoomsButton" type="button">Обновить</button></div>
+          <div class="results-toolbar"><h2>Помещения по Smartroom ID</h2><select id="roomsCityFilter" aria-label="Фильтр по городу"><option value="">Все города</option></select><input id="roomsSearchInput" type="search" placeholder="Smartroom ID, помещение, адрес, MAC"><input id="ddioApiUrlInput" type="url" placeholder="Ссылка на выгрузку DDIO"><button class="button secondary" id="saveDdioApiUrlButton" type="button">Сохранить URL</button><button class="button secondary" id="refreshRoomsButton" type="button">Обновить</button></div>
           <p class="muted" id="roomsSummary">Хронология помещений загружается…</p>
-          <div class="table-wrap"><table data-virtual-scroll="true"><thead><tr><th>Smartroom ID</th><th>Название помещения</th><th>Адрес</th><th>Устройств</th><th>Пропало</th><th>IP коммутатора</th><th>Последнее наблюдение</th></tr></thead><tbody id="roomsBody"><tr><td colspan="7" class="empty-state">Нет данных.</td></tr></tbody></table></div>
+          <div class="table-wrap"><table data-virtual-scroll="true"><thead><tr><th>Smartroom ID</th><th>Город</th><th>Название помещения</th><th>Адрес</th><th>Устройств</th><th>Пропало</th><th>IP коммутатора</th><th>Последнее наблюдение</th></tr></thead><tbody id="roomsBody"><tr><td colspan="8" class="empty-state">Нет данных.</td></tr></tbody></table></div>
         </section>
       </section>
 
-      <section class="view" id="iphistoryView" role="tabpanel">
-        <section class="results-section">
-          <div class="results-toolbar"><h2>История IP коммутаторов</h2><input id="ipHistorySearchInput" type="search" placeholder="Smartroom ID, MAC или IP"><button class="button secondary" id="refreshIpHistoryButton" type="button">Обновить</button></div>
-          <p class="muted" id="ipHistorySummary">Изменения IP загружаются…</p>
-          <div class="table-wrap"><table data-virtual-scroll="true"><thead><tr><th>Дата</th><th>Smartroom ID</th><th>Помещение</th><th>MAC</th><th>Было</th><th>Стало</th><th>Возможные IP из DDIO</th></tr></thead><tbody id="ipHistoryBody"><tr><td colspan="7" class="empty-state">Изменений IP пока нет.</td></tr></tbody></table></div>
-        </section>
-      </section>
 
       <section class="view" id="roomhistoryView" role="tabpanel">
         <section class="results-section">
-          <div class="results-toolbar"><h2>Хронология помещения</h2><select id="roomChronologySelect" aria-label="Smartroom ID"><option value="">Выберите Smartroom ID</option></select><button class="button secondary" id="refreshRoomChronologyButton" type="button">Обновить</button></div>
+          <div class="results-toolbar"><h2>Хронология помещения</h2><select id="roomChronologyCityFilter" aria-label="Город"><option value="">Все города</option></select><select id="roomChronologySelect" aria-label="Smartroom ID"><option value="">Выберите Smartroom ID</option></select><button class="button secondary" id="refreshRoomChronologyButton" type="button">Обновить</button></div>
           <p class="muted" id="roomChronologySummary">Выберите помещение, чтобы увидеть всю цепочку замен оборудования.</p>
           <div class="room-timeline room-timeline-horizontal" id="roomChronologyTimeline"></div>
           <div class="table-wrap"><table><thead><tr><th>Дата</th><th>MAC-адрес</th><th>Модель</th><th>Статус</th></tr></thead><tbody id="roomChronologyTableBody"><tr><td colspan="4" class="empty-state">Выберите помещение.</td></tr></tbody></table></div>
@@ -653,7 +652,7 @@
             <article class="guide-value"><strong>Сохранность</strong><p>SQLite хранит снимки и историю; автономный HTML сохраняет рабочее состояние в хранилище браузера.</p></article>
           </div>
           <aside class="guide-callout"><strong>Быстрый поиск и сортировка</strong><p>Введите запрос — обработка начнётся после короткой паузы и отменит устаревший поиск. Нажмите заголовок любого обычного столбца для сортировки по возрастанию, нажмите повторно — по убыванию. С клавиатуры используйте Tab, затем Enter или пробел.</p></aside>
-          <aside class="guide-callout"><strong>Smartroom и DDIO</strong><p>Вкладка «Помещения» использует Smartroom ID как ключ и выделяет пропавшие устройства красным. «История IP» показывает смену IP коммутатора, знак ❗ и Possible_IPs из DDIO. В «Хронологии помещения» доступна вся цепочка замен; ссылку автоматической DDIO-выгрузки можно сохранить на вкладке «Помещения».</p><div class="guide-action-row"><button class="button secondary" type="button" data-guide-view="rooms">Открыть помещения</button><button class="button secondary" type="button" data-guide-view="iphistory">Открыть историю IP</button><button class="button secondary" type="button" data-guide-view="roomhistory">Открыть хронологию помещения</button></div></aside>
+          <aside class="guide-callout"><strong>Smartroom и DDIO</strong><p>Вкладка «Помещения» использует Smartroom ID как ключ и выделяет пропавшие устройства красным. Смена IP коммутатора и IP устройства из DDIO отображаются в «Аналитике критических изменений» со знаком ❗. В «Хронологии помещения» доступна вся цепочка замен.</p><div class="guide-action-row"><button class="button secondary" type="button" data-guide-view="rooms">Открыть помещения</button><button class="button secondary" type="button" data-guide-view="analytics">Открыть критические изменения</button><button class="button secondary" type="button" data-guide-view="roomhistory">Открыть хронологию помещения</button></div></aside>
           <h3>Рабочий цикл</h3>
           <ol class="guide-flow">
             <li><span>1</span><div><strong>Загрузить</strong><p>Основной XLSX/CSV и при необходимости один или несколько файлов обогащения.</p></div></li>
@@ -854,7 +853,9 @@
   <script src="frontend/memory-guard.js?v=20260722.9"></script>
   <script src="frontend/file-readers.js?v=20260722.8"></script>
   <script src="frontend/state-persistence.js?v=20260722.7"></script>
-  <script src="frontend/browser-snapshot-store.js?v=20260812.1"></script>
+  <script src="frontend/device-identity.js?v=1048"></script>
+  <script src="frontend/browser-snapshot-store.js?v=20260813.1"></script>
+  <script src="frontend/time-utils.js?v=1047"></script>
   <script src="frontend/mac-chronology.js?v=20260729.1"></script>
   <script src="frontend/local-analytics.js?v=20260729.3"></script>
   <script src="frontend/xlsx-exporter.js?v=20260727.5"></script>
@@ -863,19 +864,19 @@
   <script src="frontend/portable-database.js?v=20260810.1"></script>
   <script src="frontend/local-folder-store.js?v=20260728.1"></script>
   <script src="frontend/workspace-file-lifecycle.js?v=20260722.7"></script>
-  <script src="frontend/ddio-overlay.js?v=20260812.1"></script>
+  <script src="frontend/ddio-overlay.js?v=20260813.1"></script>
   <script src="frontend/dashboard-change-tabs.js?v=20260803.1"></script>
   <script src="frontend/guide.js?v=20260722.7"></script>
   <script src="frontend/ui-feedback.js?v=20260812.2"></script>
   <script src="frontend/lazy-tabs.js?v=20260812.1"></script>
   <script src="frontend/virtual-table.js?v=20260812.1"></script>
-  <script src="frontend/smartroom-worker.js?v=20260812.1"></script>
+  <script src="frontend/smartroom-worker.js?v=1048"></script>
   <script src="frontend/smartroom-store.js?v=20260812.1"></script>
-  <script src="frontend/smartroom-charts.js?v=20260812.1"></script>
-  <script src="frontend/room-timeline.js?v=20260812.2"></script>
-  <script src="frontend/smartroom-ui.js?v=20260812.1"></script>
+  <script src="frontend/smartroom-charts.js?v=1047"></script>
+  <script src="frontend/room-timeline.js?v=1047"></script>
+  <script src="frontend/smartroom-ui.js?v=1048"></script>
   <script src="frontend/table-sorter.js?v=20260812.1"></script>
-  <script src="app.js?v=20260812.1"></script>
+  <script src="app.js?v=20260813.1"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;
@@ -904,7 +905,7 @@
       const fallbackBrowserDbName = "mac-analyzer-browser-storage-v1";
       const fallbackBrowserStoreName = "workspaces";
       const fallbackBrowserRecordId = "fallback-v2";
-      const fallbackEngineeringOnlyViews = new Set(["workspace", "single", "compare", "data", "automation", "settings"]);
+      const fallbackEngineeringOnlyViews = new Set(["single", "compare", "data", "automation", "settings"]);
       const fallbackEngineeringPermissions = ["delete:history", "delete:snapshots", "delete:mappings", "delete:tasks", "delete:ip-mappings", "delete:api-cache", "write:settings", "write:migration"];
       const fallbackState = { files: [], devices: [], invalid: [], snapshots: [], movementHistory: [], ipMappings: [], localVendorMappings: {}, localModelMappings: {}, activeMappingFileId: "", mappingDisplayMode: "name", theme: localStorage.getItem("mac-analyzer-theme") || "light", engineeringMode: false, engineeringExpiresAt: "", engineeringPermissions: [], ouiLength: 3, ouiStyle: "plain", vendorDetectorSettings: { enabled: true, useOui3: true, useMac5: true, useText: true, useInference: true, confidenceThreshold: 0.6 }, historyEnrichmentSettings: { enabled: true, priorityHistory: true, useOuiMatch: true, useMac5Match: true }, externalApiSettings: { enabled: false, provider: "macvendors", endpoint: "", rateLimit: 25, cacheTtlDays: 30, onlyUnknown: true }, dashboardSettings: { vendor: "", room: "", status: "all", chartLimit: 8, showUnknown: true, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60, changeMode: "snapshots", changeDateFrom: "", changeDateTo: "", baselineSnapshotId: "", comparisonSnapshotId: "" } };
       let fallbackDashboardRefreshTimer = null;
@@ -968,7 +969,7 @@
       }
 
       function fallbackView(name, updateHash = true) {
-        let viewName = fallbackViews[name] ? name : "history";
+        let viewName = name === "iphistory" ? "analytics" : fallbackViews[name] ? name : "workspace";
         if (!fallbackEngineeringActive() && fallbackEngineeringOnlyViews.has(viewName)) viewName = "history";
         $$(".nav-item").forEach((button) => {
           const active = button.dataset.view === viewName;
@@ -1892,7 +1893,7 @@
 
       function fallbackEngineeringActive() { return fallbackState.engineeringMode && Date.parse(fallbackState.engineeringExpiresAt || "") > Date.now(); }
       function openFallbackEngineeringDialog() { if (fallbackEngineeringActive()) return logoutFallbackEngineering(); $("#engineeringPasswordInput").value = ""; $("#engineeringLoginResult").textContent = "Введите пароль инженерного режима."; $("#engineeringLoginResult").className = "engineering-login-result muted"; $("#engineeringDialog")?.showModal(); }
-      function logoutFallbackEngineering() { fallbackState.engineeringMode = false; fallbackState.engineeringExpiresAt = ""; fallbackState.engineeringPermissions = []; renderFallbackEngineering(); fallbackPersist("engineering-off"); fallbackView("history"); toast("Включён пользовательский режим."); }
+      function logoutFallbackEngineering() { fallbackState.engineeringMode = false; fallbackState.engineeringExpiresAt = ""; fallbackState.engineeringPermissions = []; renderFallbackEngineering(); fallbackPersist("engineering-off"); fallbackView("workspace"); toast("Включён пользовательский режим."); }
 
       function applyFallbackTheme(theme) {
         fallbackState.theme = theme === "dark" ? "dark" : "light";
@@ -2310,9 +2311,16 @@
               source: file.filename
             };
             const existing = byMac.get(mac);
-            if (fileIndex === 0 || strategy === "merge" || existing) {
-              byMac.set(mac, { ...(existing || {}), ...Object.fromEntries(Object.entries(device).filter(([, value]) => value !== "" && value !== undefined)) });
+            const merged = { ...(existing || {}) };
+            for (const [field, value] of Object.entries(device)) {
+              if (value === "" || value === undefined) continue;
+              if (fileIndex > 0 && merged[field] !== "" && merged[field] !== undefined) continue;
+              merged[field] = value;
             }
+            merged.sourceFiles = Array.from(new Set([...(existing?.sourceFiles || []), existing?.source, file.filename].filter(Boolean)));
+            merged.sourceRoles = Array.from(new Set([...(existing?.sourceRoles || []), file.role || (fileIndex ? "enrichment" : "primary")]));
+            merged.source = merged.sourceFiles.join(" + ");
+            byMac.set(mac, merged);
             if (index % 250 === 0) {
               const fileShare = file.rows.length ? index / file.rows.length : 1;
               fallbackUpdateProcess(processId, 10 + ((fileIndex + fileShare) / fallbackState.files.length) * 55, `${file.filename}: строка ${index + 1} / ${file.rows.length}`);

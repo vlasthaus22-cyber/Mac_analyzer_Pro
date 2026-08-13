@@ -91,7 +91,7 @@ def test_column_manager_list_move_and_reset():
 
     reset = reset_column_preferences(VIEW_NAME)
     assert reset["deleted"] is True
-    assert reset["preferences"]["visible"] == ["macFormatted", "oui", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "source"]
+    assert reset["preferences"]["visible"] == ["macFormatted", "oui", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName", "source"]
     assert load_column_preferences(VIEW_NAME)["updatedAt"] is None
 
     cleanup()

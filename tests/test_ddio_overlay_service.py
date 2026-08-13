@@ -45,6 +45,7 @@ def test_ddio_uses_reservation_and_lease_mac_without_mutating_devices():
             "ip": "192.168.1.30",
             "possibleIps": ["192.168.1.20", "192.168.1.30"],
             "match": "lease",
+            "source": "DDIO",
             "previousSwitchIp": "10.0.0.1",
             "currentSwitchIp": "10.0.0.2",
         }
@@ -86,6 +87,7 @@ def test_ddio_uses_independent_reservation_and_lease_ip_columns_after_h():
             "ip": "192.168.1.50",
             "possibleIps": ["192.168.1.40", "192.168.1.50"],
             "match": "lease",
+            "source": "DDIO",
             "previousSwitchIp": "10.0.0.1",
             "currentSwitchIp": "10.0.0.2",
         }
@@ -126,7 +128,8 @@ def test_enrichment_fills_blanks_without_overwriting_primary_values():
     assert enriched["devices"][0]["model"] == "Apple TV 4K"
     assert enriched["devices"][0]["address"] == "Building A"
     assert enriched["devices"][0]["switchPort"] == "Gi1/0/10"
-    assert enriched["devices"][0]["source"] == "current.csv"
+    assert enriched["devices"][0]["source"] == "current.csv + previous.csv"
+    assert enriched["devices"][0]["hasConflict"] is True
 
 
 if __name__ == "__main__":

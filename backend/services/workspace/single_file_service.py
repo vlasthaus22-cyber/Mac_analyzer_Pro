@@ -6,7 +6,7 @@ from .enrichment_service import enrich_files
 from .file_import_service import read_table
 
 
-FIELDS = ["mac", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort"]
+FIELDS = ["mac", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName"]
 
 
 def normalize_mapping(mapping: dict[str, Any] | None, headers: list[str]) -> dict[str, int]:

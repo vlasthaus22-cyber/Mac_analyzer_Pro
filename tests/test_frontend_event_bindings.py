@@ -15,10 +15,10 @@ def test_ddio_third_export_is_display_only_and_bound_in_primary_frontend():
     assert 'id="ddioFileInput"' in html
     assert 'id="browseDdioFileButton"' in html
     assert 'id="ddioMappingGrid"' in html
-    assert '<script src="frontend/ddio-overlay.js?v=20260812.1"></script>' in html
+    assert '<script src="frontend/ddio-overlay.js?v=20260813.1"></script>' in html
     assert 'loadDdioFile(e.target.files,e.target)' in app
     assert all(field in ddio for field in ('reservationMac', 'reservationIp', 'leaseMac', 'leaseIp'))
-    assert '[["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"]]' in app
+    assert '[["deviceId","Device ID"],["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"]]' in app
     assert 'mappingOptionLabel(header,"letter")' in app
     assert 'headers = Array.from({ length: columnCount }' in Path("frontend/file-readers.js").read_text(encoding="utf-8")
     assert 'applyDdioOverlayToResults(body,columns)' in app
@@ -86,13 +86,14 @@ def test_navigation_tabs_are_hash_routable_and_safe():
     app = read_app_js()
 
     assert 'role="tablist"' in html
-    assert 'data-view="workspace" data-engineering-only role="tab" aria-controls="workspaceView" aria-selected="true"' in html
+    assert 'data-view="workspace" role="tab" aria-controls="workspaceView" aria-selected="true"' in html
     assert 'data-view="history" role="tab" aria-controls="historyView" aria-selected="false"' in html
     assert 'id="workspaceView" role="tabpanel"' in html
     assert 'id="automationView" role="tabpanel"' in html
 
     assert "const viewConfig=" in app
     assert "function normalizeViewName(name)" in app
+    assert 'if(name==="iphistory")return"analytics";' in app
     assert 'return Object.prototype.hasOwnProperty.call(viewConfig,name)?name:"workspace";' in app
     assert "function viewFromHash()" in app
     assert 'replace(/^#/,"")' in app
@@ -269,7 +270,7 @@ def test_comparison_result_uses_backend_html_payload():
     assert '$("#comparisonBody").innerHTML=result.changesRowsHtml||result.emptyRowsHtml||' in app
     assert '$("#comparisonSummary").innerHTML=result.summaryHtml||' in app
     assert 'function localSnapshotById(id)' in app
-    assert 'function localDeviceMap(devices=[])' in app
+    assert 'const paired=DeviceIdentity.pairSets(baseline.devices||[],current.devices||[])' in app
     assert 'function localComparisonPayload(payload=comparisonPayload())' in app
     assert 'async function storedLocalComparisonPayload(payload=comparisonPayload())' in app
     assert 'function localComparisonExport(result,format)' in app
@@ -1012,7 +1013,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260812.1"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260813.1"></script>' in html
     assert '<script src="frontend/xlsx-exporter.js?v=20260727.5"></script>' in html
     assert '<script src="frontend/full-xlsx-report.js?v=20260729.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
@@ -1024,7 +1025,16 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert app.index('await BrowserSnapshots.prune(keepIds);') < app.index('await BrowserSnapshots.save(record,(percent)=>')
     assert 'browserSnapshotRows: 1_000_000' in memory_guard
     assert 'const snapshotStore = "snapshots";' in snapshot_store
-    assert 'const databaseVersion = 7;' in snapshot_store
+    assert 'const databaseVersion = 8;' in snapshot_store
+    smartroom_store = Path("frontend/smartroom-store.js").read_text(encoding="utf-8")
+    smartroom_ui = Path("frontend/smartroom-ui.js").read_text(encoding="utf-8")
+    assert 'const knownModelsStore = "KnownModels";' in smartroom_store
+    assert '["by_smartroom", "smartroom_id"]' in smartroom_store
+    assert '["by_mac", "mac"]' in smartroom_store
+    assert '["by_switch", "ip_switch"]' in smartroom_store
+    assert '["by_timestamp", "timestamp"]' in smartroom_store
+    assert 'class="possible-ip-dropdown ddio-history-warning"' in app
+    assert "IP устройства из DDIO" in app
     assert 'const enrichmentRowStore = "enrichmentRows";' in snapshot_store
     assert 'const deviceHistoryStore = "deviceHistory";' in snapshot_store
     assert 'async function enrichDevicesFromHistory(rows)' in snapshot_store
@@ -1043,8 +1053,8 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert 'async function aggregate(id, options = {})' in snapshot_store
     assert 'async function aggregateSeries(snapshots, options = {})' in snapshot_store
     assert 'async function compareSnapshots(baselineId, comparisonId, options = {})' in snapshot_store
-    assert 'const criticalMove = String(previous.switchIp || "") !== String(device.switchIp || "")' in snapshot_store
-    assert 'if (criticalMove) result.critical += 1;' in snapshot_store
+    assert 'const criticalMove = Boolean(previous.switchIp && device.switchIp && previous.switchIp !== device.switchIp);' in snapshot_store
+    assert 'if (criticalMove || device.hasConflict) result.critical += 1;' in snapshot_store
     assert 'critical: result.critical,' in snapshot_store
     assert 'async function localAnalyzeFilesToSnapshot(fields,strategy,source,createdAt,onProgress=()=>{})' in app
     assert 'local=await localAnalyzeFilesToSnapshot(enrich,strategy,source,sourceCreatedAt' in app
@@ -2196,7 +2206,7 @@ def test_primary_and_enrichment_files_are_grouped_in_browser_only_html():
         assert marker in app
     assert 'loadFallbackFiles(event.target.files, event.target, "enrichment")' in html
     assert 'function normalizeFallbackFileRoles()' in html
-    assert 'fileIndex>0&&strategy==="primary"&&!prev' in app
+    assert 'const file=state.files[fileIndex],allowNew=true;' in app
     assert 'if(fileIndex&&strategy==="primary")return' not in app
     assert '.file-group-head' in styles
     assert '.backend-reconnect' in styles
@@ -2219,9 +2229,9 @@ def test_user_and_engineering_modes_match_pyqt_access_split():
         'data-engineering-permission="delete:api-cache"',
     ):
         assert marker in html
-    assert html.count('data-engineering-only role="tab"') == 6
+    assert html.count('data-engineering-only role="tab"') == 5
     for marker in (
-        'const engineeringOnlyViews=new Set(["workspace","single","compare","data","automation","settings"])',
+        'const engineeringOnlyViews=new Set(["single","compare","data","automation","settings"])',
         'if(!engineeringSessionActive()&&engineeringOnlyViews.has(name))name="history"',
         'function engineeringHasPermission(permission="")',
         'function renderEngineeringState({redirect=true}={})',
@@ -2231,7 +2241,7 @@ def test_user_and_engineering_modes_match_pyqt_access_split():
         'if(!networkUnavailable(error))throw error',
         'if(password!=="admin123")throw new Error("Неверный пароль инженерного режима.")',
         'view("workspace");toast("Инженерный режим включён.")',
-        'view("history");toast("Включён пользовательский режим.")',
+        'view("workspace");toast("Включён пользовательский режим.")',
     ):
         assert marker in app
     assert 'const password=prompt("Пароль инженерного режима:")' not in app
@@ -2450,7 +2460,7 @@ def test_ddio_switch_ip_hint_is_persisted_and_rendered_in_local_history():
     assert "function attachDdioHistoryHint(item)" in app
     assert "item.ddioCandidateIp=hint.ip" in app
     assert "ddioHistoryBadge(item)" in app
-    assert 'class="ddio-history-warning"' in app
+    assert 'class="possible-ip-dropdown ddio-history-warning"' in app
     assert ".ddio-history-warning" in styles
 
 
