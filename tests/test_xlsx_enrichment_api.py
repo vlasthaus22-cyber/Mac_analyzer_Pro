@@ -125,6 +125,24 @@ def test_two_xlsx_files_are_visible_and_enrich_matching_primary_mac():
         assert "1 rows" in panel["fileRowsHtml"]
         assert "2 rows" in panel["fileRowsHtml"]
 
+        no_expansion = post_json(
+            base_url,
+            "/api/enrichment/run",
+            {
+                "files": files,
+                "strategy": "NO_EXPANSION",
+                "fields": {"vendor": True, "model": True, "ip": True, "address": True, "room": True, "switchIp": True, "switchPort": True},
+                "source": "main.xlsx",
+                "saveHistory": False,
+                "saveSnapshot": False,
+                "notify": False,
+            },
+        )
+        assert len(no_expansion["devices"]) == 1
+        assert no_expansion["diagnostics"]["strategy"] == "NO_EXPANSION"
+        assert no_expansion["diagnostics"]["counts"]["smartroomCreated"] == 0
+        assert no_expansion["creationDecisions"][0]["code"] == "NOT_CREATED_FROM_SMARTROOM"
+
         result = post_json(
             base_url,
             "/api/enrichment/run",

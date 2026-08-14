@@ -21,8 +21,8 @@ def test_parity_registry_and_pyqt_equivalents_are_complete():
     expected_report = build_parity_report(Path("."))["content"] + "\n"
 
     assert status["registry"]["unchecked"] == []
-    assert status["registry"]["checked"] == 67
-    assert status["registry"]["total"] == 67
+    assert status["registry"]["checked"] == 71
+    assert status["registry"]["total"] == 71
     assert status["summary"]["missingEquivalents"] == 0
     assert status["summary"]["webComplete"] == status["summary"]["pyqtBlocks"]
     assert status["status"] == "complete"
@@ -32,7 +32,7 @@ def test_parity_registry_and_pyqt_equivalents_are_complete():
     assert "Нет данных parity" in status["emptyDetailsHtml"]
     assert "Status: complete." in audit
     assert "PyQt blocks covered by web equivalents: 31/31." in audit
-    assert "PARITY_REGISTRY.md requirements: 67/67." in audit
+    assert "PARITY_REGISTRY.md requirements: 71/71." in audit
     assert "missingEquivalents=0" in audit
     assert status_file == expected_report
 
@@ -56,7 +56,7 @@ def test_parity_status_endpoint():
     assert payload["status"] == "complete"
     assert payload["summary"]["missingEquivalents"] == 0
     assert payload["registry"]["unchecked"] == []
-    assert payload["registry"]["checked"] == 67
+    assert payload["registry"]["checked"] == 71
     assert "Status" in payload["summaryHtml"]
     assert "Database management" in payload["detailsHtml"]
     assert report_code == 200

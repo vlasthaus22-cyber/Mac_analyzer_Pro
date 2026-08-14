@@ -57,8 +57,11 @@ def test_enrichment_job_registry_status_and_cancel():
     assert job["id"] == "job-test"
     assert enrichment_job_status("job-test")["status"] == "running"
 
-    update_enrichment_job("job-test", {"rows": 4, "percent": 50, "status": "running"})
+    update_enrichment_job("job-test", {"stage": "smartroom-matching", "rows": 4, "percent": 50, "status": "running"})
     assert enrichment_job_status("job-test")["progress"]["percent"] == 50
+    assert [item["stage"] for item in enrichment_job_status("job-test")["stageHistory"]] == [
+        "validation", "smartroom-matching",
+    ]
 
     cancelled = cancel_enrichment_job("job-test")
     assert cancelled["cancelRequested"] is True

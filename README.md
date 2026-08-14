@@ -171,6 +171,23 @@ calculation or backend restoration. The release is covered by 98 test files,
 317 automated test functions, a 200,000-row repeated-enrichment stress test,
 ESLint, API/UI smoke coverage, and a rebuilt autonomous HTML package.
 
+Version v1.0.50 makes the final-row strategy explicit and consistent in the
+backend, browser-only mode, and autonomous HTML. In `NO_EXPANSION`, only unique
+devices from File 1 can appear in the current Final; SmartRoom and DDIO only
+enrich matches. In `ALLOW_EXPANSION`, strongly identified unmatched SmartRoom
+devices may be added, while DDIO remains enrichment-only. All creation decisions
+now pass through one resolver and expose count diagnostics. Previous Final and
+Inventory remain knowledge/history sources and never silently repopulate the
+current snapshot.
+
+The release also fixes the failure previously observed at roughly 86%: the
+browser snapshot writer no longer duplicates the complete working result while
+committing it to IndexedDB. Rows are promoted in atomic chunks and removed from
+the temporary store in the same transaction. A failed or quota-exhausted save
+removes only the incomplete new snapshot and leaves the previous successful
+Final active. Progress is tied to named pipeline stages and the UI provides the
+run ID, stage, row counters, source and technical error details.
+
 ## Primary autonomous mode
 
 In a downloaded GitHub Release, launch the root `MAC-Analyzer-Pro.html`. It

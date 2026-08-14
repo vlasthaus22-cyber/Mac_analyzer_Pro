@@ -6,9 +6,9 @@
 </head>
 <body>
   <pre id="result">running</pre>
-  <script src="../frontend/memory-guard.js"></script>
-  <script src="../frontend/file-readers.js"></script>
-  <script src="../frontend/browser-snapshot-store.js"></script>
+  <script src="../frontend/memory-guard.js?v=20260814"></script>
+  <script src="../frontend/file-readers.js?v=20260814"></script>
+  <script src="../frontend/browser-snapshot-store.js?v=20260814"></script>
   <script>
     (async () => {
       const output = document.querySelector("#result");
@@ -69,9 +69,32 @@
             { id: snapshotId, name: `OOM IndexedDB ${round + 1}` },
           );
           const page = await window.MacAnalyzerBrowserSnapshots.page(snapshotId, { offset: 99750, limit: 250 });
-          diskRounds.push({ round: round + 1, stored: metadata.deviceCount, pageRows: page.items.length, total: page.pagination.total });
+          const temporaryRows = await window.MacAnalyzerBrowserSnapshots.countEnrichmentRows(jobId);
+          diskRounds.push({ round: round + 1, stored: metadata.deviceCount, pageRows: page.items.length, total: page.pagination.total, temporaryRows });
           await window.MacAnalyzerBrowserSnapshots.clearEnrichment(jobId);
         }
+        const rollbackSourceId = `rollback-source-${Date.now()}`;
+        const rollbackFailedId = `rollback-failed-${Date.now()}`;
+        await window.MacAnalyzerBrowserSnapshots.save({
+          id: rollbackSourceId,
+          name: "Last successful Final",
+          devices: [{ mac: "001122334455", valid: true }],
+          invalid: [],
+        });
+        const rollbackJobId = `rollback-job-${Date.now()}`;
+        await window.MacAnalyzerBrowserSnapshots.mergeEnrichmentRows(rollbackJobId, [{ mac: "001122334466", valid: true }]);
+        let rollbackError = "";
+        try {
+          await window.MacAnalyzerBrowserSnapshots.saveEnrichmentSnapshot(
+            rollbackJobId,
+            { id: rollbackFailedId, name: "Must roll back" },
+            [{ invalidClone: () => true }],
+          );
+        } catch (error) { rollbackError = error.name || error.message; }
+        const rollbackSource = await window.MacAnalyzerBrowserSnapshots.load(rollbackSourceId);
+        const rollbackFailed = await window.MacAnalyzerBrowserSnapshots.load(rollbackFailedId);
+        const rollback = { error: rollbackError, previousDevices: rollbackSource?.devices?.length || 0, failedSnapshotExists: Boolean(rollbackFailed) };
+        await window.MacAnalyzerBrowserSnapshots.removeSnapshot(rollbackSourceId);
         for (const snapshotId of snapshotIds) await window.MacAnalyzerBrowserSnapshots.removeSnapshot(snapshotId);
         const heapAfter = performance.memory?.usedJSHeapSize || 0;
         output.dataset.status = "complete";
@@ -82,6 +105,7 @@
           sheet: preview.sheet,
           rounds,
           diskRounds,
+          rollback,
           heapDelta: heapBefore && heapAfter ? heapAfter - heapBefore : null,
           progressUpdates,
           fullFileReads,

@@ -3,9 +3,9 @@ const fs = require("fs");
 const path = require("path");
 
 const app = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
-const match = app.match(/function mergeAnalysisDevice[\s\S]*?\r?\n  }\r?\n  function accumulateResolvedDevice/);
+const match = app.match(/function mergeAnalysisDevice[\s\S]*?\r?\n  }\r?\n  function resolveOrCreateAnalysisDevice/);
 assert(match, "mergeAnalysisDevice must remain available to browser enrichment");
-const definition = match[0].replace(/\r?\n  function accumulateResolvedDevice$/, "");
+const definition = match[0].replace(/\r?\n  function resolveOrCreateAnalysisDevice$/, "");
 const DeviceIdentity = require("../frontend/device-identity.js");
 const mergeAnalysisDevice = Function("DeviceIdentity", `"use strict"; ${definition}; return mergeAnalysisDevice;`)(DeviceIdentity);
 

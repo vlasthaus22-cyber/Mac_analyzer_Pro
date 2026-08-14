@@ -24,6 +24,7 @@ import sqlite3
 import sys
 import threading
 import time
+import traceback
 import urllib.error
 import urllib.request
 import uuid
@@ -41,7 +42,12 @@ from backend.services.workspace.xlsx_service import read_xlsx
 from backend.services.workspace.file_import_service import read_table
 from backend.services.detection.column_detector_service import detect as detect_columns
 from backend.services.exporting.export_manager_service import export_managed, supported_export_formats
-from backend.services.workspace.enrichment_service import enrich_files, enrich_workspace_files
+from backend.services.workspace.enrichment_service import (
+    NO_EXPANSION,
+    enrich_files,
+    enrich_workspace_files,
+    normalize_enrichment_strategy,
+)
 from backend.services.workspace.ddio_overlay_service import (
     apply_ddio_ip_fallback,
     build_ddio_device_index,
@@ -460,18 +466,19 @@ def signal_status() -> dict[str, Any]:
     return dict(SIGNAL_STATE)
 
 
-def start_enrichment_job(job_id: str = "", source: str = "", strategy: str = "primary") -> dict[str, Any]:
+def start_enrichment_job(job_id: str = "", source: str = "", strategy: str = NO_EXPANSION) -> dict[str, Any]:
     normalized_id = as_text(job_id) or str(uuid.uuid4())
     timestamp = utc_now()
     job = {
         "id": normalized_id,
         "source": as_text(source),
-        "strategy": as_text(strategy) or "primary",
+        "strategy": normalize_enrichment_strategy(strategy),
         "status": "running",
         "cancelRequested": False,
         "createdAt": timestamp,
         "updatedAt": timestamp,
-        "progress": {"status": "running", "percent": 0, "rows": 0, "valid": 0, "invalid": 0},
+        "progress": {"status": "running", "stage": "validation", "percent": 0, "rows": 0, "totalRows": 0, "valid": 0, "invalid": 0},
+        "stageHistory": [{"stage": "validation", "percent": 0, "timestamp": timestamp}],
     }
     ENRICHMENT_JOBS[normalized_id] = job
     return job
@@ -483,6 +490,16 @@ def update_enrichment_job(job_id: str, progress: dict[str, Any], status: str = "
     job["progress"] = {**job.get("progress", {}), **(progress or {})}
     job["status"] = as_text(status) or job["progress"].get("status") or job.get("status") or "running"
     job["updatedAt"] = utc_now()
+    stage = as_text(job["progress"].get("stage"))
+    history = job.setdefault("stageHistory", [])
+    if stage and (not history or history[-1].get("stage") != stage):
+        history.append({
+            "stage": stage,
+            "percent": int(job["progress"].get("percent") or 0),
+            "rows": int(job["progress"].get("rows") or 0),
+            "timestamp": job["updatedAt"],
+        })
+        del history[:-50]
     return job
 
 
@@ -1239,6 +1256,7 @@ def enrichment_field_summary(fields: dict[str, bool]) -> dict[str, Any]:
 def enrichment_progress_html(progress: Any = None, status: str = "running") -> str:
     data = progress if isinstance(progress, dict) else {}
     normalized_status = as_text(status).lower()
+    stage = as_text(data.get("stage"))
     if normalized_status in {"starting", "start", "pending"}:
         label = as_text(data.get("label")) or "Обогащение"
         detail = as_text(data.get("detail")) or "запуск"
@@ -1247,6 +1265,24 @@ def enrichment_progress_html(progress: Any = None, status: str = "running") -> s
         label = f"Файлов: {int(data.get('files') or 0)}, строк: {int(data.get('rows') or 0)}"
         detail = f"OK: {int(data.get('valid') or 0)} / ошибок: {int(data.get('invalid') or 0)}"
         percent = int(data.get("percent") or 100)
+    if stage:
+        stage_labels = {
+            "validation": "Проверка входных данных",
+            "parsing-normalization": "Разбор и нормализация",
+            "main-device-creation": "Формирование основного набора",
+            "smartroom-matching": "Сопоставление SmartRoom",
+            "ddio": "Обогащение DDIO",
+            "previous-final-history": "Предыдущее Final и история",
+            "identity-conflicts-finalization": "Идентификация и конфликты",
+            "database-save": "Транзакционное сохранение",
+            "history-analytics": "История и аналитика",
+            "completed": "Обогащение завершено",
+        }
+        label = stage_labels.get(stage, stage)
+        detail = (
+            f"Строк: {int(data.get('rows') or 0)} / {int(data.get('totalRows') or 0)} · "
+            f"OK: {int(data.get('valid') or 0)} · ошибок: {int(data.get('invalid') or 0)}"
+        )
     percent = max(0, min(100, percent))
     return (
         '<div class="bar-item"><div class="bar-label">'
@@ -6453,10 +6489,21 @@ class AppHandler(BaseHTTPRequestHandler):
                 if ddio_file_payload is not None and not isinstance(ddio_file_payload, dict):
                     self.error_response("ddioFile must be an object")
                     return
+                strategy = normalize_enrichment_strategy(payload.get("strategy"))
+                source = as_text(payload.get("source")) or (as_text(files[0].get("name")) if files and isinstance(files[0], dict) else "")
+                job = start_enrichment_job(as_text(payload.get("jobId")), source, strategy)
+                update_enrichment_job(job["id"], {
+                    "stage": "validation", "status": "running", "percent": 2,
+                    "rows": 0, "totalRows": 0, "source": source,
+                })
                 try:
                     files = prepare_workspace_files(files, WORKSPACE_FILE_CACHE)
                     ddio_file = prepare_workspace_files([ddio_file_payload], WORKSPACE_FILE_CACHE)[0] if ddio_file_payload else None
                 except WorkspaceCacheMiss:
+                    update_enrichment_job(job["id"], {
+                        "stage": "parsing", "status": "failed", "percent": 5,
+                        "error": "Imported file cache expired",
+                    }, "failed")
                     self.json_response(
                         {
                             "error": "Imported file cache expired; retry with file rows",
@@ -6477,27 +6524,56 @@ class AppHandler(BaseHTTPRequestHandler):
                         )
                         file_info["fileToken"] = token
                         refreshed_file_tokens.append({"id": as_text(file_info.get("id")), "fileToken": token})
-                strategy = as_text(payload.get("strategy")) or "primary"
                 fields = normalize_enrichment_fields(payload.get("fields", {}))
-                source = as_text(payload.get("source")) or (as_text(files[0].get("name")) if files else "")
                 source_created_at = as_text(payload.get("createdAt")) or as_text(files[0].get("createdAt") if files and isinstance(files[0], dict) else "")
-                job = start_enrichment_job(as_text(payload.get("jobId")), source, strategy)
+                def source_row_count(item: dict[str, Any]) -> int:
+                    try:
+                        return max(0, int(item.get("rowCount") or 0))
+                    except (TypeError, ValueError):
+                        inline_rows = item.get("rows") or []
+                        return max(0, len(inline_rows) - (1 if inline_rows and isinstance(inline_rows[0], list) else 0))
+
+                total_source_rows = sum(source_row_count(item) for item in files if isinstance(item, dict))
+                update_enrichment_job(job["id"], {
+                    "stage": "parsing-normalization", "status": "running", "percent": 8,
+                    "rows": 0, "totalRows": total_source_rows, "source": source,
+                })
+
+                def report_source_merge(progress: dict[str, Any]) -> None:
+                    raw_percent = max(0, min(100, int(progress.get("percent") or 0)))
+                    update_enrichment_job(job["id"], {
+                        **progress,
+                        "stage": progress.get("stage") or "source-merge",
+                        "percent": 8 + round(raw_percent * 0.52),
+                        "status": "running",
+                    })
+
                 merged = enrich_workspace_files(
                     files,
                     WORKSPACE_FILE_CACHE,
                     strategy,
-                    progress_callback=lambda progress: update_enrichment_job(job["id"], progress),
+                    progress_callback=report_source_merge,
                     is_cancelled=lambda: bool(ENRICHMENT_JOBS.get(job["id"], {}).get("cancelRequested")),
                 )
                 ddio_index: dict[str, dict[str, Any]] = {}
+                ddio_ip_fallbacks = 0
+                update_enrichment_job(job["id"], {
+                    "stage": "ddio", "status": "running", "percent": 62,
+                    "rows": int(merged.get("progress", {}).get("rows") or 0),
+                    "totalRows": total_source_rows,
+                })
                 if ddio_file:
                     try:
                         ddio_index = build_ddio_device_index(
                             workspace_row_iterator(ddio_file, WORKSPACE_FILE_CACHE),
                             ddio_file.get("mapping") or {},
                         )
-                        apply_ddio_ip_fallback(merged["devices"], ddio_index)
+                        ddio_ip_fallbacks = apply_ddio_ip_fallback(merged["devices"], ddio_index)
                     except ValueError as error:
+                        update_enrichment_job(job["id"], {
+                            "stage": "ddio", "status": "failed", "percent": 62,
+                            "error": str(error),
+                        }, "failed")
                         self.error_response(str(error))
                         return
                 valid, invalid = [], list(merged["invalid"])
@@ -6513,10 +6589,21 @@ class AppHandler(BaseHTTPRequestHandler):
                         "processedAt": utc_now(),
                     })
                     return
+                update_enrichment_job(job["id"], {
+                    "stage": "previous-final-history", "status": "running", "percent": 70,
+                    "rows": 0, "totalRows": len(merged["devices"]),
+                })
                 context = build_enrichment_context(merged["devices"])
-                for raw in merged["devices"]:
+                for device_index, raw in enumerate(merged["devices"]):
                     item = enrich_device(raw, context)
                     (valid if item["valid"] else invalid).append(item)
+                    if (device_index + 1) % 500 == 0 or device_index + 1 == len(merged["devices"]):
+                        update_enrichment_job(job["id"], {
+                            "stage": "identity-conflicts-finalization", "status": "running",
+                            "percent": 72 + round((device_index + 1) / max(1, len(merged["devices"])) * 14),
+                            "rows": device_index + 1, "totalRows": len(merged["devices"]),
+                            "currentDevice": as_text(item.get("internalDeviceId")),
+                        })
                 switch_ip_changes = merge_switch_ip_changes_with_history(valid, context, merged.get("switchIpChanges") or [])
                 ddio_overlay: dict[str, dict[str, str]] = {}
                 if ddio_file:
@@ -6529,9 +6616,48 @@ class AppHandler(BaseHTTPRequestHandler):
                     if fields.get(field, True) is False:
                         for item in valid:
                             item[field] = "Не определено" if field == "vendor" else ""
+                diagnostics = merged.setdefault("diagnostics", {"strategy": strategy, "counts": {}})
+                diagnostics["strategy"] = strategy
+                diagnostic_counts = diagnostics.setdefault("counts", {})
+                ddio_raw_rows = int(ddio_file.get("rowCount") or 0) if ddio_file else 0
+                if ddio_file and not ddio_raw_rows:
+                    inline_ddio_rows = ddio_file.get("rows") or []
+                    ddio_raw_rows = len(inline_ddio_rows[1:] if inline_ddio_rows and isinstance(inline_ddio_rows[0], list) else inline_ddio_rows)
+                matched_ddio_keys: set[str] = set()
+                for item in valid:
+                    mac = normalize_mac(item.get("mac") or item.get("macFormatted"))
+                    device_id = as_text(item.get("deviceId") or item.get("device_id")).casefold()
+                    if mac and mac in ddio_index:
+                        matched_ddio_keys.add(mac)
+                    if device_id and "device-id:" + device_id in ddio_index:
+                        matched_ddio_keys.add("device-id:" + device_id)
+                diagnostic_counts.update({
+                    "ddioRawRows": ddio_raw_rows,
+                    "ddioMatched": len(matched_ddio_keys),
+                    "ddioUnmatched": max(0, len(ddio_index) - len(matched_ddio_keys)),
+                    "ddioCreated": 0,
+                    "ddioIpFallbacks": ddio_ip_fallbacks,
+                    "previousFinalMatched": sum(1 for item in valid if item.get("previousFinalMatched")),
+                    "finalUniqueDevices": len(valid),
+                })
+                decisions = merged.setdefault("creationDecisions", [])
+                decision_limit = int(diagnostics.get("decisionLimit") or 5000)
+                for key in sorted(set(ddio_index) - matched_ddio_keys):
+                    if len(decisions) >= decision_limit:
+                        diagnostics["decisionsTruncated"] = True
+                        break
+                    decisions.append({
+                        "code": "NOT_CREATED_FROM_DDIO", "source": as_text(ddio_file.get("name") if ddio_file else ""),
+                        "sourceRole": "ddio", "strategy": strategy, "reason": "DDIO is enrichment-only",
+                        "strongIdentifiers": [key], "evidence": [],
+                    })
                 record_history = payload.get("saveHistory", True) is not False
                 compact_result = payload.get("compactResult") is True
                 should_save_snapshot = payload.get("saveSnapshot", True) is not False or compact_result
+                update_enrichment_job(job["id"], {
+                    "stage": "database-save", "status": "running", "percent": 90,
+                    "rows": len(valid), "totalRows": len(valid),
+                })
                 snapshot = save_final_state_atomic(
                     valid,
                     as_text(payload.get("snapshotName")) or f"Анализ: {source}",
@@ -6541,7 +6667,15 @@ class AppHandler(BaseHTTPRequestHandler):
                 ) if should_save_snapshot else None
                 if not should_save_snapshot:
                     save_resolved_inventory(valid, source, source_created_at, record_history=record_history)
+                with db_connection() as inventory_connection:
+                    diagnostic_counts["inventoryTotal"] = int(
+                        inventory_connection.execute("SELECT COUNT(*) FROM resolved_device_inventory").fetchone()[0]
+                    )
                 if record_history:
+                    update_enrichment_job(job["id"], {
+                        "stage": "history-analytics", "status": "running", "percent": 96,
+                        "rows": len(valid), "totalRows": len(valid),
+                    })
                     try:
                         # Compatibility MAC chronology is secondary; the
                         # authoritative final state above is already atomic.
@@ -6553,8 +6687,12 @@ class AppHandler(BaseHTTPRequestHandler):
                         notify_analysis_completed(valid, invalid, source)
                     except Exception as error:  # noqa: BLE001
                         log_action("Analysis notification failed", str(error))
-                update_enrichment_job(job["id"], merged["progress"], "completed")
-                progress_payload = {**merged["progress"], "fields": enrichment_field_summary(fields)}
+                progress_payload = {
+                    **merged["progress"], "fields": enrichment_field_summary(fields),
+                    "status": "completed", "stage": "completed", "percent": 100,
+                    "rows": len(valid), "totalRows": len(valid), "valid": len(valid), "invalid": len(invalid),
+                }
+                update_enrichment_job(job["id"], progress_payload, "completed")
                 duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
                 save_performance_metric("enrichment", duration_ms, f"source={source}, devices={len(valid)}, invalid={len(invalid)}")
                 try:
@@ -6593,6 +6731,8 @@ class AppHandler(BaseHTTPRequestHandler):
                         "switchIpChanges": len(switch_ip_changes),
                         "newIpHints": len(ddio_overlay),
                     },
+                    "diagnostics": diagnostics,
+                    "creationDecisions": decisions,
                     "processedAt": utc_now(),
                 })
             elif parsed.path == "/api/analyze":
@@ -7402,8 +7542,41 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.json_response(notify_analysis_completed(devices, invalid, as_text(payload.get("source"))))
             else:
                 self.error_response("Неизвестный API-метод", HTTPStatus.NOT_FOUND)
-        except (sqlite3.Error, ValueError) as error:
-            self.error_response(str(error), HTTPStatus.INTERNAL_SERVER_ERROR)
+        except Exception as error:  # noqa: BLE001
+            if parsed.path == "/api/enrichment/run":
+                job_id = as_text(payload.get("jobId"))
+                job = ENRICHMENT_JOBS.get(job_id) or start_enrichment_job(
+                    job_id, as_text(payload.get("source")), payload.get("strategy")
+                )
+                progress = dict(job.get("progress") or {})
+                stage = as_text(progress.get("stage")) or "unknown"
+                technical_stack = traceback.format_exc(limit=20)
+                update_enrichment_job(job["id"], {
+                    **progress,
+                    "stage": stage,
+                    "status": "failed",
+                    "error": str(error),
+                    "exception": type(error).__name__,
+                }, "failed")
+                log_action(
+                    "Enrichment failed",
+                    f"run={job['id']}, stage={stage}, exception={type(error).__name__}, message={str(error)[:500]}",
+                )
+                self.json_response({
+                    "error": f"Обогащение остановлено на этапе «{stage}»: {error}",
+                    "code": "ENRICHMENT_FAILED",
+                    "enrichmentRunId": job["id"],
+                    "stage": stage,
+                    "processedRows": int(progress.get("rows") or 0),
+                    "totalRows": int(progress.get("totalRows") or 0),
+                    "currentDevice": as_text(progress.get("currentDevice")),
+                    "source": as_text(job.get("source")),
+                    "exception": type(error).__name__,
+                    "stack": technical_stack[-8000:],
+                }, HTTPStatus.INTERNAL_SERVER_ERROR)
+            else:
+                log_action("API request failed", f"path={parsed.path}, exception={type(error).__name__}, message={str(error)[:500]}")
+                self.error_response(str(error), HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def do_DELETE(self) -> None:
         parsed = urlparse(self.path)

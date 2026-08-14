@@ -963,9 +963,11 @@ def test_browser_mode_enrichment_keeps_basic_workflow_alive():
 
     assert "async function localAnalyzeFiles(fields,strategy,onProgress=()=>{})" in app
     assert "function mergeAnalysisDevice(previous,incoming,{preferExisting=false}={})" in app
-    assert "accumulateResolvedDevice(resolvedDevices,identityIndex,result.device,fileIndex>0)" in app
-    assert "const resolution=DeviceIdentity.resolve(incoming,index)" in app
-    assert "BrowserSnapshots.mergeEnrichmentRows(jobId,devices,{allowNew,preferExisting})" in app
+    assert "resolveOrCreateAnalysisDevice(resolvedDevices,identityIndex,result.device,strategy,strategyDiagnostics)" in app
+    strategy_module = Path("frontend/enrichment-strategy.js").read_text(encoding="utf-8")
+    assert "function resolveOrCreate(options = {})" in strategy_module
+    assert "const resolution = identityApi.resolve(candidate, index);" in strategy_module
+    assert "BrowserSnapshots.mergeEnrichmentRows(jobId,devices,{allowNew,preferExisting,stats})" in app
     assert "async function visitLocalRowsForAnalysis(file,fileIndex,fileCount,onProgress,onRow)" in app
     assert "const sourceFile=await restoreSourceFile(file);" in app
     assert "const data=await clientReadTable(sourceFile,progress,{collectRows:false,onRow});" in app
@@ -1014,7 +1016,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260813.1"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260814.1"></script>' in html
     assert '<script src="frontend/xlsx-exporter.js?v=20260727.5"></script>' in html
     assert '<script src="frontend/full-xlsx-report.js?v=20260729.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
@@ -1052,6 +1054,9 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert 'updatedAt: Date.now()' in snapshot_store
     assert 'await BrowserSnapshots?.pruneEnrichmentRows?.().catch(()=>0);' in app
     assert 'async function saveEnrichmentSnapshot(jobId, snapshot, invalid = [], onProgress = () => {})' in snapshot_store
+    assert 'async function promoteEnrichmentChunk(jobId, snapshotId, chunkIndex)' in snapshot_store
+    assert 'const current = database.transaction([enrichmentRowStore, snapshotChunkStore], "readwrite");' in snapshot_store
+    assert app.index('BrowserSnapshots.saveEnrichmentSnapshot(jobId') < app.index('await BrowserSnapshots.prune(keepIds);')
     assert 'async function aggregate(id, options = {})' in snapshot_store
     assert 'async function aggregateSeries(snapshots, options = {})' in snapshot_store
     assert 'async function compareSnapshots(baselineId, comparisonId, options = {})' in snapshot_store
@@ -2208,7 +2213,7 @@ def test_primary_and_enrichment_files_are_grouped_in_browser_only_html():
         assert marker in app
     assert 'loadFallbackFiles(event.target.files, event.target, "smartroom")' in html
     assert 'function normalizeFallbackFileRoles()' in html
-    assert 'const file=state.files[fileIndex],allowNew=true;' in app
+    assert 'role=EnrichmentStrategy.normalizeRole(file.role||(fileIndex?"smartroom":"primary")),allowNew=EnrichmentStrategy.allowsCreation(role,strategy),fileStats=' in app
     assert 'if(fileIndex&&strategy==="primary")return' not in app
     assert '.file-group-head' in styles
     assert '.backend-reconnect' in styles

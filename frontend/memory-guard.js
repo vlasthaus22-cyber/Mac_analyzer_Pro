@@ -97,11 +97,13 @@
     return size;
   }
 
-  function streamingEnrichmentSize(files, strategy = "primary") {
+  function streamingEnrichmentSize(files, strategy = "NO_EXPANSION") {
     const source = Array.isArray(files) ? files : [];
     const rowCounts = source.map((file) => Math.max(0, Number(file?.rowCount ?? file?.rows?.length ?? 0) || 0));
     const primaryRows = rowCounts[0] || 0;
-    const resultRows = strategy === "primary" ? primaryRows : rowCounts.reduce((total, rows) => total + rows, 0);
+    const normalizedStrategy = String(strategy || "").trim().toUpperCase();
+    const noExpansion = ["", "NO_EXPANSION", "NO-EXPANSION", "MAIN_ONLY"].includes(normalizedStrategy);
+    const resultRows = noExpansion ? primaryRows : rowCounts.reduce((total, rows) => total + rows, 0);
     const resultColumns = 8;
     let textBytes = 0;
     for (const file of source) {
@@ -112,7 +114,7 @@
     return { rows: resultRows, cells: resultRows * resultColumns, textBytes };
   }
 
-  function assertStreamingEnrichmentCapacity(files, strategy = "primary", memoryInfo = globalThis.performance?.memory, navigatorInfo = globalThis.navigator) {
+  function assertStreamingEnrichmentCapacity(files, strategy = "NO_EXPANSION", memoryInfo = globalThis.performance?.memory, navigatorInfo = globalThis.navigator) {
     const size = streamingEnrichmentSize(files, strategy);
     const effective = effectiveEnrichmentLimits(navigatorInfo);
     if (size.rows > effective.rows) throw capacityError("Слишком много результирующих устройств для потокового обогащения", size.rows, effective.rows);
