@@ -34,6 +34,7 @@
   const SmartroomCharts = window.MacAnalyzerSmartroomCharts;
   const SmartroomUI = window.MacAnalyzerSmartroomUI;
   const DeviceIdentity = window.MacAnalyzerDeviceIdentity;
+  const EnrichmentStrategy = window.MacAnalyzerEnrichmentStrategy;
   const UiFeedback = window.MacAnalyzerUiFeedback;
   if(!MemoryGuard)throw new Error("Модуль frontend/memory-guard.js не загружен");
   if(!XlsxExporter)throw new Error("Модуль frontend/xlsx-exporter.js не загружен");
@@ -44,6 +45,7 @@
   if(!WorkspaceFileLifecycle)throw new Error("Модуль frontend/workspace-file-lifecycle.js не загружен");
   if(!DdioOverlay)throw new Error("Модуль frontend/ddio-overlay.js не загружен");
   if(!DeviceIdentity)throw new Error("Модуль frontend/device-identity.js не загружен");
+  if(!EnrichmentStrategy)throw new Error("Модуль frontend/enrichment-strategy.js не загружен");
   if(!IeeeRegistry)throw new Error("Модуль frontend/ieee-vendor-registry.js не загружен");
   if(!DashboardChangeTabs)throw new Error("Модуль frontend/dashboard-change-tabs.js не загружен");
   if(!Guide)throw new Error("Модуль frontend/guide.js не загружен");
@@ -62,7 +64,7 @@
   const engineeringPermissionList=["delete:history","delete:snapshots","delete:mappings","delete:tasks","delete:ip-mappings","delete:api-cache","write:settings","write:migration"];
   const engineeringPermissionLabels={"delete:history":"Удаление истории","delete:snapshots":"Удаление снимков","delete:mappings":"Удаление справочников","delete:tasks":"Управление задачами","delete:ip-mappings":"Удаление IP-маппинга","delete:api-cache":"Очистка API-кэша","write:settings":"Изменение настроек","write:migration":"Миграция Python/SQLite"};
   const engineeringOnlyViews=new Set(["single","compare","data","automation","settings"]);
-  const empty = () => ({files:[],ddioFile:null,ddioOverlay:{},ddioSummary:null,devices:[],invalid:[],snapshots:[],movementHistory:[],importErrors:[],ipMappings:[],smartroomMappings:{},localVendorMappings:{},localModelMappings:{},dashboardFleetCache:null,activeMappingFileId:"",mappingDisplayMode:"name",theme:"light",engineeringMode:false,engineeringToken:"",engineeringExpiresAt:"",engineeringPermissions:[],ouiLength:3,ouiStyle:"plain",vendorDetectorSettings:{enabled:true,useOui3:true,useMac5:true,useText:true,useInference:true,confidenceThreshold:0.6},historyEnrichmentSettings:{enabled:true,priorityHistory:true,useOuiMatch:true,useMac5Match:true},externalApiSettings:{enabled:false,provider:"macvendors",endpoint:"",rateLimit:25,cacheTtlDays:30,onlyUnknown:true},dashboardSettings:{query:"",vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true,changedRooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true},autoRefresh:true,refreshInterval:60,changeMode:"snapshots",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},customColumns:[],customColumnMappings:{},columnWidths:{...defaultColumnWidths},visibleColumns:["macFormatted","oui","vendor","model","ip","address","room","smartroomId","switchIp","switchPort","hostname","serialNumber","deviceId","deviceName","source"],columnOrder:["macFormatted","oui","vendor","model","ip","address","room","smartroomId","switchIp","switchPort","hostname","serialNumber","deviceId","deviceName","source"],resultSnapshotId:"",resultBrowserSnapshotId:"",resultBrowserSnapshotDirty:false,resultDeviceCount:0,resultInvalidCount:0,resultSummary:null,lastAnalysis:null});
+  const empty = () => ({files:[],ddioFile:null,ddioOverlay:{},ddioSummary:null,devices:[],invalid:[],snapshots:[],movementHistory:[],importErrors:[],ipMappings:[],smartroomMappings:{},localVendorMappings:{},localModelMappings:{},dashboardFleetCache:null,activeMappingFileId:"",mappingDisplayMode:"name",enrichmentStrategy:"NO_EXPANSION",theme:"light",engineeringMode:false,engineeringToken:"",engineeringExpiresAt:"",engineeringPermissions:[],ouiLength:3,ouiStyle:"plain",vendorDetectorSettings:{enabled:true,useOui3:true,useMac5:true,useText:true,useInference:true,confidenceThreshold:0.6},historyEnrichmentSettings:{enabled:true,priorityHistory:true,useOuiMatch:true,useMac5Match:true},externalApiSettings:{enabled:false,provider:"macvendors",endpoint:"",rateLimit:25,cacheTtlDays:30,onlyUnknown:true},dashboardSettings:{query:"",vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true,changedRooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true},autoRefresh:true,refreshInterval:60,changeMode:"snapshots",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},customColumns:[],customColumnMappings:{},columnWidths:{...defaultColumnWidths},visibleColumns:["macFormatted","oui","vendor","model","ip","address","room","smartroomId","switchIp","switchPort","hostname","serialNumber","deviceId","deviceName","source"],columnOrder:["macFormatted","oui","vendor","model","ip","address","room","smartroomId","switchIp","switchPort","hostname","serialNumber","deviceId","deviceName","source"],resultSnapshotId:"",resultBrowserSnapshotId:"",resultBrowserSnapshotDirty:false,resultDeviceCount:0,resultInvalidCount:0,resultSummary:null,lastAnalysis:null});
   let state;
   try { const old = JSON.parse(localStorage.getItem(key)); state = {...empty(),...old}; } catch { state = empty(); }
   state.importErrors=[];
@@ -84,6 +86,8 @@
   state.localVendorMappings=state.localVendorMappings&&typeof state.localVendorMappings==="object"?state.localVendorMappings:{};
   state.localModelMappings=state.localModelMappings&&typeof state.localModelMappings==="object"?state.localModelMappings:{};
   state.externalApiSettings=state.externalApiSettings&&typeof state.externalApiSettings==="object"?state.externalApiSettings:empty().externalApiSettings;
+  state.enrichmentStrategy=EnrichmentStrategy.normalize(state.enrichmentStrategy);
+  if($("#strategySelect"))$("#strategySelect").value=state.enrichmentStrategy;
   state.dashboardSettings=normalizeDashboardSettings(state.dashboardSettings);
   state.columnWidths=normalizeColumnWidths(state.columnWidths);
   for(const keyName of ["visibleColumns","columnOrder"]){
@@ -592,6 +596,7 @@
     clearTimeout(processHideTimer);
     const panel=$("#processProgressPanel");
     if(panel){panel.hidden=false;panel.classList.remove("complete","warning","error");}
+    const technical=$("#processProgressTechnical");if(technical){technical.hidden=true;technical.open=false;}if($("#processProgressTechnicalText"))$("#processProgressTechnicalText").textContent="";
     const bar=$("#processProgressBar");if(bar)bar.value=0;
     updateProcess(id,value,detail,title);
     return id;
@@ -612,7 +617,7 @@
     clearTimeout(processHideTimer);
     processHideTimer=setTimeout(()=>{if(activeProcessId===id&&panel){panel.hidden=true;activeProcessId="";}},status==="error"?6000:2600);
   }
-  function failProcess(id,error){const message=error instanceof Error?error.message:String(error||"Неизвестная ошибка");if(updateProcess(id,100,"Ошибка: "+message))$("#processProgressPanel")?.classList.add("error");clearTimeout(processHideTimer);processHideTimer=setTimeout(()=>{const panel=$("#processProgressPanel");if(activeProcessId===id&&panel){panel.hidden=true;activeProcessId="";}},6000);}
+  function failProcess(id,error,context={}){const message=error instanceof Error?error.message:String(error||"Неизвестная ошибка"),stage=String(context.stage||error?.stage||error?.details?.stage||"неизвестный этап"),bar=$("#processProgressBar"),percent=Number(bar?.value||0),technical={enrichmentRunId:context.enrichmentRunId||error?.runId||error?.details?.enrichmentRunId||currentEnrichmentJobId||"",currentStage:stage,processedRows:context.processedRows??error?.details?.processedRows,totalRows:context.totalRows??error?.details?.totalRows,currentDevice:context.currentDevice||error?.details?.currentDevice||"",source:context.source||error?.details?.source||"",exception:error?.details?.exception||error?.name||"Error",message,stack:error?.details?.stack||error?.stack||""};if(updateProcess(id,percent,`Ошибка на этапе «${stage}»: ${message}`,"Обогащение остановлено"))$("#processProgressPanel")?.classList.add("error");const details=$("#processProgressTechnical"),output=$("#processProgressTechnicalText");if(details)details.hidden=false;if(output)output.textContent=JSON.stringify(technical,null,2);clearTimeout(processHideTimer);}
   function cancelProcess(id,detail="Операция отменена"){finishProcess(id,detail,"warning");}
   const api = async (path, options = {}) => {
     if(browserOnlyMode)throw new TypeError("Приложение работает без backend; используется локальная файловая база");
@@ -629,7 +634,7 @@
         const responseText=await response.text();
         let data={};
         try{data=responseText?JSON.parse(responseText):{};}catch{const apiError=new Error("Backend вернул некорректный ответ (HTTP "+response.status+")");apiError.status=response.status;throw apiError;}
-        if (!response.ok){const apiError=new Error(data.error||"Ошибка API");apiError.status=response.status;throw apiError;}
+        if (!response.ok){const apiError=new Error(data.error||"Ошибка API");apiError.status=response.status;apiError.details=data;apiError.stage=data.stage||data.currentStage||"";apiError.runId=data.enrichmentRunId||data.jobId||"";throw apiError;}
         backendBase=base;
         backendAvailable=true;
         return data;
@@ -911,7 +916,9 @@
     merged.fieldSources=fieldSources;merged.sourceFiles=sourceFiles;merged.sourceRoles=sourceRoles;merged.conflicts=conflicts;merged.hasConflict=conflicts.length>0;merged.mac=merged.mac||"";merged.macFormatted=merged.macFormatted||"";merged.oui=merged.oui||"";merged.identityKey=DeviceIdentity.key(merged);merged.internalDeviceId=previous?.internalDeviceId||DeviceIdentity.stableId(merged);merged.source=sourceFiles.length===1?sourceFiles[0]:sourceFiles.join(" + ");
     return merged;
   }
-  function accumulateResolvedDevice(devices,index,incoming,preferExisting=false){const resolution=DeviceIdentity.resolve(incoming,index);if(resolution.status==="conflict"){const conflictDevice=mergeAnalysisDevice(null,incoming);conflictDevice.conflicts=[...(conflictDevice.conflicts||[]),{field:"identity",selected:conflictDevice.internalDeviceId,selectedSource:incoming.source,alternative:"Несколько устройств соответствуют сильным идентификаторам",alternativeSource:"identity-resolver",confidence:"Conflict",evidence:resolution.evidence||[]}];conflictDevice.hasConflict=true;conflictDevice.matchConfidence="Conflict";devices.push(conflictDevice);DeviceIdentity.addToIndex(index,conflictDevice);return conflictDevice;}if(resolution.match){const existing=resolution.match,merged=mergeAnalysisDevice(existing,incoming,{preferExisting:true});merged.internalDeviceId=existing.internalDeviceId||DeviceIdentity.stableId(merged);merged.matchConfidence=resolution.confidence||"High";Object.keys(existing).forEach((key)=>delete existing[key]);Object.assign(existing,merged);DeviceIdentity.addToIndex(index,existing);return existing;}const created=mergeAnalysisDevice(null,incoming);created.internalDeviceId=DeviceIdentity.stableId(created);devices.push(created);DeviceIdentity.addToIndex(index,created);return created;}
+  function resolveOrCreateAnalysisDevice(devices,index,incoming,strategy,diagnostics){
+    return EnrichmentStrategy.resolveOrCreate({candidate:incoming,index,devices,identityApi:DeviceIdentity,merge:mergeAnalysisDevice,strategy,sourceRole:incoming.sourceRole,diagnostics});
+  }
   async function visitLocalRowsForAnalysis(file,fileIndex,fileCount,onProgress,onRow){
     const inlineRows=Array.isArray(file.rows)?file.rows:[];
     const expectedRows=Math.max(0,Number(file.rowCount||0));
@@ -961,8 +968,9 @@
     return changes.size;
   }
   async function localAnalyzeFiles(fields,strategy,onProgress=()=>{}){
+    strategy=EnrichmentStrategy.normalize(strategy);
     MemoryGuard.assertStreamingEnrichmentCapacity(state.files,strategy);
-    const resolvedDevices=[],identityIndex=new Map(),invalid=[],previousContext=activeLocalDetectionContext,switchTracker=DdioOverlay.createSwitchTracker();
+    const resolvedDevices=[],identityIndex=new Map(),invalid=[],previousContext=activeLocalDetectionContext,switchTracker=DdioOverlay.createSwitchTracker(),strategyDiagnostics={strategy:EnrichmentStrategy.normalize(strategy),decisions:[],decisionLimit:5000};
     const totalRows=state.files.reduce((total,file)=>total+Math.max(0,Number(file.rowCount??Math.max(0,(file.rows?.length||1)-1))||0),0);
     let processed=0,invalidCount=0;
     activeLocalDetectionContext=createLocalDetectionContext();
@@ -975,7 +983,7 @@
           if(result.invalid){
             invalidCount++;if(invalid.length<MemoryGuard.limits.invalidRows)invalid.push(result.invalid);
           }else{
-            accumulateResolvedDevice(resolvedDevices,identityIndex,result.device,fileIndex>0);
+            resolveOrCreateAnalysisDevice(resolvedDevices,identityIndex,result.device,strategy,strategyDiagnostics);
             DdioOverlay.observeSwitch(switchTracker,fileIndex,result.device.mac,result.device.switchIp,result.device.deviceId||result.device.device_id);
             DdioOverlay.observeCurrentIp(switchTracker,result.device.mac,result.device.ip);
           }
@@ -996,39 +1004,44 @@
       state.ddioOverlay=ddio.overlay;state.ddioSummary=ddio.summary;
       if(BrowserSnapshots?.mergeDeviceHistoryRows)await BrowserSnapshots.mergeDeviceHistoryRows(devices,"current-file");
       onProgress(100,`Обработано устройств: ${devices.length.toLocaleString("ru-RU")}`);
-      return{devices,invalid,invalidCount};
+      return{devices,invalid,invalidCount,diagnostics:{...strategyDiagnostics,counts:{finalUniqueDevices:devices.length}}};
     }finally{switchTracker.clear();activeLocalDetectionContext=previousContext;}
   }
   async function localAnalyzeFilesToSnapshot(fields,strategy,source,createdAt,onProgress=()=>{}){
     if(!BrowserSnapshots?.mergeEnrichmentRows||!BrowserSnapshots?.saveEnrichmentSnapshot)return null;
+    strategy=EnrichmentStrategy.normalize(strategy);
     MemoryGuard.assertStreamingEnrichmentCapacity(state.files,strategy);
-    const jobId="enrichment-"+(currentEnrichmentJobId||crypto.randomUUID()),batchSize=750,invalid=[],deviceBatch=new Map(),vendorCounts=new Map(),modelCounts=new Map(),switchTracker=DdioOverlay.createSwitchTracker();
+    const jobId="enrichment-"+(currentEnrichmentJobId||crypto.randomUUID()),batchSize=750,invalid=[],deviceBatch=new Map(),vendorCounts=new Map(),modelCounts=new Map(),switchTracker=DdioOverlay.createSwitchTracker(),diagnosticCounts={mainRawRows:0,mainNormalizedRows:0,mainUniqueDevices:0,smartroomRawRows:0,smartroomMatched:0,smartroomUnmatched:0,smartroomCreated:0,smartroomConflicts:0,ddioRawRows:Number(state.ddioFile?.rowCount||0),ddioMatched:0,ddioUnmatched:0,ddioCreated:0,previousFinalMatched:0,finalUniqueDevices:0,inventoryTotal:0};
     const totalRows=state.files.reduce((total,file)=>total+Math.max(0,Number(file.rowCount??Math.max(0,(file.rows?.length||1)-1))||0),0);
     const automaticMappingSources=new Set(["analysis","current-file","inferred","automatic"]),switchAddresses=new Map(localIpMappingRows().filter((item)=>!automaticMappingSources.has(String(item.source||"").toLowerCase())).map((item)=>[normalizeIp(item.switchIp),item.address])),switchAddressCounts=new Map(),smartroomRooms=new Map(Object.entries(state.smartroomMappings||{}));
     let processed=0,invalidCount=0,storedRows=0,previousContext=activeLocalDetectionContext;
     const observe=(map,key,value)=>{if(!key||!value||map.size>=50000&&!map.has(key+"\u0000"+value))return;const item=key+"\u0000"+value;map.set(item,(map.get(item)||0)+1);};
     const observeDevice=(device)=>{const smartroomId=normalizedRoomName(device.smartroomId||device.smartroom_id),mac=normalize(device.mac||device.macFormatted),vendor=String(device.vendor||"").trim(),model=String(device.model||"").trim(),room=normalizedRoomName(device.room);if(mac){for(const length of [6,8,10])if(vendor&&vendor!=="Unknown"&&vendor!=="Не определено")observe(vendorCounts,mac.slice(0,length),vendor);if(model)observe(modelCounts,mac.slice(0,10),model);}if(device.switchIp&&device.address){const ip=normalizeIp(device.switchIp),address=String(device.address).trim();if(ip&&address)observe(switchAddressCounts,ip,address);}if(smartroomId&&room)smartroomRooms.set(smartroomId,room);};
-    const flush=async(allowNew,preferExisting=false)=>{if(!deviceBatch.size)return;const devices=Array.from(deviceBatch.values());deviceBatch.clear();storedRows+=await BrowserSnapshots.mergeEnrichmentRows(jobId,devices,{allowNew,preferExisting});devices.length=0;await MemoryGuard.yieldToMainThread();};
+    const flush=async(allowNew,preferExisting=false,stats=null)=>{if(!deviceBatch.size)return;const devices=Array.from(deviceBatch.values());deviceBatch.clear();await BrowserSnapshots.mergeEnrichmentRows(jobId,devices,{allowNew,preferExisting,stats});devices.length=0;await MemoryGuard.yieldToMainThread();};
     const learn=(target,counts,threshold=2)=>{const best=new Map();counts.forEach((count,key)=>{if(count<threshold)return;const split=key.indexOf("\u0000"),prefix=key.slice(0,split),value=key.slice(split+1);if(!prefix||!value||target[prefix])return;const current=best.get(prefix);if(!current||count>current.count)best.set(prefix,{value,count});});let learned=0;best.forEach((item,prefix)=>{target[prefix]=item.value;learned++;});return learned;};
     await BrowserSnapshots.clearEnrichment(jobId).catch(()=>false);
     activeLocalDetectionContext=createLocalDetectionContext();
     try{
       for(let fileIndex=0;fileIndex<state.files.length;fileIndex++){
-        const file=state.files[fileIndex],allowNew=true;
+        const file=state.files[fileIndex],role=EnrichmentStrategy.normalizeRole(file.role||(fileIndex?"smartroom":"primary")),allowNew=EnrichmentStrategy.allowsCreation(role,strategy),fileStats={created:0,matched:0,skipped:0,conflicts:0,invalidIdentity:0};
         await visitLocalRowsForAnalysis(file,fileIndex,state.files.length,onProgress,async(row,rowIndex)=>{
-          const result=localDeviceFromRow(file,row,rowIndex,fields);processed++;
+          const result=localDeviceFromRow(file,row,rowIndex,fields);processed++;if(role==="primary")diagnosticCounts.mainRawRows++;else diagnosticCounts.smartroomRawRows++;
           if(result.invalid){invalidCount++;if(invalid.length<MemoryGuard.limits.invalidRows)invalid.push(result.invalid);}
           else{
+            if(role==="primary")diagnosticCounts.mainNormalizedRows++;
             const device=result.device,storageIdentity=device.internalDeviceId||DeviceIdentity.stableId(device),previous=deviceBatch.get(storageIdentity),merged=mergeAnalysisDevice(previous,device,{preferExisting:Boolean(previous)||fileIndex>0});
             merged.internalDeviceId=previous?.internalDeviceId||storageIdentity;merged.storageIdentity=merged.internalDeviceId;deviceBatch.set(storageIdentity,merged);observeDevice(merged);
             DdioOverlay.observeSwitch(switchTracker,fileIndex,device.mac,device.switchIp,device.deviceId||device.device_id);
             DdioOverlay.observeCurrentIp(switchTracker,device.mac,device.ip);
-            if(deviceBatch.size>=batchSize)await flush(allowNew,fileIndex>0);
+            if(deviceBatch.size>=batchSize)await flush(allowNew,fileIndex>0,fileStats);
           }
           if(processed%2000===0)onProgress(35+(totalRows?processed/totalRows*45:45),`Потоково обработано строк: ${processed.toLocaleString("ru-RU")} / ${totalRows.toLocaleString("ru-RU")}`);
         });
-        await flush(allowNew,true);
+        await flush(allowNew,true,fileStats);
+        if(role==="primary")diagnosticCounts.mainUniqueDevices+=fileStats.created;
+        else{diagnosticCounts.smartroomMatched+=fileStats.matched;diagnosticCounts.smartroomCreated+=fileStats.created;diagnosticCounts.smartroomConflicts+=fileStats.conflicts;diagnosticCounts.smartroomUnmatched+=fileStats.created+fileStats.skipped;}
       }
+      storedRows=await BrowserSnapshots.countEnrichmentRows(jobId);
       if(state.historyEnrichmentSettings?.enabled!==false&&BrowserSnapshots?.enrichEnrichmentRowsFromHistory)await BrowserSnapshots.enrichEnrichmentRowsFromHistory(jobId);
       if(BrowserSnapshots?.switchChangesFromHistory)await BrowserSnapshots.streamEnrichmentRows(jobId,async(rows)=>{await seedHistorySwitchChanges(switchTracker,rows);});
       const ddio=await buildLocalDdioOverlay(switchTracker,(value,detail)=>onProgress(80+value*0.02,detail));
@@ -1049,17 +1062,26 @@
         return changed;
       });
       state.smartroomMappings=Object.fromEntries(smartroomRooms);
-      if(BrowserSnapshots?.mergeDeviceHistoryRows)await BrowserSnapshots.streamEnrichmentRows(jobId,(rows)=>BrowserSnapshots.mergeDeviceHistoryRows(rows,source||"browser-analysis"));
-      const snapshotId=crypto.randomUUID(),name="Анализ: "+source,savedAt=new Date().toISOString(),rowBudget=MemoryGuard.limits.browserSnapshotRows||1000000,keepIds=[];
-      let remainingRows=Math.max(0,rowBudget-Math.max(0,storedRows));
-      for(const item of state.snapshots.filter((entry)=>entry.browserStored)){const count=Math.max(0,Number(item.deviceCount||0));if(count<=remainingRows){keepIds.push(item.id);remainingRows-=count;}else item.browserStored=false;}
-      await BrowserSnapshots.prune(keepIds);
+      const snapshotId=crypto.randomUUID(),name="Анализ: "+source,savedAt=new Date().toISOString(),rowBudget=MemoryGuard.limits.browserSnapshotRows||1000000;
       const metadata=await BrowserSnapshots.saveEnrichmentSnapshot(jobId,{id:snapshotId,name,source,createdAt,savedAt,kind:"analysis",signature:"stream:"+snapshotId},invalid,(count)=>onProgress(82+Math.min(14,Math.round(count/Math.max(1,storedRows)*14)),`Запись результата в локальную базу: ${count.toLocaleString("ru-RU")}`));
+      let inventorySyncError="";
+      if(BrowserSnapshots?.mergeDeviceHistoryRows){
+        try{await BrowserSnapshots.streamSnapshot(snapshotId,(kind,rows)=>kind==="device"?BrowserSnapshots.mergeDeviceHistoryRows(rows,source||"browser-analysis"):0);}
+        catch(error){inventorySyncError=String(error?.message||error||"Inventory synchronization failed");}
+      }
+      const previousBrowserSnapshots=state.snapshots.filter((entry)=>entry.browserStored),keepIds=[snapshotId];
+      let remainingRows=Math.max(0,rowBudget-Number(metadata.deviceCount||0));
+      for(const [index,item] of previousBrowserSnapshots.entries()){
+        const count=Math.max(0,Number(item.deviceCount||0)),mustKeep=index===0;
+        if(mustKeep||count<=remainingRows){keepIds.push(item.id);remainingRows=Math.max(0,remainingRows-count);}else item.browserStored=false;
+      }
+      await BrowserSnapshots.prune(keepIds);
       const page=await BrowserSnapshots.page(snapshotId,{offset:0,limit:resultPageSize});
       const snapshotMetadata={id:snapshotId,name,source,createdAt,savedAt,deviceCount:Number(metadata.deviceCount||0),invalidCount:Number(metadata.invalidCount||invalidCount),devices:[],signature:metadata.signature,kind:"analysis",browserStored:true,devicesTruncated:true,backendStored:false};
       state.snapshots.unshift(snapshotMetadata);state.snapshots=state.snapshots.slice(0,25);
       state.resultSnapshotId="";state.resultBrowserSnapshotId=snapshotId;state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=snapshotMetadata.deviceCount;state.resultInvalidCount=invalidCount;state.resultSummary=page?.summary||null;
-      return{streamed:true,devices:(page?.items||[]).filter((item)=>item?.valid!==false&&!item?.invalid),invalid:(page?.items||[]).filter((item)=>item?.valid===false||item?.invalid),invalidCount,deviceCount:snapshotMetadata.deviceCount,summary:page?.summary||null};
+      diagnosticCounts.finalUniqueDevices=snapshotMetadata.deviceCount;
+      return{streamed:true,devices:(page?.items||[]).filter((item)=>item?.valid!==false&&!item?.invalid),invalid:(page?.items||[]).filter((item)=>item?.valid===false||item?.invalid),invalidCount,deviceCount:snapshotMetadata.deviceCount,summary:page?.summary||null,diagnostics:{strategy,inventorySyncError,counts:diagnosticCounts}};
     }finally{
       deviceBatch.clear();vendorCounts.clear();modelCounts.clear();switchAddressCounts.clear();switchTracker.clear();activeLocalDetectionContext=previousContext;
       await BrowserSnapshots.clearEnrichment(jobId).catch(()=>false);
@@ -1629,6 +1651,22 @@
   function currentDeviceCount(){return state.resultSnapshotId||state.resultBrowserSnapshotId?Number(state.resultDeviceCount||0):(state.devices||[]).length;}
   function currentDevicePayload(extra={}){return state.resultSnapshotId?{...extra,snapshotId:state.resultSnapshotId,devices:[]}:{...extra,devices:state.devices||[]};}
   function clearResultReference(){state.resultSnapshotId="";state.resultBrowserSnapshotId="";state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=0;state.resultInvalidCount=0;state.resultSummary=null;browserDashboardCache=null;localAnalyticsCache=null;resultResponseCache.clear();deviceDialogCache.clear();}
+  function syncEnrichmentStrategyUi(value=state.enrichmentStrategy){
+    const strategy=EnrichmentStrategy.normalize(value);state.enrichmentStrategy=strategy;
+    if($("#strategySelect"))$("#strategySelect").value=strategy;
+    if($("#strategyHint"))$("#strategyHint").textContent=strategy===EnrichmentStrategy.ALLOW_EXPANSION
+      ?"Режим B: файл №1 остаётся базой; только достоверно новые устройства SmartRoom могут расширить Final. DDIO строки не создаёт."
+      :"Режим A: количество строк Final определяется только уникальными устройствами файла №1. SmartRoom и DDIO только обогащают.";
+    return strategy;
+  }
+  async function pollEnrichmentProgress(jobId,processId,control){
+    const stageLabels={validation:"Проверка входных данных","parsing-normalization":"Разбор и нормализация","main-device-creation":"Формирование основного набора","smartroom-matching":"Сопоставление SmartRoom",ddio:"Обработка DDIO","previous-final-history":"Сопоставление с предыдущим Final","identity-conflicts-finalization":"Идентификация и конфликты","database-save":"Транзакционное сохранение","history-analytics":"История и аналитика",completed:"Завершено"};
+    while(!control.stopped&&currentEnrichmentJobId===jobId){
+      try{const job=await api("/enrichment/jobs/"+encodeURIComponent(jobId));const item=job.progress||{},stage=String(item.stage||""),detail=stageLabels[stage]||stage||"Обогащение";updateProcess(processId,Number(item.percent||0),`${detail}: ${Number(item.rows||0).toLocaleString("ru-RU")} / ${Number(item.totalRows||0).toLocaleString("ru-RU")}`);if(["completed","failed","cancelled"].includes(String(job.status||item.status)))break;}catch(error){if(!networkUnavailable(error))break;}
+      await new Promise((resolve)=>setTimeout(resolve,300));
+    }
+  }
+  syncEnrichmentStrategyUi();
   function applyRefreshedFileTokens(fileTokens=[]){
     (Array.isArray(fileTokens)?fileTokens:[]).forEach((item)=>{const file=analysisFileRecords().find((entry)=>entry.id===item.id);if(file&&item.fileToken)file.fileToken=item.fileToken;});
   }
@@ -1637,7 +1675,8 @@
     if(state.ddioFile){const validation=DdioOverlay.validateMapping(state.ddioFile.mapping||{});if(!validation.valid){toast("DDIO: выберите полную пару MAC + IP для резервации или аренды");renderDdioPanel();return;}}
     await snapshotMutationPromise;
     const enrich=Object.fromEntries($$("[data-field]").map((input)=>[input.dataset.field,input.checked]));
-    const strategy=$("#strategySelect").value,progress=$("#enrichmentProgress"),cancelButton=$("#cancelAnalyzeButton");
+    const strategy=syncEnrichmentStrategyUi($("#strategySelect").value),progress=$("#enrichmentProgress"),cancelButton=$("#cancelAnalyzeButton");
+    save({immediate:true});
     let previousDevices=state.devices||[];
     const processId=beginProcess("Обогащение MAC-адресов","Подготовка основного файла и файлов обогащения",5);
     try{
@@ -1650,6 +1689,8 @@
     cancelButton.disabled=false;
     enrichmentController=new AbortController();
     currentEnrichmentJobId=crypto.randomUUID();
+    const enrichmentProgressControl={stopped:false};
+    const enrichmentProgressPromise=pollEnrichmentProgress(currentEnrichmentJobId,processId,enrichmentProgressControl);
     const source = state.files[0].name;
     const sourceCreatedAt = primaryFileCreatedAt();
     state.ddioOverlay={};state.ddioSummary=null;
@@ -1748,6 +1789,8 @@
     } finally {
       cancelButton.disabled=true;
       enrichmentController=null;
+      enrichmentProgressControl.stopped=true;
+      await enrichmentProgressPromise.catch(()=>{});
       currentEnrichmentJobId=null;
     }
     markEnrichmentFilesConsumed();
@@ -3556,6 +3599,7 @@
   $("#cancelConflictColumnsButton").addEventListener("click",()=>resolveColumnConflict(null));
   $("#closeColumnConflictDialog").addEventListener("click",()=>resolveColumnConflict(null));
   $("#columnConflictDialog").addEventListener("cancel",(event)=>{event.preventDefault();resolveColumnConflict(null);});
+  $("#strategySelect").addEventListener("change",(event)=>{syncEnrichmentStrategyUi(event.target.value);save({immediate:true});});
   $("#analyzeButton").addEventListener("click",analyze);const renderSearchResults=debounce(()=>{resultPage=1;renderResults();},180);$("#searchInput").addEventListener("input",renderSearchResults);["#vendorFilter","#validityFilter"].forEach((s)=>$(s).addEventListener("change",()=>{resultPage=1;renderResults();}));$("#resultsTable").addEventListener("table-sort-change",(event)=>{const field=String(event.detail?.field||"");if(!field)return;resultSortField=field;resultSortDirection=event.detail?.direction==="desc"?"desc":"asc";resultPage=1;renderResults();});$("#exportExcelButton").addEventListener("click",()=>exportData("spreadsheetml"));$("#exportCsvButton").addEventListener("click",()=>exportData("csv"));$("#exportTxtButton").addEventListener("click",()=>exportData("txt"));$("#exportYamlButton").addEventListener("click",()=>exportData("yaml"));$("#exportJsonButton").addEventListener("click",()=>exportData("json"));$("#exportHtmlButton").addEventListener("click",()=>exportData("html"));$("#compareButton").addEventListener("click",compare);
   $("#resultPreviousPageButton").addEventListener("click",()=>{if(resultPage>1){resultPage--;renderResults();}});
   $("#resultNextPageButton").addEventListener("click",()=>{resultPage++;renderResults();});

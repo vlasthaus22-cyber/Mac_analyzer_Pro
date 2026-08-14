@@ -193,7 +193,15 @@
       return metadata;
     } catch (error) {
       await removeSnapshot(snapshotId).catch(() => false);
-      throw error;
+      const quotaExceeded = error?.name === "QuotaExceededError";
+      const failure = new Error(quotaExceeded
+        ? "Недостаточно места в хранилище браузера для нового Final. Последний успешный Final сохранён без изменений. Освободите место или выгрузите базу и повторите обогащение."
+        : `Не удалось атомарно сохранить новый Final: ${error?.message || error || "неизвестная ошибка"}`);
+      failure.name = quotaExceeded ? "QuotaExceededError" : "EnrichmentSnapshotSaveError";
+      failure.code = quotaExceeded ? "INDEXEDDB_QUOTA_EXCEEDED" : "FINAL_SNAPSHOT_SAVE_FAILED";
+      failure.stage = "database-save";
+      failure.cause = error;
+      throw failure;
     }
   }
 
@@ -538,6 +546,7 @@
     const rows = Array.isArray(devices) ? devices : [];
     const allowNew = options.allowNew !== false;
     const preferExisting = options.preferExisting === true;
+    const stats = options.stats && typeof options.stats === "object" ? options.stats : null;
     if (!id || !rows.length) return 0;
     const database = await openDatabase();
     return new Promise((resolve, reject) => {
@@ -550,7 +559,7 @@
         if (position >= rows.length) return;
         const device = rows[position++], mac = String(device?.mac || ""), aliases = aliasesFor(device);
         const fallbackIdentity = String(device?.storageIdentity || device?.internalDeviceId || device?.identityKey || mac);
-        if (!aliases.length && !fallbackIdentity) { processNext(); return; }
+        if (!aliases.length && !fallbackIdentity) { if (stats) stats.invalidIdentity = (stats.invalidIdentity || 0) + 1; processNext(); return; }
         const matches = new Map(), aliasIndex = store.index("aliases");
         let pending = aliases.length;
         const finishLookup = () => {
@@ -559,9 +568,9 @@
           const resolutionIndex = identityApi?.buildIndex?.(records.map((record) => record.device));
           const resolution = resolutionIndex ? identityApi.resolve(device, resolutionIndex) : { status: records.length > 1 ? "conflict" : records.length ? "matched" : "unmatched", match: records[0]?.device };
           let record = records.find((item) => item.device === resolution.match);
-          if (resolution.status === "conflict") record = null;
+          if (resolution.status === "conflict") { record = null; if (stats) stats.conflicts = (stats.conflicts || 0) + 1; }
           const previous = record?.device;
-          if (!previous && !allowNew) { processNext(); return; }
+          if (!previous && !allowNew) { if (stats) stats.skipped = (stats.skipped || 0) + 1; processNext(); return; }
           const merged = previous ? { ...previous } : {};
           const fieldSources = { ...(merged.fieldSources || {}) };
           const sourceFiles = Array.from(new Set([...(merged.sourceFiles || []), merged.source, device.source].filter(Boolean)));
@@ -590,8 +599,20 @@
             merged.matchConfidence = "Conflict";
           }
           merged.source = sourceFiles.length === 1 ? sourceFiles[0] : sourceFiles.join(" + ");
-          const storageIdentity = String(record?.key || `${id}:${device.internalDeviceId || fallbackIdentity}`);
+          let finalIdentity = String(device.internalDeviceId || fallbackIdentity);
+          if (resolution.status === "conflict") {
+            const conflictCandidate = { ...device };
+            delete conflictCandidate.internalDeviceId;
+            delete conflictCandidate.internal_device_id;
+            finalIdentity = identityApi?.stableId?.(
+              conflictCandidate,
+              `primary-conflict:${device.source || ""}:${device.row || ""}`,
+            ) || `${fallbackIdentity}:row:${device.row || position}`;
+            merged.internalDeviceId = finalIdentity;
+          }
+          const storageIdentity = String(record?.key || `${id}:${finalIdentity}`);
           store.put({ key: storageIdentity, jobId: id, mac: String(merged.mac || mac), aliases: aliasesFor(merged), device: merged, updatedAt: Date.now() });
+          if (stats) stats[previous ? "matched" : "created"] = (stats[previous ? "matched" : "created"] || 0) + 1;
           written += 1;
           processNext();
         };
@@ -931,6 +952,49 @@
     return merged;
   }
 
+  async function promoteEnrichmentChunk(jobId, snapshotId, chunkIndex) {
+    const id = String(jobId || ""), targetId = String(snapshotId || "");
+    if (!id || !targetId) return 0;
+    const database = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const current = database.transaction([enrichmentRowStore, snapshotChunkStore], "readwrite");
+      const source = current.objectStore(enrichmentRowStore);
+      const target = current.objectStore(snapshotChunkStore);
+      const request = source.index("jobId").openCursor(IDBKeyRange.only(id));
+      const rows = [];
+      let finalized = false;
+      const finalize = () => {
+        if (finalized) return;
+        finalized = true;
+        if (!rows.length) return;
+        const write = target.put({
+          key: `${targetId}:device:${String(chunkIndex).padStart(8, "0")}`,
+          snapshotId: targetId,
+          kind: "device",
+          index: chunkIndex,
+          rows,
+        });
+        write.onerror = () => current.abort();
+      };
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor || rows.length >= snapshotChunkRows) { finalize(); return; }
+        rows.push(cursor.value?.device || {});
+        cursor.delete();
+        if (rows.length >= snapshotChunkRows) finalize();
+        else cursor.continue();
+      };
+      request.onerror = () => current.abort();
+      current.oncomplete = () => { const count = rows.length; database.close(); resolve(count); };
+      current.onerror = () => {
+        const error = current.error;
+        database.close();
+        reject(error || new Error("Failed to promote enrichment rows to the final snapshot"));
+      };
+      current.onabort = current.onerror;
+    });
+  }
+
   async function saveEnrichmentSnapshot(jobId, snapshot, invalid = [], onProgress = () => {}) {
     if (!snapshot?.id) throw new Error("Snapshot id is required");
     const snapshotId = String(snapshot.id);
@@ -951,18 +1015,14 @@
     await transaction(snapshotStore, "readwrite", (store) => store.put(metadata));
     try {
       let chunkIndex = 0;
-      await streamEnrichmentRows(jobId, async (rows, completedRows) => {
-        await transaction(snapshotChunkStore, "readwrite", (store) => store.put({
-          key: `${snapshotId}:device:${String(chunkIndex).padStart(8, "0")}`,
-          snapshotId,
-          kind: "device",
-          index: chunkIndex,
-          rows,
-        }));
+      while (true) {
+        const promoted = await promoteEnrichmentChunk(jobId, snapshotId, chunkIndex);
+        if (!promoted) break;
         chunkIndex += 1;
-        metadata.deviceCount = completedRows + rows.length;
+        metadata.deviceCount += promoted;
         onProgress(metadata.deviceCount);
-      });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
       metadata.deviceChunks = chunkIndex;
       for (const chunk of chunkRows(invalid)) {
         await transaction(snapshotChunkStore, "readwrite", (store) => store.put({
@@ -978,7 +1038,15 @@
       return metadata;
     } catch (error) {
       await removeSnapshot(snapshotId).catch(() => false);
-      throw error;
+      const quotaExceeded = error?.name === "QuotaExceededError";
+      const failure = new Error(quotaExceeded
+        ? "Недостаточно места в хранилище браузера для нового Final. Последний успешный Final сохранён без изменений. Освободите место или выгрузите базу и повторите обогащение."
+        : `Не удалось атомарно сохранить новый Final: ${error?.message || error || "неизвестная ошибка"}`);
+      failure.name = quotaExceeded ? "QuotaExceededError" : "EnrichmentSnapshotSaveError";
+      failure.code = quotaExceeded ? "INDEXEDDB_QUOTA_EXCEEDED" : "FINAL_SNAPSHOT_SAVE_FAILED";
+      failure.stage = "database-save";
+      failure.cause = error;
+      throw failure;
     }
   }
 
@@ -1544,6 +1612,7 @@
     clearEnrichment,
     pruneEnrichmentRows,
     mergeEnrichmentRows,
+    countEnrichmentRows,
     streamEnrichmentRows,
     transformEnrichmentRows,
     enrichEnrichmentRowsFromHistory,

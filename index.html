@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
   <meta name="application-build" content="2026.08.12.2">
-  <meta name="application-version" content="1.0.49">
+  <meta name="application-version" content="1.0.50">
   <link rel="stylesheet" href="styles.css?v=20260812.1">
 </head>
 <body>
@@ -96,6 +96,7 @@
         <div class="process-progress-head"><strong id="processProgressTitle">Подготовка</strong><span id="processProgressPercent">0%</span></div>
         <progress id="processProgressBar" max="100" value="0">0%</progress>
         <div class="process-progress-detail" id="processProgressDetail">Ожидание операции...</div>
+        <details id="processProgressTechnical" hidden><summary>Технические подробности</summary><pre id="processProgressTechnicalText"></pre></details>
       </section>
       <section class="mode-context user-mode" id="modeContext" aria-live="polite"><strong id="modeContextTitle">Пользовательский режим</strong><span id="modeContextText">Доступны универсальный поиск, история и аналитика. Для загрузки файлов и настроек войдите в инженерный режим.</span><button class="button secondary" id="modeContextAction" type="button">Войти</button></section>
 
@@ -137,10 +138,12 @@
             <div class="form-row">
               <label>Стратегия
                 <select id="strategySelect">
-                  <option value="primary">Файл №1 + устройства и дополнения SmartRoom</option>
+                  <option value="NO_EXPANSION">Режим A — не увеличивать количество устройств</option>
+                  <option value="ALLOW_EXPANSION">Режим B — добавлять отсутствующие устройства SmartRoom</option>
                 </select>
               </label>
             </div>
+            <p class="muted" id="strategyHint">Режим A: количество строк Final определяется только уникальными устройствами файла №1. SmartRoom и DDIO только обогащают.</p>
             <button class="button primary full" id="analyzeButton">Запустить обогащение</button>
             <button class="button secondary full" id="cancelAnalyzeButton" disabled>Отменить обогащение</button>
             <div class="bar-list" id="enrichmentProgress"><p class="muted">Обогащение ещё не запускалось.</p></div>
@@ -854,7 +857,8 @@
   <script src="frontend/file-readers.js?v=20260722.8"></script>
   <script src="frontend/state-persistence.js?v=20260722.7"></script>
   <script src="frontend/device-identity.js?v=1048"></script>
-  <script src="frontend/browser-snapshot-store.js?v=20260813.1"></script>
+  <script src="frontend/enrichment-strategy.js?v=1050"></script>
+  <script src="frontend/browser-snapshot-store.js?v=20260814.1"></script>
   <script src="frontend/time-utils.js?v=1047"></script>
   <script src="frontend/mac-chronology.js?v=20260729.1"></script>
   <script src="frontend/local-analytics.js?v=20260729.3"></script>
@@ -876,7 +880,7 @@
   <script src="frontend/room-timeline.js?v=1047"></script>
   <script src="frontend/smartroom-ui.js?v=1048"></script>
   <script src="frontend/table-sorter.js?v=20260812.1"></script>
-  <script src="app.js?v=20260813.1"></script>
+  <script src="app.js?v=20260814.1"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;
@@ -2286,7 +2290,7 @@
           fallbackState.devices = [];
           await new Promise((resolve) => requestAnimationFrame(resolve));
         }
-        const strategy = $("#strategySelect")?.value || "primary";
+        const strategy = window.MacAnalyzerEnrichmentStrategy?.normalize($("#strategySelect")?.value) || "NO_EXPANSION";
         const byMac = new Map();
         fallbackState.invalid = [];
         for (const [fileIndex, file] of fallbackState.files.entries()) {
@@ -2312,6 +2316,8 @@
               source: file.filename
             };
             const existing = byMac.get(mac);
+            const role = file.role || (fileIndex ? "smartroom" : "primary");
+            if (!existing && !(window.MacAnalyzerEnrichmentStrategy?.allowsCreation(role, strategy) ?? (fileIndex === 0))) continue;
             const merged = { ...(existing || {}) };
             for (const [field, value] of Object.entries(device)) {
               if (value === "" || value === undefined) continue;

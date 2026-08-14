@@ -11,7 +11,7 @@ from backend.services.workspace.ddio_overlay_service import (
     build_ddio_device_index,
     build_ddio_overlay_from_index,
 )
-from backend.services.workspace.enrichment_service import enrich_files
+from backend.services.workspace.enrichment_service import ALLOW_EXPANSION, enrich_files
 
 
 @contextmanager
@@ -51,7 +51,7 @@ def source_files():
 
 
 def test_primary_smartroom_union_and_ddio_overlay_have_correct_boundaries():
-    result = enrich_files(source_files())
+    result = enrich_files(source_files(), ALLOW_EXPANSION)
     assert len(result["devices"]) == 2
     primary = next(item for item in result["devices"] if item.get("mac") == "001122334455")
     smartroom_only = next(item for item in result["devices"] if item.get("deviceId") == "DEV-B")
@@ -147,6 +147,23 @@ def test_final_state_transaction_rolls_back_inventory_when_snapshot_fails():
             assert connection.execute("SELECT COUNT(*) FROM snapshots").fetchone()[0] == 0
 
 
+def test_previous_final_stays_in_inventory_but_does_not_repopulate_current_final():
+    with isolated_server_database():
+        server.save_final_state_atomic(
+            [{"deviceId": "DEV-A"}, {"deviceId": "DEV-B"}],
+            "Analysis: initial", "initial.csv", "2026-08-01T10:00:00Z",
+        )
+        current = {"deviceId": "DEV-A"}
+        context = server.build_enrichment_context([current])
+        enriched = server.enrich_device(current, context)
+        server.save_final_state_atomic(
+            [enriched], "Analysis: current", "current.csv", "2026-08-02T10:00:00Z",
+        )
+        with server.db_connection() as connection:
+            assert connection.execute("SELECT device_count FROM snapshots ORDER BY rowid DESC LIMIT 1").fetchone()[0] == 1
+            assert connection.execute("SELECT COUNT(*) FROM resolved_device_inventory").fetchone()[0] == 2
+
+
 def test_critical_analytics_includes_switch_change_for_device_without_mac():
     before = {"internalDeviceId": "dev-room-b", "deviceId": "DEV-B", "model": "Codec", "switchIp": "10.0.0.1", "ip": "192.0.2.20"}
     after = {**before, "switchIp": "10.0.0.2", "possibleIps": ["192.0.2.20", "192.0.2.21"], "ipSource": "DDIO"}
@@ -184,6 +201,7 @@ if __name__ == "__main__":
     test_possible_ddio_ips_are_diagnostic_and_device_id_overlay_is_supported()
     test_previous_final_state_is_persistent_idempotent_and_does_not_lose_values()
     test_final_state_transaction_rolls_back_inventory_when_snapshot_fails()
+    test_previous_final_stays_in_inventory_but_does_not_repopulate_current_final()
     test_critical_analytics_includes_switch_change_for_device_without_mac()
     test_user_search_covers_non_mac_identifiers_and_ip_page_is_absent()
     print("three-source final pipeline tests passed")

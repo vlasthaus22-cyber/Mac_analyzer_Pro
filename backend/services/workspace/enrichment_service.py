@@ -17,6 +17,25 @@ ENRICH_FIELDS = [
     "switchPort", "hostname", "serialNumber", "deviceId", "deviceName",
 ]
 
+NO_EXPANSION = "NO_EXPANSION"
+ALLOW_EXPANSION = "ALLOW_EXPANSION"
+_ALLOW_EXPANSION_ALIASES = {
+    "allow_expansion", "allow-expansion", "expand", "union", "merge", "primary",
+}
+
+
+def normalize_enrichment_strategy(value: Any) -> str:
+    """Normalize the only two supported Final row-count strategies."""
+    normalized = str(value or "").strip().casefold()
+    return ALLOW_EXPANSION if normalized in _ALLOW_EXPANSION_ALIASES else NO_EXPANSION
+
+
+def strategy_allows_creation(source_role: Any, strategy: Any) -> bool:
+    role = normalize_source_role(source_role)
+    if role == "primary":
+        return True
+    return role == "smartroom" and normalize_enrichment_strategy(strategy) == ALLOW_EXPANSION
+
 
 def normalize_source_role(value: Any, fallback: str = "primary") -> str:
     """Use the product's three unambiguous source roles.
@@ -137,21 +156,72 @@ def _enrich_row_streams(
     progress_callback=None,
     is_cancelled=None,
 ) -> dict[str, Any]:
+    strategy = normalize_enrichment_strategy(strategy)
     if not files:
-        return {"devices": [], "invalid": [], "progress": {"files": 0, "rows": 0, "valid": 0, "invalid": 0, "status": "completed", "percent": 100}}
+        return {
+            "devices": [], "invalid": [], "creationDecisions": [],
+            "diagnostics": {"strategy": strategy, "counts": {"finalUniqueDevices": 0}},
+            "progress": {"files": 0, "rows": 0, "valid": 0, "invalid": 0, "status": "completed", "percent": 100, "stage": "completed"},
+        }
+    prepared_files = [dict(item) for item in files if isinstance(item, dict)]
+    primary_index = next(
+        (index for index, item in enumerate(prepared_files) if str(item.get("role") or "").strip().casefold() == "primary"),
+        0,
+    )
+    for index, item in enumerate(prepared_files):
+        item["role"] = "primary" if index == primary_index else normalize_source_role(item.get("role"), "smartroom")
+    files = [prepared_files[primary_index], *[item for index, item in enumerate(prepared_files) if index != primary_index]]
     # File 1 is primary. File 2 is SmartRoom: it enriches matching devices and
     # contributes its own identifiable devices. DDIO is processed separately
     # and therefore can never create an independent final device here.
     resolved_devices: list[dict[str, Any]] = []
     identity_index: dict[str, dict[str, Any]] = {}
     invalid: list[dict[str, Any]] = []
+    creation_decisions: list[dict[str, Any]] = []
+    decision_limit = 5000
+    counts = {
+        "mainRawRows": 0, "mainNormalizedRows": 0, "mainUniqueDevices": 0,
+        "smartroomRawRows": 0, "smartroomMatched": 0, "smartroomUnmatched": 0,
+        "smartroomCreated": 0, "smartroomConflicts": 0,
+        "ddioRawRows": 0, "ddioMatched": 0, "ddioUnmatched": 0, "ddioCreated": 0,
+        "previousFinalMatched": 0, "finalUniqueDevices": 0, "inventoryTotal": 0,
+    }
+
+    def record_decision(code: str, current: dict[str, Any], resolution: dict[str, Any], reason: str) -> None:
+        if len(creation_decisions) >= decision_limit:
+            return
+        creation_decisions.append({
+            "code": code, "source": str(current.get("source") or ""),
+            "sourceRole": str(current.get("sourceRole") or ""), "row": current.get("row"),
+            "internalDeviceId": str(current.get("internalDeviceId") or ""), "strategy": strategy,
+            "reason": reason, "strongIdentifiers": identity_candidates(current),
+            "evidence": list(resolution.get("evidence") or []),
+        })
+
+    def create_device(current: dict[str, Any], *, conflict: bool = False) -> dict[str, Any]:
+        created = merge_device({}, current, prefer_existing=False)
+        if current.get("conflicts"):
+            created["conflicts"] = list(current.get("conflicts") or [])
+            created["hasConflict"] = True
+        if conflict:
+            created.pop("internalDeviceId", None)
+            created["internalDeviceId"] = stable_device_id(
+                created, namespace=f"primary-conflict:{created.get('source')}:{created.get('row')}"
+            )
+        else:
+            created["internalDeviceId"] = stable_device_id(created)
+        resolved_devices.append(created)
+        add_identity_to_index(identity_index, created)
+        return created
     rows_processed = 0
     total_rows = 0
     for file_info in files:
         total_rows += _row_count(file_info)
     if progress_callback:
-        progress_callback({"status": "running", "files": len(files), "rows": 0, "totalRows": total_rows, "valid": 0, "invalid": 0, "percent": 0, "strategy": strategy})
+        progress_callback({"status": "running", "stage": "validation", "files": len(files), "rows": 0, "totalRows": total_rows, "valid": 0, "invalid": 0, "percent": 0, "strategy": strategy})
     for file_index, file_info in enumerate(files):
+        role = normalize_source_role(file_info.get("role"), "primary" if file_index == 0 else "smartroom")
+        file_info["role"] = role
         compiled_mapping = compile_mapping(file_info.get("mapping") or {})
         progress_interval = max(1, min(250, total_rows // 100 or 1))
         for row_index, row in enumerate(row_provider(file_info)):
@@ -172,6 +242,10 @@ def _enrich_row_streams(
             if not isinstance(row, list):
                 continue
             rows_processed += 1
+            if role == "primary":
+                counts["mainRawRows"] += 1
+            elif role == "smartroom":
+                counts["smartroomRawRows"] += 1
             current = row_to_device(row, file_info, row_index, compiled_mapping)
             if current.get("invalid"):
                 # Data-quality accounting covers both authoritative inputs.
@@ -179,9 +253,19 @@ def _enrich_row_streams(
                 # from File 1 or SmartRoom.
                 invalid.append(current)
                 continue
+            if role == "primary":
+                counts["mainNormalizedRows"] += 1
             resolution = resolve_identity(current, identity_index)
             existing = resolution.get("match")
             if resolution.get("status") == "conflict":
+                if role != "primary":
+                    counts["smartroomConflicts"] += 1
+                    counts["smartroomUnmatched"] += 1
+                    record_decision(
+                        "NOT_CREATED_FROM_SMARTROOM_CONFLICT", current, resolution,
+                        "ambiguous strong identifiers",
+                    )
+                    continue
                 current = merge_device_records({}, current, source=str(current.get("source") or ""), role=str(current.get("sourceRole") or ""))
                 current.setdefault("conflicts", []).append({
                     "field": "identity",
@@ -194,8 +278,11 @@ def _enrich_row_streams(
                 })
                 current["hasConflict"] = True
                 current["matchConfidence"] = "Conflict"
-                resolved_devices.append(current)
-                add_identity_to_index(identity_index, current)
+                create_device(current, conflict=True)
+                record_decision(
+                    "CREATED_FROM_MAIN_CONFLICT", current, resolution,
+                    "main rows cannot be dropped on ambiguous identity",
+                )
             elif existing:
                 existing_internal_id = existing.get("internalDeviceId")
                 merged_device = merge_device(existing, current, prefer_existing=True)
@@ -204,12 +291,26 @@ def _enrich_row_streams(
                 existing.clear()
                 existing.update(merged_device)
                 add_identity_to_index(identity_index, existing)
+                if role == "smartroom":
+                    counts["smartroomMatched"] += 1
             else:
-                current = merge_device({}, current, prefer_existing=False)
-                current["internalDeviceId"] = stable_device_id(current)
+                if not strategy_allows_creation(role, strategy):
+                    if role == "smartroom":
+                        counts["smartroomUnmatched"] += 1
+                        record_decision(
+                            "NOT_CREATED_FROM_SMARTROOM", current, resolution,
+                            "strategy=NO_EXPANSION",
+                        )
+                    continue
                 current["matchConfidence"] = "Exact" if current.get("mac") else "High"
-                resolved_devices.append(current)
-                add_identity_to_index(identity_index, current)
+                create_device(current)
+                if role == "smartroom":
+                    counts["smartroomUnmatched"] += 1
+                    counts["smartroomCreated"] += 1
+                    record_decision(
+                        "CREATED_FROM_SMARTROOM", current, resolution,
+                        "unmatched strong identity and strategy=ALLOW_EXPANSION",
+                    )
             if progress_callback and (rows_processed % progress_interval == 0 or rows_processed == total_rows):
                 progress_callback({
                     "files": len(files),
@@ -220,13 +321,23 @@ def _enrich_row_streams(
                     "invalid": len(invalid),
                     "strategy": strategy,
                     "status": "running",
+                    "stage": "main-device-creation" if role == "primary" else "smartroom-matching",
                     "percent": round(rows_processed / total_rows * 100) if total_rows else 100,
                 })
     devices = sorted(resolved_devices, key=lambda item: (item.get("mac") or "", item.get("internalDeviceId") or ""))
+    counts["mainUniqueDevices"] = sum(1 for item in devices if "primary" in (item.get("sourceRoles") or []))
+    counts["finalUniqueDevices"] = len(devices)
     switch_ip_changes: list[dict[str, str]] = []
     return {
         "devices": devices,
         "invalid": invalid,
+        "creationDecisions": creation_decisions,
+        "diagnostics": {
+            "strategy": strategy,
+            "counts": counts,
+            "decisionLimit": decision_limit,
+            "decisionsTruncated": len(creation_decisions) >= decision_limit,
+        },
         "switchIpChanges": switch_ip_changes,
         "progress": {
             "files": len(files),
@@ -236,19 +347,20 @@ def _enrich_row_streams(
             "invalid": len(invalid),
             "strategy": strategy,
             "status": "completed",
+            "stage": "source-merge-completed",
             "percent": 100,
         },
     }
 
 
-def enrich_files(files: list[dict[str, Any]], strategy: str = "primary", progress_callback=None, is_cancelled=None) -> dict[str, Any]:
+def enrich_files(files: list[dict[str, Any]], strategy: str = NO_EXPANSION, progress_callback=None, is_cancelled=None) -> dict[str, Any]:
     return _enrich_row_streams(files, strategy, _inline_rows, progress_callback, is_cancelled)
 
 
 def enrich_workspace_files(
     files: list[dict[str, Any]],
     cache: WorkspaceFileCache,
-    strategy: str = "primary",
+    strategy: str = NO_EXPANSION,
     progress_callback=None,
     is_cancelled=None,
 ) -> dict[str, Any]:
