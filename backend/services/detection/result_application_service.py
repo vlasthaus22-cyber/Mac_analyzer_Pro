@@ -36,7 +36,15 @@ def apply_missing_detection_fields(
             changed = True
         if not _text(current.get("address")) and _text(detected.get("address")):
             current["address"] = detected.get("address")
-            current["addressSource"] = "ip_mapping" if _text(current.get("switchIp") or current.get("switch_ip")) else "history"
+            current["addressSource"] = _text(detected.get("addressSource")) or (
+                "ip_mapping" if _text(current.get("switchIp") or current.get("switch_ip")) else "history"
+            )
+            if detected.get("addressConfidence") is not None:
+                current["addressConfidence"] = detected.get("addressConfidence")
+            current["fieldSources"] = {
+                **(current.get("fieldSources") or {}),
+                "address": current["addressSource"],
+            }
             filled["address"] += 1
             changed = True
         if changed:

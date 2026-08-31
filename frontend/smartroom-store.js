@@ -5,7 +5,7 @@
   // Keep every module that opens mac-analyzer-browser-storage-v1 on the same
   // schema version. Opening an older version after BrowserSnapshots upgraded
   // the database raises VersionError and breaks Analytics/Smartroom tabs.
-  const databaseVersion = 10;
+  const databaseVersion = 11;
   const equipmentStore = "Equipment";
   const historyStore = "History";
   const ddioStore = "DDIO_Snapshot";

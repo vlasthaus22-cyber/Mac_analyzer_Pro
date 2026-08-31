@@ -161,6 +161,8 @@ def test_large_second_xlsx_uses_indexeddb_without_blocking_render():
     assert immediate_render < persistent_save
 
     assert 'const fallbackBrowserDbName = "mac-analyzer-browser-storage-v1";' in html
+    assert 'indexedDB.open(fallbackBrowserDbName);' in html
+    assert 'indexedDB.open(fallbackBrowserDbName, 4)' not in html
     assert 'function fallbackScheduleBrowserSave(payload)' in html
     assert 'function fallbackCompactState()' in html
     assert 'async function fallbackLoadIndexedState()' in html
@@ -180,6 +182,10 @@ def test_cross_browser_restore_prefers_compact_sqlite_workspace():
     assert 'async function restoreInitialState()' in app
     assert 'const backendSynced=browserOnlyMode?false:await syncFromBackend();' in app
     assert 'const restored=await restoreBrowserStateFromIndexedDb();' in app
+    restore_block = app.split('async function restoreInitialState(){', 1)[1].split('SmartroomUI?.initialize', 1)[0]
+    assert restore_block.index('const restored=await restoreBrowserStateFromIndexedDb();') < restore_block.index('await syncFromBackend()')
+    assert 'if(state.resultBrowserSnapshotId&&Number(state.resultDeviceCount||0)>0)return false;' in app
+    assert 'const backendFinals=finalSnapshotsByRecency((state.snapshots||[]).filter((item)=>item.backendStored));' in app
     assert 'const folderRestored=await restoreLocalFolderHandle({preferBrowserState:restored});' in app
     assert 'if(!backendSynced){' in app
     assert 'if(!folderRestored&&!restored)await restorePortableDatabaseHandle();' in app
@@ -1028,10 +1034,10 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert app.index('await BrowserSnapshots.prune(keepIds);') < app.index('await BrowserSnapshots.save(record,(percent)=>')
     assert 'browserSnapshotRows: 1_000_000' in memory_guard
     assert 'const snapshotStore = "snapshots";' in snapshot_store
-    assert 'const databaseVersion = 10;' in snapshot_store
+    assert 'const databaseVersion = 11;' in snapshot_store
     smartroom_store = Path("frontend/smartroom-store.js").read_text(encoding="utf-8")
     smartroom_ui = Path("frontend/smartroom-ui.js").read_text(encoding="utf-8")
-    assert 'const databaseVersion = 10;' in smartroom_store
+    assert 'const databaseVersion = 11;' in smartroom_store
     assert 'const knownModelsStore = "KnownModels";' in smartroom_store
     assert '["by_smartroom", "smartroom_id"]' in smartroom_store
     assert '["by_mac", "mac"]' in smartroom_store
@@ -1043,6 +1049,10 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert 'const deviceHistoryStore = "deviceHistory";' in snapshot_store
     assert 'async function enrichDevicesFromHistory(rows)' in snapshot_store
     assert 'async function enrichEnrichmentRowsFromHistory(jobId)' in snapshot_store
+    assert 'async function switchAddressConsensus(switchIps, options = {})' in snapshot_store
+    assert '["by_switch", "switchIp"]' in snapshot_store
+    assert 'minimumConfidence ?? 0.90' in snapshot_store
+    assert 'switchAddressConsensus,' in snapshot_store
     assert 'async function mergeDeviceHistoryRows(rows, source = "browser-history")' in snapshot_store
     assert 'async function backfillDeviceHistory(snapshotIds = [])' in snapshot_store
     assert 'await BrowserSnapshots.enrichDevicesFromHistory(devices);' in app

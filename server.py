@@ -1997,6 +1997,65 @@ def _json_setting(rows: dict[str, str], key: str) -> dict[str, Any]:
         return {}
 
 
+def historical_switch_address_consensus(
+    conn: sqlite3.Connection,
+    switch_ips: list[str],
+    *,
+    minimum_confidence: float = 0.90,
+    minimum_observations: int = 2,
+) -> tuple[dict[str, str], dict[str, dict[str, Any]]]:
+    """Resolve switch IP -> physical address from durable enrichment history.
+
+    A switch IP is not a device identity, but it is a stable location signal in
+    the source exports.  Reuse is therefore allowed only when at least 90% of
+    the non-empty historical observations agree.  Ambiguous observations are
+    retained in history and deliberately produce no automatic value.
+    """
+    normalized_ips = sorted({as_text(value) for value in switch_ips if valid_ipv4(as_text(value))})
+    observations: dict[str, dict[str, int]] = {}
+    for chunk in _chunks(normalized_ips):
+        placeholders = ",".join("?" for _ in chunk)
+        rows = conn.execute(
+            f"""
+            SELECT TRIM(switch_ip) AS switch_ip, TRIM(address) AS address, COUNT(*) AS observations
+            FROM mac_history
+            WHERE switch_ip IN ({placeholders})
+              AND TRIM(COALESCE(address, '')) != ''
+            GROUP BY TRIM(switch_ip), TRIM(address)
+            """,
+            chunk,
+        ).fetchall()
+        for row in rows:
+            switch_ip = as_text(row["switch_ip"])
+            address = as_text(row["address"])
+            if switch_ip and address:
+                observations.setdefault(switch_ip, {})[address] = int(row["observations"] or 0)
+
+    mappings: dict[str, str] = {}
+    metadata: dict[str, dict[str, Any]] = {}
+    confidence_floor = max(0.0, min(1.0, float(minimum_confidence)))
+    observation_floor = max(1, int(minimum_observations))
+    for switch_ip, values in observations.items():
+        ranked = sorted(values.items(), key=lambda item: (-item[1], item[0]))
+        total = sum(max(0, count) for _, count in ranked)
+        if not ranked or total < observation_floor:
+            continue
+        address, count = ranked[0]
+        confidence = count / total
+        tied = len(ranked) > 1 and ranked[1][1] == count
+        if tied or confidence + 1e-12 < confidence_floor:
+            continue
+        mappings[switch_ip] = address
+        metadata[switch_ip] = {
+            "source": "historical-switch-consensus",
+            "confidence": round(confidence, 4),
+            "observations": total,
+            "matchingObservations": count,
+            "alternatives": [item[0] for item in ranked[1:]],
+        }
+    return mappings, metadata
+
+
 def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
     """Load every detector dependency once for an entire analysis batch."""
     normalized_devices = [item for item in devices if isinstance(item, dict)]
@@ -2015,10 +2074,8 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
     history_similarity_rows: list[dict[str, Any]] = []
     vendor_model_rows: list[dict[str, Any]] = []
     previous_final_devices: list[dict[str, Any]] = []
-    # Automatic address reuse is identity-based. A switch IP alone is a weak
-    # signal and must not spread one device's physical address to neighbours.
-    # Only explicitly confirmed manual mappings remain eligible here.
     ip_mappings: dict[str, str] = {}
+    ip_mapping_meta: dict[str, dict[str, Any]] = {}
     smartroom_mappings: dict[str, str] = {
         as_text(item.get("smartroomId") or item.get("smartroom_id")): as_text(item.get("room"))
         for item in normalized_devices
@@ -2129,10 +2186,23 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
         for chunk in _chunks(switch_ips):
             placeholders = ",".join("?" for _ in chunk)
             for row in conn.execute(
-                f"SELECT switch_ip, physical_address FROM ip_address_mappings WHERE switch_ip IN ({placeholders}) AND LOWER(TRIM(COALESCE(source, ''))) NOT IN ('analysis', 'current-file', 'automatic', 'inferred')",
+                f"SELECT switch_ip, physical_address, source FROM ip_address_mappings WHERE switch_ip IN ({placeholders}) AND LOWER(TRIM(COALESCE(source, ''))) NOT IN ('analysis', 'current-file', 'automatic', 'inferred')",
                 chunk,
             ).fetchall():
-                ip_mappings.setdefault(row["switch_ip"], as_text(row["physical_address"]))
+                switch_ip = as_text(row["switch_ip"])
+                address = as_text(row["physical_address"])
+                if switch_ip and address:
+                    ip_mappings.setdefault(switch_ip, address)
+                    ip_mapping_meta.setdefault(switch_ip, {
+                        "source": as_text(row["source"]) or "ip-mapping",
+                        "confidence": 1.0,
+                        "observations": 1,
+                    })
+        historical_mappings, historical_meta = historical_switch_address_consensus(conn, switch_ips)
+        for switch_ip, address in historical_mappings.items():
+            if switch_ip not in ip_mappings:
+                ip_mappings[switch_ip] = address
+                ip_mapping_meta[switch_ip] = historical_meta[switch_ip]
         for chunk in _chunks(smartroom_ids):
             placeholders = ",".join("?" for _ in chunk)
             for row in conn.execute(
@@ -2188,6 +2258,7 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
         "vendorModelHistoryIndex": build_vendor_model_history_index(vendor_model_rows),
         "similarityIndex": build_similarity_index(observations),
         "ipMappings": ip_mappings,
+        "ipMappingMeta": ip_mapping_meta,
         "smartroomMappings": smartroom_mappings,
         "detectorSettings": detector_settings,
         "historySettings": history_settings,
@@ -2274,13 +2345,25 @@ def enrich_device(device: dict[str, Any], context: Optional[dict[str, Any]] = No
             }
     switch_ip = value("switchIp", "switch_ip")
     address = as_text(device.get("address"))
+    address_source = as_text(device.get("addressSource"))
+    address_confidence = device.get("addressConfidence")
     if switch_ip and not address:
         address = as_text((batch.get("ipMappings") or {}).get(switch_ip))
+        if address:
+            mapping_meta = (batch.get("ipMappingMeta") or {}).get(switch_ip) or {}
+            address_source = as_text(mapping_meta.get("source")) or "ip-mapping"
+            address_confidence = mapping_meta.get("confidence")
     if not address:
         address = as_text(history.get("address"))
+        if address:
+            address_source = "device-history"
+            address_confidence = 1.0
     smartroom_id = value("smartroomId", "smartroom_id")
     room = value("room")
     room, smartroom_id = smartroom_identity(room, smartroom_id, batch.get("smartroomMappings"))
+    field_sources = dict(device.get("fieldSources") or {})
+    if address and address_source and not as_text(device.get("address")):
+        field_sources["address"] = address_source
     enriched = {
         "valid": True,
         "mac": mac or "",
@@ -2296,6 +2379,8 @@ def enrich_device(device: dict[str, Any], context: Optional[dict[str, Any]] = No
         "modelMatchedPrefix": model_detection.get("matchedPrefix", ""),
         "ip": value("ip"),
         "address": address,
+        "addressSource": address_source,
+        "addressConfidence": address_confidence,
         "room": room,
         "smartroomId": smartroom_id,
         "switchIp": switch_ip,
@@ -2304,7 +2389,7 @@ def enrich_device(device: dict[str, Any], context: Optional[dict[str, Any]] = No
         "serialNumber": value("serialNumber", "serial_number"),
         "deviceId": value("deviceId", "device_id"),
         "deviceName": value("deviceName", "device_name"),
-        "fieldSources": dict(device.get("fieldSources") or {}),
+        "fieldSources": field_sources,
         "sourceFiles": list(device.get("sourceFiles") or []),
         "sourceRoles": list(device.get("sourceRoles") or []),
         "conflicts": list(device.get("conflicts") or []),

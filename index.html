@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
   <meta name="application-build" content="2026.08.12.2">
-  <meta name="application-version" content="1.0.50">
+  <meta name="application-version" content="1.0.51">
   <link rel="stylesheet" href="styles.css?v=20260812.1">
 </head>
 <body>
@@ -1581,7 +1581,10 @@
       function fallbackOpenBrowserDb() {
         return new Promise((resolve, reject) => {
           if (!("indexedDB" in window)) return reject(new Error("IndexedDB unavailable"));
-          const request = indexedDB.open(fallbackBrowserDbName, 4);
+          // Open the existing schema without forcing an obsolete version.
+          // A lower explicit version raises VersionError after the primary app
+          // upgraded IndexedDB and used to break fallback restore on reopen.
+          const request = indexedDB.open(fallbackBrowserDbName);
           request.onupgradeneeded = () => {
             const db = request.result;
             if (!db.objectStoreNames.contains(fallbackBrowserStoreName)) db.createObjectStore(fallbackBrowserStoreName, { keyPath: "id" });

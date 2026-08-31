@@ -105,8 +105,8 @@
   function openBrowserStateDb(){
     return new Promise((resolve,reject)=>{
       if(!("indexedDB" in window))return reject(new Error("IndexedDB недоступна"));
-      const request=indexedDB.open(browserStateDbName,10);
-      request.onupgradeneeded=()=>{const db=request.result,tx=request.transaction;if(!db.objectStoreNames.contains(browserStateStoreName))db.createObjectStore(browserStateStoreName,{keyPath:"id"});if(!db.objectStoreNames.contains("snapshots"))db.createObjectStore("snapshots",{keyPath:"id"});if(!db.objectStoreNames.contains("snapshotChunks")){const chunks=db.createObjectStore("snapshotChunks",{keyPath:"key"});chunks.createIndex("snapshotId","snapshotId",{unique:false});}if(!db.objectStoreNames.contains("sourceFiles"))db.createObjectStore("sourceFiles",{keyPath:"id"});const enrichmentRows=db.objectStoreNames.contains("enrichmentRows")?tx.objectStore("enrichmentRows"):db.createObjectStore("enrichmentRows",{keyPath:"key"});if(!enrichmentRows.indexNames.contains("jobId"))enrichmentRows.createIndex("jobId","jobId",{unique:false});if(!enrichmentRows.indexNames.contains("aliases"))enrichmentRows.createIndex("aliases","aliases",{unique:false,multiEntry:true});if(!db.objectStoreNames.contains("deviceHistory"))db.createObjectStore("deviceHistory",{keyPath:"mac"});if(!db.objectStoreNames.contains("DeviceInventory")){const inventory=db.createObjectStore("DeviceInventory",{keyPath:"internalDeviceId"});inventory.createIndex("by_mac","mac",{unique:false});inventory.createIndex("by_serial","serialKey",{unique:false});inventory.createIndex("by_device_id","deviceIdKey",{unique:false});inventory.createIndex("by_updated_at","updatedAt",{unique:false});}const equipment=db.objectStoreNames.contains("Equipment")?tx.objectStore("Equipment"):db.createObjectStore("Equipment",{keyPath:"id"});for(const[name,keyPath]of[["smartroom_id","smartroom_id"],["mac","mac"],["ip_switch","ip_switch"],["by_smartroom","smartroom_id"],["by_mac","mac"],["by_switch","ip_switch"]])if(!equipment.indexNames.contains(name))equipment.createIndex(name,keyPath,{unique:false});const history=db.objectStoreNames.contains("History")?tx.objectStore("History"):db.createObjectStore("History",{keyPath:"id",autoIncrement:true});for(const[name,keyPath]of[["entity_type","entity_type"],["timestamp","timestamp"],["by_timestamp","timestamp"],["by_mac","mac"],["by_smartroom","smartroom_id"]])if(!history.indexNames.contains(name))history.createIndex(name,keyPath,{unique:false});if(!db.objectStoreNames.contains("DDIO_Snapshot"))db.createObjectStore("DDIO_Snapshot",{keyPath:"date"});if(!db.objectStoreNames.contains("KnownModels")){const known=db.createObjectStore("KnownModels",{keyPath:"mac"});known.createIndex("by_vendor","vendor",{unique:false});known.createIndex("by_updated_at","updatedAt",{unique:false});}};
+      const request=indexedDB.open(browserStateDbName,11);
+      request.onupgradeneeded=()=>{const db=request.result,tx=request.transaction;if(!db.objectStoreNames.contains(browserStateStoreName))db.createObjectStore(browserStateStoreName,{keyPath:"id"});if(!db.objectStoreNames.contains("snapshots"))db.createObjectStore("snapshots",{keyPath:"id"});if(!db.objectStoreNames.contains("snapshotChunks")){const chunks=db.createObjectStore("snapshotChunks",{keyPath:"key"});chunks.createIndex("snapshotId","snapshotId",{unique:false});}if(!db.objectStoreNames.contains("sourceFiles"))db.createObjectStore("sourceFiles",{keyPath:"id"});const enrichmentRows=db.objectStoreNames.contains("enrichmentRows")?tx.objectStore("enrichmentRows"):db.createObjectStore("enrichmentRows",{keyPath:"key"});if(!enrichmentRows.indexNames.contains("jobId"))enrichmentRows.createIndex("jobId","jobId",{unique:false});if(!enrichmentRows.indexNames.contains("aliases"))enrichmentRows.createIndex("aliases","aliases",{unique:false,multiEntry:true});if(!db.objectStoreNames.contains("deviceHistory"))db.createObjectStore("deviceHistory",{keyPath:"mac"});const inventory=db.objectStoreNames.contains("DeviceInventory")?tx.objectStore("DeviceInventory"):db.createObjectStore("DeviceInventory",{keyPath:"internalDeviceId"});for(const[name,keyPath]of[["by_mac","mac"],["by_serial","serialKey"],["by_device_id","deviceIdKey"],["by_switch","switchIp"],["by_updated_at","updatedAt"]])if(!inventory.indexNames.contains(name))inventory.createIndex(name,keyPath,{unique:false});const equipment=db.objectStoreNames.contains("Equipment")?tx.objectStore("Equipment"):db.createObjectStore("Equipment",{keyPath:"id"});for(const[name,keyPath]of[["smartroom_id","smartroom_id"],["mac","mac"],["ip_switch","ip_switch"],["by_smartroom","smartroom_id"],["by_mac","mac"],["by_switch","ip_switch"]])if(!equipment.indexNames.contains(name))equipment.createIndex(name,keyPath,{unique:false});const history=db.objectStoreNames.contains("History")?tx.objectStore("History"):db.createObjectStore("History",{keyPath:"id",autoIncrement:true});for(const[name,keyPath]of[["entity_type","entity_type"],["timestamp","timestamp"],["by_timestamp","timestamp"],["by_mac","mac"],["by_smartroom","smartroom_id"]])if(!history.indexNames.contains(name))history.createIndex(name,keyPath,{unique:false});if(!db.objectStoreNames.contains("DDIO_Snapshot"))db.createObjectStore("DDIO_Snapshot",{keyPath:"date"});if(!db.objectStoreNames.contains("KnownModels")){const known=db.createObjectStore("KnownModels",{keyPath:"mac"});known.createIndex("by_vendor","vendor",{unique:false});known.createIndex("by_updated_at","updatedAt",{unique:false});}};
       request.onsuccess=()=>resolve(request.result);
       request.onerror=()=>reject(request.error||new Error("Не удалось открыть IndexedDB"));
     });
@@ -714,6 +714,7 @@
   }
   function shouldRestoreBootstrapAutosave(autosave){
     if(!autosave?.state)return false;
+    if(state.resultBrowserSnapshotId&&Number(state.resultDeviceCount||0)>0)return false;
     const remoteUpdatedAt=Date.parse(autosave.updatedAt||"")||0;
     const localUpdatedAt=Date.parse(state.backendAutosaveUpdatedAt||"")||0;
     if(currentWorkspaceIsEmpty())return true;
@@ -724,6 +725,10 @@
     if(!shouldRestoreBootstrapAutosave(autosave))return false;
     const restored=normalizeRestoredState(autosave.state);
     if(!restored.devices.length&&!restored.files.length&&!restored.snapshots.length&&!restored.movementHistory.length)return false;
+    if(!Object.keys(restored.localVendorMappings||{}).length)restored.localVendorMappings=state.localVendorMappings||{};
+    if(!Object.keys(restored.localModelMappings||{}).length)restored.localModelMappings=state.localModelMappings||{};
+    if(!(restored.ipMappings||[]).length)restored.ipMappings=state.ipMappings||[];
+    if(!Object.keys(restored.smartroomMappings||{}).length)restored.smartroomMappings=state.smartroomMappings||{};
     state={...state,...restored,backendAutosaveUpdatedAt:autosave.updatedAt||"",bootstrapAutosaveRestoredAt:autosave.updatedAt||new Date().toISOString()};
     applyVendorDetectorSettings(state.vendorDetectorSettings||{});
     applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});
@@ -756,8 +761,13 @@
         data.snapshots.forEach((item)=>snapshotMap.set(item.id,item));
         state.snapshots=[...snapshotMap.values()];
       }
-      const finalSnapshotsByRecency=()=> (state.snapshots||[]).filter((item)=>String(item.kind||"").toLowerCase()==="analysis"||String(item.name||"").toLowerCase().startsWith("анализ:")).sort((a,b)=>Number(b.snapshotOrder||0)-Number(a.snapshotOrder||0)||String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
-      if(!state.resultSnapshotId){const latestFinal=finalSnapshotsByRecency()[0];if(latestFinal)state.resultSnapshotId=String(latestFinal.id||"");}
+      const finalSnapshotsByRecency=(items=state.snapshots||[])=>items.filter((item)=>String(item.kind||"").toLowerCase()==="analysis"||String(item.name||"").toLowerCase().startsWith("анализ:")).sort((a,b)=>String(b.savedAt||b.createdAt||"").localeCompare(String(a.savedAt||a.createdAt||""))||Number(b.snapshotOrder||0)-Number(a.snapshotOrder||0));
+      const backendFinals=finalSnapshotsByRecency((state.snapshots||[]).filter((item)=>item.backendStored));
+      const latestBackend=backendFinals[0],activeBrowser=(state.snapshots||[]).find((item)=>item.id===state.resultBrowserSnapshotId&&item.browserStored);
+      const browserTime=Date.parse(activeBrowser?.savedAt||activeBrowser?.createdAt||"")||0,backendTime=Date.parse(latestBackend?.savedAt||latestBackend?.createdAt||"")||0;
+      if(latestBackend&&(!activeBrowser||backendTime>browserTime)){state.resultSnapshotId=String(latestBackend.id||"");state.resultBrowserSnapshotId="";state.resultBrowserSnapshotDirty=false;}
+      else if(activeBrowser)state.resultSnapshotId="";
+      else if(state.resultSnapshotId&&!backendFinals.some((item)=>String(item.id)===String(state.resultSnapshotId)))state.resultSnapshotId=String(latestBackend?.id||"");
       if(state.resultSnapshotId){
         try{
           let opened;
@@ -767,7 +777,7 @@
             const staleId=state.resultSnapshotId;
             state.snapshots=(state.snapshots||[]).filter((item)=>item.id!==staleId);
             clearResultReference();
-            const latestFinal=finalSnapshotsByRecency()[0];
+            const latestFinal=backendFinals.find((item)=>String(item.id)!==String(staleId));
             if(!latestFinal)throw error;
             state.resultSnapshotId=String(latestFinal.id||"");
             opened=await api("/snapshots/open",{method:"POST",body:JSON.stringify({id:state.resultSnapshotId,compactResult:true,resultPageSize})});
@@ -858,6 +868,28 @@
     const map=Object.fromEntries(localIpMappingRows().filter((item)=>!autoSources.has(String(item.source||"").toLowerCase())).map((item)=>[item.switchIp,item.address]));
     (devices||[]).forEach((device)=>{const address=map[normalizeIp(device.switchIp)];if(address&&!device.address){device.address=address;device.addressSource="switch-address-mapping";}});
     return imported;
+  }
+  async function historicalSwitchAddressMappings(switchIps){
+    if(!BrowserSnapshots?.switchAddressConsensus)return new Map();
+    try{return await BrowserSnapshots.switchAddressConsensus(switchIps,{minimumConfidence:0.90,minimumObservations:2});}
+    catch{return new Map();}
+  }
+  async function applyHistoricalSwitchAddressMappings(devices=state.devices){
+    const rows=Array.isArray(devices)?devices:[],switchIps=[];
+    for(const device of rows){const switchIp=normalizeIp(device?.switchIp||device?.switch_ip);if(switchIp&&!device.address)switchIps.push(switchIp);}
+    const mappings=await historicalSwitchAddressMappings(switchIps);
+    let filled=0;
+    for(const device of rows){
+      if(device.address)continue;
+      const item=mappings.get(normalizeIp(device.switchIp||device.switch_ip));
+      if(!item?.address)continue;
+      device.address=item.address;
+      device.addressSource=item.source||"indexeddb-switch-consensus";
+      device.addressConfidence=Number(item.confidence||0);
+      device.fieldSources={...(device.fieldSources||{}),address:device.addressSource};
+      filled++;
+    }
+    return{filled,mappings};
   }
   function normalizedRoomName(value){return String(value||"").trim().replace(/\s+/g," ");}
   function synchronizeSmartroomIdentity(device,mappings=state.smartroomMappings||{}){
@@ -995,6 +1027,7 @@
       if(state.historyEnrichmentSettings?.enabled!==false&&BrowserSnapshots?.enrichDevicesFromHistory)await BrowserSnapshots.enrichDevicesFromHistory(devices);
       await seedHistorySwitchChanges(switchTracker,devices);
       inferSwitchAddressMappings(devices,"current-file");
+      await applyHistoricalSwitchAddressMappings(devices);
       inferSmartroomRoomMappings(devices,"current-file");
       learnLocalRulesFromDevices(devices,2);
       activeLocalDetectionContext=createLocalDetectionContext();
@@ -1043,7 +1076,10 @@
       }
       storedRows=await BrowserSnapshots.countEnrichmentRows(jobId);
       if(state.historyEnrichmentSettings?.enabled!==false&&BrowserSnapshots?.enrichEnrichmentRowsFromHistory)await BrowserSnapshots.enrichEnrichmentRowsFromHistory(jobId);
-      if(BrowserSnapshots?.switchChangesFromHistory)await BrowserSnapshots.streamEnrichmentRows(jobId,async(rows)=>{await seedHistorySwitchChanges(switchTracker,rows);});
+      const historicalSwitchIps=new Set();
+      if(BrowserSnapshots?.streamEnrichmentRows)await BrowserSnapshots.streamEnrichmentRows(jobId,async(rows)=>{for(const device of rows){const switchIp=normalizeIp(device?.switchIp||device?.switch_ip);if(switchIp&&!device.address)historicalSwitchIps.add(switchIp);}if(BrowserSnapshots?.switchChangesFromHistory)await seedHistorySwitchChanges(switchTracker,rows);});
+      const historicalAddresses=await historicalSwitchAddressMappings([...historicalSwitchIps]);
+      historicalAddresses.forEach((item,ip)=>{if(!switchAddresses.has(ip)&&item?.address)switchAddresses.set(ip,item);});
       const ddio=await buildLocalDdioOverlay(switchTracker,(value,detail)=>onProgress(80+value*0.02,detail));
       state.ddioOverlay=ddio.overlay;state.ddioSummary=ddio.summary;
       const switchConsensus=new Map();
@@ -1052,9 +1088,9 @@
       learn(state.localVendorMappings,vendorCounts,2);learn(state.localModelMappings,modelCounts,1);
       activeLocalDetectionContext=createLocalDetectionContext();
       await BrowserSnapshots.transformEnrichmentRows(jobId,(device)=>{
-        let changed=false;const ip=normalizeIp(device.switchIp),address=switchAddresses.get(ip),vendor=localVendor(device.mac),model=localModel(device.mac);
+        let changed=false;const ip=normalizeIp(device.switchIp),addressItem=switchAddresses.get(ip),address=typeof addressItem==="string"?addressItem:addressItem?.address,vendor=localVendor(device.mac),model=localModel(device.mac);
         if(!device.ip){const fallbackCount=DdioOverlay.applyIpFallback([device],ddio.index);if(fallbackCount){ddio.summary.ipFallbacks+=fallbackCount;changed=true;}}
-        if(address&&!device.address){device.address=address;changed=true;}
+        if(address&&!device.address){device.address=address;device.addressSource=addressItem?.source||"switch-address-mapping";if(addressItem?.confidence!==undefined)device.addressConfidence=Number(addressItem.confidence||0);device.fieldSources={...(device.fieldSources||{}),address:device.addressSource};changed=true;}
         const hadRoom=Boolean(normalizedRoomName(device.room));if(synchronizeSmartroomIdentity(device,smartroomRooms)){if(!hadRoom&&device.room)device.roomSource="smartroom_mapping";changed=true;}
         if((!device.vendor||device.vendor==="Unknown"||device.vendor==="Не определено")&&vendor!=="Unknown"){device.vendor=vendor;changed=true;}
         if(!device.model&&model){device.model=model;changed=true;}
@@ -3788,10 +3824,10 @@
   window.addEventListener("beforeunload",()=>{save();if(!autonomousHtmlMode&&backendAvailable){const autosaveState=compactAnalysisAutosaveState();fetch("/api/autosave",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slot:"main",reason:"beforeunload",state:autosaveState}),keepalive:true}).catch(()=>{});}});
   async function restoreInitialState(){
     await BrowserSnapshots?.pruneEnrichmentRows?.().catch(()=>0);
+    const restored=await restoreBrowserStateFromIndexedDb();
+    if(restored){applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});renderEngineeringState();renderAll();renderColumnPreferences();const status=$("#autosaveStatus");if(status)status.textContent="Последние данные отображены из локального кэша; проверяется постоянная база.";}
     const backendSynced=browserOnlyMode?false:await syncFromBackend();
     if(!backendSynced){
-      const restored=await restoreBrowserStateFromIndexedDb();
-      if(restored){applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});renderEngineeringState();renderAll();renderColumnPreferences();const status=$("#autosaveStatus");if(status)status.textContent="Последние данные отображены из локального кэша; проверяется файловая база.";}
       const folderRestored=await restoreLocalFolderHandle({preferBrowserState:restored});
       if(!folderRestored&&!restored)await restorePortableDatabaseHandle();
     }

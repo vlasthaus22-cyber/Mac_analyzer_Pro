@@ -165,7 +165,7 @@ room, SmartRoom ID, and internal device ID.
 
 Version v1.0.49 is the fully audited release of that pipeline. It also fixes
 two runtime failures found during an interactive browser verification: every
-module now opens the shared IndexedDB schema at version 10, and a final snapshot
+module now opens the shared IndexedDB schema consistently, and a final snapshot
 containing a strongly identified device without a MAC no longer breaks summary
 calculation or backend restoration. The release is covered by 98 test files,
 317 automated test functions, a 200,000-row repeated-enrichment stress test,
@@ -187,6 +187,19 @@ the temporary store in the same transaction. A failed or quota-exhausted save
 removes only the incomplete new snapshot and leaves the previous successful
 Final active. Progress is tied to named pipeline stages and the UI provides the
 run ID, stage, row counters, source and technical error details.
+
+Version v1.0.51 fixes the `LocalMap`/restore failure after reopening the app.
+The fallback loader no longer requests obsolete IndexedDB version 4; all primary
+modules use schema version 11 with an indexed switch-IP history. Browser state is
+restored before SQLite synchronization, and a newer local Final is not discarded
+because it does not exist in the backend database. Empty compact autosaves also
+cannot erase local vendor/model, IP-address, or Smartroom mappings.
+
+Physical addresses are now learned from previous final enrichments by switch IP.
+Automatic reuse requires at least two durable observations and a consensus of
+90% or higher. The selected address records its source and confidence; ambiguous
+history stays visible as alternatives and is never applied silently. Explicit
+current-file and manual values remain authoritative.
 
 ## Primary autonomous mode
 

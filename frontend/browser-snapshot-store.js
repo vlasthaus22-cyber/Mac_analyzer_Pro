@@ -2,7 +2,7 @@
   "use strict";
 
   const databaseName = "mac-analyzer-browser-storage-v1";
-  const databaseVersion = 10;
+  const databaseVersion = 11;
   const workspaceStore = "workspaces";
   const snapshotStore = "snapshots";
   const snapshotChunkStore = "snapshotChunks";
@@ -49,6 +49,15 @@
           resolved.createIndex("by_updated_at", "updatedAt", { unique: false });
           resolvedInventory = resolved;
         } else resolvedInventory = request.transaction.objectStore(resolvedDeviceStore);
+        for (const [name, keyPath] of [
+          ["by_mac", "mac"],
+          ["by_serial", "serialKey"],
+          ["by_device_id", "deviceIdKey"],
+          ["by_switch", "switchIp"],
+          ["by_updated_at", "updatedAt"],
+        ]) {
+          if (!resolvedInventory.indexNames.contains(name)) resolvedInventory.createIndex(name, keyPath, { unique: false });
+        }
         const legacyInventory = request.transaction.objectStore(deviceHistoryStore);
         legacyInventory.openCursor().onsuccess = (event) => {
           const cursor = event.target.result;
@@ -736,7 +745,9 @@
         const mac = String(device?.mac || device?.macFormatted || "").toUpperCase().replace(/[^0-9A-F]/g, "");
         if (mac.length === 12 && next.mac !== mac) { next.mac = mac; changed = true; }
         for (const field of historyFields) {
-          const value = normalizedHistoryValue(field, device[field]);
+          const value = field === "switchIp"
+            ? normalizedSwitchIp(device[field] || device.switch_ip)
+            : normalizedHistoryValue(field, device[field]);
           if (value && value !== next[field]) { next[field] = value; changed = true; }
         }
         if (changed) {
@@ -821,6 +832,64 @@
       countRequest.onsuccess = () => { count = Number(countRequest.result || 0); };
       current.oncomplete = () => { database.close(); resolve(Math.max(0, count)); };
       current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Device inventory count failed")); };
+    });
+  }
+
+  function normalizedSwitchIp(value) {
+    const match = String(value || "").trim().match(/\d{1,3}(?:\.\d{1,3}){3}/);
+    if (!match) return "";
+    const parts = match[0].split(".").map(Number);
+    return parts.every((part) => part >= 0 && part <= 255) ? parts.join(".") : "";
+  }
+
+  async function switchAddressConsensus(switchIps, options = {}) {
+    const targets = [...new Set((switchIps || []).map(normalizedSwitchIp).filter(Boolean))];
+    const minimumConfidence = Math.max(0, Math.min(1, Number(options.minimumConfidence ?? 0.90)));
+    const minimumObservations = Math.max(1, Number(options.minimumObservations ?? 2));
+    const mappings = new Map();
+    if (!targets.length) return mappings;
+    const database = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const current = database.transaction(resolvedDeviceStore, "readonly");
+      const index = current.objectStore(resolvedDeviceStore).index("by_switch");
+      let position = 0;
+      const processNext = () => {
+        if (position >= targets.length) return;
+        const switchIp = targets[position++], counts = new Map();
+        const request = index.openCursor(IDBKeyRange.only(switchIp));
+        request.onsuccess = () => {
+          const cursor = request.result;
+          if (cursor) {
+            const address = String(cursor.value?.address || "").trim();
+            if (address) counts.set(address, (counts.get(address) || 0) + 1);
+            cursor.continue();
+            return;
+          }
+          const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+          const total = ranked.reduce((sum, item) => sum + item[1], 0);
+          if (ranked.length && total >= minimumObservations) {
+            const [address, matchingObservations] = ranked[0];
+            const confidence = matchingObservations / total;
+            const tied = ranked.length > 1 && ranked[1][1] === matchingObservations;
+            if (!tied && confidence + Number.EPSILON >= minimumConfidence) {
+              mappings.set(switchIp, {
+                address,
+                confidence,
+                observations: total,
+                matchingObservations,
+                alternatives: ranked.slice(1).map((item) => item[0]),
+                source: "indexeddb-switch-consensus",
+              });
+            }
+          }
+          processNext();
+        };
+        request.onerror = () => current.abort();
+      };
+      processNext();
+      current.oncomplete = () => { database.close(); resolve(mappings); };
+      current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Switch address consensus failed")); };
+      current.onabort = current.onerror;
     });
   }
 
@@ -1620,6 +1689,7 @@
     mergeDeviceHistoryRows,
     streamDeviceHistory,
     countDeviceHistory,
+    switchAddressConsensus,
     switchChangesFromHistory,
     backfillDeviceHistory,
     saveEnrichmentSnapshot,

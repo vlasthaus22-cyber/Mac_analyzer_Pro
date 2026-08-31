@@ -314,6 +314,52 @@ def test_save_history_keeps_switch_address_identity_scoped_and_learns_smartroom_
         conn.execute("DELETE FROM ip_address_mappings WHERE switch_ip = ?", (switch_ip,))
 
 
+def test_switch_address_is_reused_only_with_ninety_percent_historical_consensus():
+    init_database()
+    accepted_ip = "198.51.100.244"
+    rejected_ip = "198.51.100.245"
+    source = "switch-consensus-regression"
+    with db_connection() as conn:
+        conn.execute("DELETE FROM mac_history WHERE source = ?", (source,))
+        conn.execute("DELETE FROM ip_address_mappings WHERE switch_ip IN (?, ?)", (accepted_ip, rejected_ip))
+        rows = []
+        for index in range(10):
+            accepted_mac = f"F2E3D4C5C{index:03X}"
+            rejected_mac = f"F2E3D4C5D{index:03X}"
+            rows.append((
+                accepted_mac, accepted_mac, accepted_mac[:6],
+                "Корпус D" if index < 9 else "Конфликтный адрес",
+                accepted_ip,
+                source,
+                f"2025-03-{index + 1:02d}T10:00:00Z",
+            ))
+            rows.append((
+                rejected_mac, rejected_mac, rejected_mac[:6],
+                "Корпус E" if index < 8 else "Другой адрес",
+                rejected_ip,
+                source,
+                f"2025-04-{index + 1:02d}T10:00:00Z",
+            ))
+        conn.executemany(
+            "INSERT INTO mac_history (mac, mac_formatted, oui, address, switch_ip, source, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+
+    accepted = enrich_device({"mac": "F2E3D4C5EE01", "switchIp": accepted_ip})
+    assert accepted["address"] == "Корпус D"
+    assert accepted["addressSource"] == "historical-switch-consensus"
+    assert accepted["addressConfidence"] == 0.9
+    assert accepted["fieldSources"]["address"] == "historical-switch-consensus"
+
+    rejected = enrich_device({"mac": "F2E3D4C5EE02", "switchIp": rejected_ip})
+    assert rejected["address"] == ""
+    assert not rejected.get("addressSource")
+
+    with db_connection() as conn:
+        conn.execute("DELETE FROM mac_history WHERE source = ?", (source,))
+        conn.execute("DELETE FROM ip_address_mappings WHERE switch_ip IN (?, ?)", (accepted_ip, rejected_ip))
+
+
 def test_explicit_ddio_switch_change_uses_export_pair_instead_of_stale_database_state():
     init_database()
     mac = "F2E3D4C5B621"
@@ -345,5 +391,6 @@ if __name__ == "__main__":
     test_save_history_uses_file_date_for_records_movements_and_vendor_model_history()
     test_enrichment_restores_latest_non_empty_history_fields_and_switch_address()
     test_save_history_keeps_switch_address_identity_scoped_and_learns_smartroom_room_mapping()
+    test_switch_address_is_reused_only_with_ninety_percent_historical_consensus()
     test_explicit_ddio_switch_change_uses_export_pair_instead_of_stale_database_state()
     print("vendor model history test passed")
