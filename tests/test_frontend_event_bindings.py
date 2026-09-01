@@ -1556,6 +1556,9 @@ def test_history_screen_uses_backend_statistics():
     assert 'async function preserveCurrentBeforeAnalysis(source)' in app
     assert 'movementHistory:[]' in app
     assert 'function localComparisonBetweenDevices(beforeDevices=[], afterDevices=[]' in app
+    assert "function localDeviceMap(devices=[])" in app
+    assert app.index("function localDeviceMap(devices=[])") < app.index("function localComparisonBetweenDevices")
+    assert "const before=localDeviceMap(beforeDevices),seenAfter=new Set(),items=[];" in app
     assert 'function recordLocalMovements(beforeDevices=[], afterDevices=[]' in app
     assert 'recordLocalMovements(previousDevices,state.devices,source,state.lastAnalysis);' in app
     assert 'await preserveCurrentBeforeAnalysis(source);' in app

@@ -201,6 +201,13 @@ Automatic reuse requires at least two durable observations and a consensus of
 history stays visible as alternatives and is never applied silently. Explicit
 current-file and manual values remain authoritative.
 
+Version v1.0.52 fixes the runtime `localDeviceMap is not defined` failure in the
+browser comparison stage after enrichment. The comparison helper is restored,
+executed by a regression test, and uses one compact previous-device index plus a
+set of current keys. Large switch-address history lookups use one IndexedDB index
+scan instead of opening thousands of cursors, while small lookups retain direct
+indexed access.
+
 ## Primary autonomous mode
 
 In a downloaded GitHub Release, launch the root `MAC-Analyzer-Pro.html`. It

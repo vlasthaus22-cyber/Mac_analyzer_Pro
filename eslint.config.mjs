@@ -4,7 +4,21 @@ export default [
   },
   {
     files: ["app.js", "frontend/*.js", "tests/*.test.js"],
-    languageOptions: { ecmaVersion: "latest", sourceType: "script" },
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "script",
+      globals: Object.fromEntries([
+        "AbortController", "Blob", "Buffer", "Chart", "CustomEvent", "DOMParser",
+        "DecompressionStream", "File", "IDBKeyRange", "MutationObserver",
+        "Response", "TextDecoder", "TextEncoder", "URL", "URLSearchParams",
+        "__dirname", "atob", "btoa", "cancelAnimationFrame", "clearInterval",
+        "clearTimeout", "confirm", "console", "crypto", "document", "fetch",
+        "getComputedStyle", "global", "history", "indexedDB", "localStorage",
+        "location", "module", "navigator", "performance", "process",
+        "queueMicrotask", "requestAnimationFrame", "require", "self",
+        "sessionStorage", "setInterval", "setTimeout", "window", "Worker",
+      ].map((name) => [name, "readonly"])),
+    },
     rules: {
       "constructor-super": "error",
       "for-direction": "error",
@@ -39,6 +53,7 @@ export default [
       "no-sparse-arrays": "error",
       "no-this-before-super": "error",
       "no-unexpected-multiline": "error",
+      "no-undef": "error",
       "no-unreachable": "error",
       "no-unreachable-loop": "error",
       "no-unsafe-finally": "error",

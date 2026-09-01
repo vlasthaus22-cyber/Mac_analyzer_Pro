@@ -852,41 +852,63 @@
     return new Promise((resolve, reject) => {
       const current = database.transaction(resolvedDeviceStore, "readonly");
       const index = current.objectStore(resolvedDeviceStore).index("by_switch");
-      let position = 0;
-      const processNext = () => {
-        if (position >= targets.length) return;
-        const switchIp = targets[position++], counts = new Map();
-        const request = index.openCursor(IDBKeyRange.only(switchIp));
+      const targetSet = new Set(targets), countsByIp = new Map();
+      const finishSwitch = (switchIp, counts) => {
+        const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+        const total = ranked.reduce((sum, item) => sum + item[1], 0);
+        if (!ranked.length || total < minimumObservations) return;
+        const [address, matchingObservations] = ranked[0];
+        const confidence = matchingObservations / total;
+        const tied = ranked.length > 1 && ranked[1][1] === matchingObservations;
+        if (!tied && confidence + Number.EPSILON >= minimumConfidence) mappings.set(switchIp, {
+          address,
+          confidence,
+          observations: total,
+          matchingObservations,
+          alternatives: ranked.slice(1).map((item) => item[0]),
+          source: "indexeddb-switch-consensus",
+        });
+      };
+      if (targets.length > 32) {
+        // One ordered scan is substantially faster than opening thousands of
+        // individual cursors for a large enrichment run.
+        const request = index.openCursor();
         request.onsuccess = () => {
           const cursor = request.result;
-          if (cursor) {
+          if (!cursor) { for (const [switchIp, counts] of countsByIp) finishSwitch(switchIp, counts); return; }
+          const switchIp = normalizedSwitchIp(cursor.key);
+          if (targetSet.has(switchIp)) {
             const address = String(cursor.value?.address || "").trim();
-            if (address) counts.set(address, (counts.get(address) || 0) + 1);
-            cursor.continue();
-            return;
-          }
-          const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-          const total = ranked.reduce((sum, item) => sum + item[1], 0);
-          if (ranked.length && total >= minimumObservations) {
-            const [address, matchingObservations] = ranked[0];
-            const confidence = matchingObservations / total;
-            const tied = ranked.length > 1 && ranked[1][1] === matchingObservations;
-            if (!tied && confidence + Number.EPSILON >= minimumConfidence) {
-              mappings.set(switchIp, {
-                address,
-                confidence,
-                observations: total,
-                matchingObservations,
-                alternatives: ranked.slice(1).map((item) => item[0]),
-                source: "indexeddb-switch-consensus",
-              });
+            if (address) {
+              if (!countsByIp.has(switchIp)) countsByIp.set(switchIp, new Map());
+              const counts = countsByIp.get(switchIp);
+              counts.set(address, (counts.get(address) || 0) + 1);
             }
           }
-          processNext();
+          cursor.continue();
         };
         request.onerror = () => current.abort();
-      };
-      processNext();
+      } else {
+        let position = 0;
+        const processNext = () => {
+          if (position >= targets.length) return;
+          const switchIp = targets[position++], counts = new Map();
+          const request = index.openCursor(IDBKeyRange.only(switchIp));
+          request.onsuccess = () => {
+            const cursor = request.result;
+            if (cursor) {
+              const address = String(cursor.value?.address || "").trim();
+              if (address) counts.set(address, (counts.get(address) || 0) + 1);
+              cursor.continue();
+              return;
+            }
+            finishSwitch(switchIp, counts);
+            processNext();
+          };
+          request.onerror = () => current.abort();
+        };
+        processNext();
+      }
       current.oncomplete = () => { database.close(); resolve(mappings); };
       current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Switch address consensus failed")); };
       current.onabort = current.onerror;

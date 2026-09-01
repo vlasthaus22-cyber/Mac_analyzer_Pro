@@ -1231,10 +1231,18 @@
     await storeLocalSnapshot("До анализа: "+(source||"текущие данные"),source||"browser-before-analysis",state.devices,state.invalid,new Date().toISOString(),"before-analysis");
     return true;
   }
+  function localDeviceMap(devices=[]){
+    const result=new Map();
+    for(const device of Array.isArray(devices)?devices:[]){
+      const mac=normalize(device?.mac||device?.macFormatted);
+      if(mac)result.set(mac,device);
+    }
+    return result;
+  }
   function localComparisonBetweenDevices(beforeDevices=[], afterDevices=[], fields=["vendor","model","ip","address","room","smartroomId","switchIp","switchPort"],limit=MemoryGuard.limits.movementRows){
-    const before=localDeviceMap(beforeDevices),after=localDeviceMap(afterDevices),items=[];
-    for(const [mac,device] of after.entries()){if(items.length>=limit)break;if(!before.has(mac)){items.push({mac,type:"Добавлено",field:"-",before:"",after:device.macFormatted||formatMac(mac),beforeDevice:null,afterDevice:compactDashboardDevice(device)});continue;}const previous=before.get(mac);for(const field of fields){const oldValue=String(previous[field]??""),newValue=String(device[field]??"");if(oldValue!==newValue)items.push({mac,type:"Изменено",field:labels[field]||field,before:oldValue,after:newValue,beforeDevice:compactDashboardDevice(previous),afterDevice:compactDashboardDevice(device)});if(items.length>=limit)break;}}
-    if(items.length<limit)for(const [mac,device] of before.entries()){if(items.length>=limit)break;if(!after.has(mac))items.push({mac,type:"Удалено",field:"-",before:device.macFormatted||formatMac(mac),after:"",beforeDevice:compactDashboardDevice(device),afterDevice:null});}
+    const before=localDeviceMap(beforeDevices),seenAfter=new Set(),items=[];
+    for(const device of Array.isArray(afterDevices)?afterDevices:[]){const mac=normalize(device?.mac||device?.macFormatted);if(!mac||seenAfter.has(mac))continue;seenAfter.add(mac);if(items.length>=limit)break;if(!before.has(mac)){items.push({mac,type:"Добавлено",field:"-",before:"",after:device.macFormatted||formatMac(mac),beforeDevice:null,afterDevice:compactDashboardDevice(device)});continue;}const previous=before.get(mac);for(const field of fields){const oldValue=String(previous[field]??""),newValue=String(device[field]??"");if(oldValue!==newValue)items.push({mac,type:"Изменено",field:labels[field]||field,before:oldValue,after:newValue,beforeDevice:compactDashboardDevice(previous),afterDevice:compactDashboardDevice(device)});if(items.length>=limit)break;}}
+    if(items.length<limit)for(const [mac,device] of before.entries()){if(items.length>=limit)break;if(!seenAfter.has(mac))items.push({mac,type:"Удалено",field:"-",before:device.macFormatted||formatMac(mac),after:"",beforeDevice:compactDashboardDevice(device),afterDevice:null});}
     return items;
   }
   function recordLocalMovements(beforeDevices=[], afterDevices=[], source="analysis", changedAt=new Date().toISOString()){
