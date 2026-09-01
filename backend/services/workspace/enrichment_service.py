@@ -8,6 +8,10 @@ from backend.services.identity.device_identity_service import (
     resolve_identity,
     stable_device_id,
 )
+from backend.services.validation.record_validation_service import (
+    invalid_identity_record,
+    is_empty_row,
+)
 
 from .workspace_cache_service import WorkspaceFileCache, workspace_row_iterator
 
@@ -95,6 +99,8 @@ def compile_mapping(mapping: dict[str, Any] | None) -> dict[str, int]:
 
 def row_to_device(row: list[Any], file_info: dict[str, Any], row_index: int, compiled_mapping: dict[str, int] | None = None) -> dict[str, Any]:
     mapping = compiled_mapping if compiled_mapping is not None else compile_mapping(file_info.get("mapping") or {})
+    if is_empty_row(row):
+        return {"skipped": True, "reason": "EMPTY_ROW", "row": row_index + 2}
     raw_mac = read_mapped(row, mapping, "mac")
     mac = normalize_mac(raw_mac)
     role = normalize_source_role(file_info.get("role"))
@@ -109,14 +115,14 @@ def row_to_device(row: list[Any], file_info: dict[str, Any], row_index: int, com
     for field in ENRICH_FIELDS:
         device[field] = read_mapped(row, mapping, field)
     if not [candidate for candidate in identity_candidates(device) if not candidate.startswith("internal-id:")]:
-        return {
-            "invalid": True,
-            "row": row_index + 2,
-            "source": file_info.get("name", ""),
-            "sourceRole": role,
-            "raw": raw_mac,
-            "error": "Нет корректного MAC, серийного номера или Device ID",
-        }
+        return invalid_identity_record(
+            row=row,
+            row_number=row_index + 2,
+            source=str(file_info.get("name") or ""),
+            source_role=role,
+            raw_mac=raw_mac,
+            mac_column=mapping.get("mac"),
+        )
     device["internalDeviceId"] = stable_device_id(device)
     return device
 
@@ -185,6 +191,7 @@ def _enrich_row_streams(
         "smartroomCreated": 0, "smartroomConflicts": 0,
         "ddioRawRows": 0, "ddioMatched": 0, "ddioUnmatched": 0, "ddioCreated": 0,
         "previousFinalMatched": 0, "finalUniqueDevices": 0, "inventoryTotal": 0,
+        "emptyRowsSkipped": 0,
     }
 
     def record_decision(code: str, current: dict[str, Any], resolution: dict[str, Any], reason: str) -> None:
@@ -247,6 +254,9 @@ def _enrich_row_streams(
             elif role == "smartroom":
                 counts["smartroomRawRows"] += 1
             current = row_to_device(row, file_info, row_index, compiled_mapping)
+            if current.get("skipped"):
+                counts["emptyRowsSkipped"] += 1
+                continue
             if current.get("invalid"):
                 # Data-quality accounting covers both authoritative inputs.
                 # The source role tells the user whether the bad record came

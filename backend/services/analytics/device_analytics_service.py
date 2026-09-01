@@ -230,8 +230,10 @@ def build_device_analytics(
         for prefix, value in sorted(model_mappings.items(), key=lambda item: (-len(item[0]), item[0]))
         if not model or value == model or (normalized and normalized.startswith(prefix))
     ]
-    recent_history = sorted(history, key=lambda item: _text(item.get("recorded_at")), reverse=True)[:20]
-    recent_movements = sorted(movements, key=lambda item: _text(item.get("changed_at")), reverse=True)[:20]
+    # The API applies a bounded database limit. A second slice here discarded
+    # valid intermediate events and made the MAC chronology incomplete.
+    recent_history = sorted(history, key=lambda item: _text(item.get("recorded_at")), reverse=True)
+    recent_movements = sorted(movements, key=lambda item: _text(item.get("changed_at")), reverse=True)
     history_records_rows_html = "".join(
         "<tr>"
         f"<td>{html.escape(_display_datetime(item.get('recorded_at')))}</td>"

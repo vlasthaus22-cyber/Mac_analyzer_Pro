@@ -189,6 +189,7 @@ def test_cross_browser_restore_prefers_compact_sqlite_workspace():
     assert 'const folderRestored=await restoreLocalFolderHandle({preferBrowserState:restored});' in app
     assert 'if(!backendSynced){' in app
     assert 'if(!folderRestored&&!restored)await restorePortableDatabaseHandle();' in app
+    assert 'document.documentElement.dataset.macAnalyzerApp="ready";scheduleViewContent(activeViewName());' in app
     assert '"autosave": load_autosave_state("main", hydrate=False)' in server
     assert 'state = load_autosave_state(query.get("slot", ["main"])[0], hydrate=not compact)' in server
     assert 'state["devices"] = []' in server
@@ -1070,7 +1071,8 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert 'async function aggregate(id, options = {})' in snapshot_store
     assert 'async function aggregateSeries(snapshots, options = {})' in snapshot_store
     assert 'async function compareSnapshots(baselineId, comparisonId, options = {})' in snapshot_store
-    assert 'const criticalMove = Boolean(previous.switchIp && device.switchIp && previous.switchIp !== device.switchIp);' in snapshot_store
+    assert 'const criticalMove = ["switchIp", "ip"].some((field) => {' in snapshot_store
+    assert 'return Boolean(before && after && before !== after);' in snapshot_store
     assert 'if (criticalMove || device.hasConflict) result.critical += 1;' in snapshot_store
     assert 'critical: result.critical,' in snapshot_store
     assert 'async function localAnalyzeFilesToSnapshot(fields,strategy,source,createdAt,onProgress=()=>{})' in app
@@ -1556,9 +1558,8 @@ def test_history_screen_uses_backend_statistics():
     assert 'async function preserveCurrentBeforeAnalysis(source)' in app
     assert 'movementHistory:[]' in app
     assert 'function localComparisonBetweenDevices(beforeDevices=[], afterDevices=[]' in app
-    assert "function localDeviceMap(devices=[])" in app
-    assert app.index("function localDeviceMap(devices=[])") < app.index("function localComparisonBetweenDevices")
-    assert "const before=localDeviceMap(beforeDevices),seenAfter=new Set(),items=[];" in app
+    assert "function localDeviceMap(devices=[])" not in app
+    assert "paired=DeviceIdentity.pairSets(Array.isArray(beforeDevices)?beforeDevices:[],Array.isArray(afterDevices)?afterDevices:[])" in app
     assert 'function recordLocalMovements(beforeDevices=[], afterDevices=[]' in app
     assert 'recordLocalMovements(previousDevices,state.devices,source,state.lastAnalysis);' in app
     assert 'await preserveCurrentBeforeAnalysis(source);' in app

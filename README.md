@@ -208,6 +208,18 @@ set of current keys. Large switch-address history lookups use one IndexedDB inde
 scan instead of opening thousands of cursors, while small lookups retain direct
 indexed access.
 
+Version v1.0.53 fixes invalid-row diagnostics, critical-change classification,
+Chart.js rendering on the first Analytics opening, and both chronologies. Empty
+worksheet rows are skipped, while malformed MAC/identity rows show a reason,
+source row, original MAC and a correction hint. The room timeline now includes
+switch/port moves and other confirmed field changes, deduplicates repeated source
+rows, and keeps devices identifiable by Device ID, serial number or hostname when
+MAC is absent. The MAC timeline retains all loaded intermediate events, is shown
+from first appearance to current state, ignores false changes caused by a missing
+new value, and displays correct UTC first/last dates. Smartroom charts are rebuilt
+after persistent state restoration, including direct startup on the Analytics
+tab.
+
 ## Primary autonomous mode
 
 In a downloaded GitHub Release, launch the root `MAC-Analyzer-Pro.html`. It

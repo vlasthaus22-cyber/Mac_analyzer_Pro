@@ -65,8 +65,10 @@
     try {
       destroy(id);
       chartState(id);
+      const context = canvas.getContext?.("2d");
+      if (!context) throw new Error("браузер не предоставил Canvas 2D context");
       config.plugins = [...(config.plugins || []), valueLabels];
-      charts.set(id, new Chart(canvas.getContext("2d"), config));
+      charts.set(id, new Chart(context, config));
       return true;
     } catch (error) {
       destroy(id);
@@ -80,7 +82,6 @@
       responsive: true,
       maintainAspectRatio: false,
       animation: false,
-      parsing: false,
       plugins: { legend: { labels: { color: c.text } } },
       scales: {
         x: { ticks: { color: c.text }, grid: { color: c.grid } },
@@ -119,25 +120,30 @@
 
     await nextFrame();
     const c = colors();
-    upsert("smartroomChangesChart", {
-      type: "bar",
-      data: {
-        labels: rows.map((row) => row.date),
-        datasets: [{ label: "Изменений", data: rows.map((row) => row.changes), backgroundColor: c.yellow }],
-      },
-      options: options(c),
-    });
-    upsert("smartroomAddedRemovedChart", {
-      type: "line",
-      data: {
-        labels: rows.map((row) => row.date),
-        datasets: [
-          { label: "Добавлено", data: rows.map((row) => row.added), borderColor: c.green, backgroundColor: c.green },
-          { label: "Пропало", data: rows.map((row) => row.removed), borderColor: c.red, backgroundColor: c.red },
-        ],
-      },
-      options: options(c),
-    });
+    const rendered = [];
+    rendered.push(
+      upsert("smartroomChangesChart", {
+        type: "bar",
+        data: {
+          labels: rows.map((row) => row.date),
+          datasets: [{ label: "Изменений", data: rows.map((row) => row.changes), backgroundColor: c.yellow }],
+        },
+        options: options(c),
+      }),
+    );
+    rendered.push(
+      upsert("smartroomAddedRemovedChart", {
+        type: "line",
+        data: {
+          labels: rows.map((row) => row.date),
+          datasets: [
+            { label: "Добавлено", data: rows.map((row) => row.added), borderColor: c.green, backgroundColor: c.green },
+            { label: "Пропало", data: rows.map((row) => row.removed), borderColor: c.red, backgroundColor: c.red },
+          ],
+        },
+        options: options(c),
+      }),
+    );
 
     const previous = Number(rows.at(-2)?.total || 0);
     const current = Number(rows.at(-1)?.total || 0);
@@ -148,21 +154,23 @@
       color: c.text,
       text: `Было ${previous.toLocaleString("ru-RU")}, стало ${current.toLocaleString("ru-RU")} (${percent >= 0 ? "+" : ""}${percent.toFixed(1)}%)`,
     };
-    upsert("smartroomTotalChart", {
-      type: "bar",
-      data: {
-        labels: ["Было", "Стало"],
-        datasets: [
-          {
-            label: "Устройств",
-            data: [previous, current],
-            backgroundColor: [c.blue, current < previous ? c.red : c.green],
-          },
-        ],
-      },
-      options: totalOptions,
-    });
-    return true;
+    rendered.push(
+      upsert("smartroomTotalChart", {
+        type: "bar",
+        data: {
+          labels: ["Было", "Стало"],
+          datasets: [
+            {
+              label: "Устройств",
+              data: [previous, current],
+              backgroundColor: [c.blue, current < previous ? c.red : c.green],
+            },
+          ],
+        },
+        options: totalOptions,
+      }),
+    );
+    return rendered.every(Boolean);
   }
 
   window.MacAnalyzerSmartroomCharts = Object.freeze({ destroy, normalizeRows, render });

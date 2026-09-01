@@ -939,7 +939,26 @@ def result_table_rows_html(rows: list[dict[str, Any]], columns: list[str]) -> st
             line = html_lib.escape(as_text(row.get("row")))
             source = html_lib.escape(as_text(row.get("source")))
             raw = html_lib.escape(as_text(row.get("raw")))
-            rendered.append(f'<tr><td colspan="{colspan}"><strong>Ошибка:</strong> строка {line} в {source}: «{raw}» не похожа на MAC.</td></tr>')
+            title = html_lib.escape(as_text(row.get("error")) or "Некорректная строка")
+            explanation = html_lib.escape(
+                as_text(row.get("explanation"))
+                or "Строка не содержит корректного MAC, серийного номера или Device ID."
+            )
+            suggestion = html_lib.escape(
+                as_text(row.get("suggestion"))
+                or "Проверьте сопоставление колонок и исходные значения."
+            )
+            raw_mac = html_lib.escape(as_text(row.get("rawMac")))
+            error_code = html_lib.escape(as_text(row.get("errorCode")) or "INVALID_IDENTITY")
+            where = " · ".join(value for value in (f"файл {source}" if source else "", f"строка {line}" if line else "") if value)
+            raw_mac_html = f'<div><strong>Исходный MAC:</strong> <code>{raw_mac}</code></div>' if raw_mac else ""
+            raw_html = f'<div><strong>Исходная строка:</strong> {raw}</div>' if raw else ""
+            rendered.append(
+                f'<tr class="invalid-result-row"><td colspan="{colspan}"><details><summary><strong>{title}</strong>'
+                f'{" · " + where if where else ""}</summary><div class="invalid-result-details"><div>{explanation}</div>'
+                f'{raw_mac_html}{raw_html}<div><strong>Как исправить:</strong> {suggestion}</div>'
+                f'<small>Код: {error_code}</small></div></details></td></tr>'
+            )
     return "".join(rendered)
 
 

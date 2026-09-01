@@ -1,5 +1,9 @@
 import base64
+import atexit
 import json
+import os
+import shutil
+import tempfile
 import threading
 import urllib.error
 import urllib.request
@@ -8,6 +12,18 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 from openpyxl import Workbook
+
+
+# This module is also an explicitly documented standalone verification command.
+# Make that invocation safe: it must never initialize or clean the user's real
+# database when the test runner has not already supplied isolated storage.
+_standalone_test_root = None
+if not os.environ.get("MAC_ANALYZER_DATA_DIR") or not os.environ.get("MAC_ANALYZER_DATABASE_PATH"):
+    _standalone_test_root = Path(tempfile.mkdtemp(prefix="mac-analyzer-ui-smoke-"))
+    os.environ["MAC_ANALYZER_DATA_DIR"] = str(_standalone_test_root)
+    os.environ["MAC_ANALYZER_DATABASE_PATH"] = str(_standalone_test_root / "databases" / "mac_analyzer_web.db")
+    atexit.register(lambda: shutil.rmtree(_standalone_test_root, ignore_errors=True))
+
 from server import AppHandler, WORKSPACE_FILE_CACHE, db_connection, init_database
 
 

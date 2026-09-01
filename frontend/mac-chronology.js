@@ -22,7 +22,10 @@
   });
 
   function normalizeMac(value) {
-    return String(value || "").toUpperCase().replace(/[^0-9A-F]/g, "").slice(0, 12);
+    const normalized = String(value || "")
+      .toUpperCase()
+      .replace(/[^0-9A-F]/g, "");
+    return normalized.length === 12 ? normalized : "";
   }
 
   function escapeHtml(value) {
@@ -63,19 +66,25 @@
   }
 
   function findInlineDevice(snapshot, mac) {
-    return (Array.isArray(snapshot?.devices) ? snapshot.devices : [])
-      .find((device) => normalizeMac(device?.mac || device?.macFormatted || device?.mac_formatted) === mac) || null;
+    return (
+      (Array.isArray(snapshot?.devices) ? snapshot.devices : []).find(
+        (device) => normalizeMac(device?.mac || device?.macFormatted || device?.mac_formatted) === mac,
+      ) || null
+    );
   }
 
   async function collectAppearances(options = {}) {
     const mac = normalizeMac(options.mac);
     if (!mac) return [];
-    const findSnapshotDevice = typeof options.findSnapshotDevice === "function"
-      ? options.findSnapshotDevice
-      : async () => null;
-    const snapshots = (Array.isArray(options.snapshots) ? options.snapshots : []).slice().sort(
-      (left, right) => (Time.timestamp(snapshotDate(left)) ?? Number.MAX_SAFE_INTEGER) - (Time.timestamp(snapshotDate(right)) ?? Number.MAX_SAFE_INTEGER),
-    );
+    const findSnapshotDevice =
+      typeof options.findSnapshotDevice === "function" ? options.findSnapshotDevice : async () => null;
+    const snapshots = (Array.isArray(options.snapshots) ? options.snapshots : [])
+      .slice()
+      .sort(
+        (left, right) =>
+          (Time.timestamp(snapshotDate(left)) ?? Number.MAX_SAFE_INTEGER) -
+          (Time.timestamp(snapshotDate(right)) ?? Number.MAX_SAFE_INTEGER),
+      );
     const appearances = [];
     for (const snapshot of snapshots) {
       let device = findInlineDevice(snapshot, mac);
@@ -96,13 +105,9 @@
 
   function appearanceKey(item) {
     const device = compactDevice(item?.device || item);
-    return [
-      item?.snapshotId || "",
-      item?.createdAt || item?.date || "",
-      item?.snapshotName || "",
-      item?.source || "",
-      device.mac,
-    ].join("|");
+    const snapshotId = String(item?.snapshotId || "").trim();
+    if (snapshotId) return ["snapshot", snapshotId, device.mac].join("|");
+    return ["appearance", item?.createdAt || item?.date || "", item?.snapshotName || "", device.mac].join("|");
   }
 
   function mergeAppearances(...groups) {
@@ -123,7 +128,9 @@
       merged.set(key, { ...existing, ...normalized, device });
     }
     return Array.from(merged.values()).sort(
-      (left, right) => (Time.timestamp(left.createdAt) ?? Number.MAX_SAFE_INTEGER) - (Time.timestamp(right.createdAt) ?? Number.MAX_SAFE_INTEGER),
+      (left, right) =>
+        (Time.timestamp(left.createdAt) ?? Number.MAX_SAFE_INTEGER) -
+        (Time.timestamp(right.createdAt) ?? Number.MAX_SAFE_INTEGER),
     );
   }
 
@@ -176,16 +183,24 @@
   }
 
   function appearanceChanges(appearances) {
-    const ordered = (appearances || []).slice().sort(
-      (left, right) => (Time.timestamp(left.createdAt) ?? Number.MAX_SAFE_INTEGER) - (Time.timestamp(right.createdAt) ?? Number.MAX_SAFE_INTEGER),
-    );
+    const ordered = (appearances || [])
+      .slice()
+      .sort(
+        (left, right) =>
+          (Time.timestamp(left.createdAt) ?? Number.MAX_SAFE_INTEGER) -
+          (Time.timestamp(right.createdAt) ?? Number.MAX_SAFE_INTEGER),
+      );
     const fields = ["vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort"];
     const events = [];
     for (let index = 1; index < ordered.length; index += 1) {
       const previous = compactDevice(ordered[index - 1].device);
       const current = compactDevice(ordered[index].device);
       for (const field of fields) {
-        if (String(previous[field] || "") === String(current[field] || "")) continue;
+        if (
+          String(previous[field] || "") === String(current[field] || "") ||
+          (String(previous[field] || "") && !String(current[field] || ""))
+        )
+          continue;
         events.push({
           type: "movement",
           event: "Изменение между финальными выгрузками",
@@ -203,10 +218,9 @@
   }
 
   function eventKey(item) {
-    return [
-      item.type, item.date, item.field, item.before, item.after, item.source,
-      item.device?.mac, item.snapshotId,
-    ].map((value) => String(value || "")).join("|");
+    return [item.type, item.date, item.field, item.before, item.after, item.source, item.device?.mac, item.snapshotId]
+      .map((value) => String(value || ""))
+      .join("|");
   }
 
   function buildEvents(options = {}) {
@@ -236,7 +250,9 @@
       history: options.history || [],
       movements: options.movements || [],
       events: options.events || [],
-    }).slice().reverse();
+    })
+      .slice()
+      .reverse();
   }
 
   function displayDate(value, formatter) {
@@ -265,39 +281,58 @@
       ["Порт", device.switchPort],
     ].filter(([, value]) => value);
     if (!items.length) return "";
-    return `<dl class="mac-timeline-context">${items.map(([label, value]) => (
-      `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`
-    )).join("")}</dl>`;
+    return `<dl class="mac-timeline-context">${items
+      .map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`)
+      .join("")}</dl>`;
   }
 
   function renderTimeline(events, options = {}) {
     if (!events.length) {
       return '<div class="mac-timeline-empty"><strong>Хронология пока пуста</strong><span>Для этого MAC ещё нет сохранённых появлений или изменений.</span></div>';
     }
+    const ordered = events
+      .slice()
+      .sort(
+        (left, right) =>
+          (Time.timestamp(left.date) ?? Number.MAX_SAFE_INTEGER) -
+          (Time.timestamp(right.date) ?? Number.MAX_SAFE_INTEGER),
+      );
+    const visible = options.limit ? ordered.slice(-Math.max(1, Number(options.limit))) : ordered;
     let previousTimestamp = null;
-    return events.slice(0, Math.max(1, Number(options.limit || 1000))).map((event) => {
-      const tone = eventTone(event);
-      const currentTimestamp = Time.timestamp(event.date);
-      const interval = previousTimestamp === null || currentTimestamp === null ? "" : `<small class="timeline-duration">Интервал: ${escapeHtml(Time.formatDuration(Math.abs(currentTimestamp - previousTimestamp)))}</small>`;
-      if (currentTimestamp !== null) previousTimestamp = currentTimestamp;
-      const hasChange = String(event.before || "") || String(event.after || "");
-      const change = hasChange ? (
-        `<div class="mac-timeline-change"><span class="mac-value-before">${escapeHtml(event.before || "Не заполнено")}</span>` +
-        '<span class="mac-change-arrow" aria-hidden="true">→</span>' +
-        `<span class="mac-value-after">${escapeHtml(event.after || "Не заполнено")}</span></div>`
-      ) : "";
-      return `<details class="mac-timeline-item mac-timeline-${tone}">` +
-        `<summary title="Открыть полную информацию о событии"><span class="mac-timeline-marker" aria-hidden="true"></span>` +
-        `<span class="mac-timeline-card"><header><time>${escapeHtml(displayDate(event.date, options.formatDate))}</time>${interval}` +
-        `<span class="mac-event-badge">${escapeHtml(event.event)}</span></header>` +
-        `<div class="mac-timeline-title"><strong>${escapeHtml(event.fieldLabel || fieldLabels[event.field] || event.field || "Событие")}</strong>` +
-        `<span>${escapeHtml(event.source || "Источник не указан")}</span></div>` + change +
-        `</span></summary><div class="mac-timeline-details"><strong>Полная информация</strong>${contextHtml(event.device || {})}</div></details>`;
-    }).join("");
+    return visible
+      .map((event) => {
+        const tone = eventTone(event);
+        const currentTimestamp = Time.timestamp(event.date);
+        const interval =
+          previousTimestamp === null || currentTimestamp === null
+            ? ""
+            : `<small class="timeline-duration">Интервал: ${escapeHtml(Time.formatDuration(Math.abs(currentTimestamp - previousTimestamp)))}</small>`;
+        if (currentTimestamp !== null) previousTimestamp = currentTimestamp;
+        const hasChange = String(event.before || "") || String(event.after || "");
+        const change = hasChange
+          ? `<div class="mac-timeline-change"><span class="mac-value-before">${escapeHtml(event.before || "Не заполнено")}</span>` +
+            '<span class="mac-change-arrow" aria-hidden="true">→</span>' +
+            `<span class="mac-value-after">${escapeHtml(event.after || "Не заполнено")}</span></div>`
+          : "";
+        return (
+          `<details class="mac-timeline-item mac-timeline-${tone}">` +
+          `<summary title="Открыть полную информацию о событии"><span class="mac-timeline-marker" aria-hidden="true"></span>` +
+          `<span class="mac-timeline-card"><header><time>${escapeHtml(displayDate(event.date, options.formatDate))}</time>${interval}` +
+          `<span class="mac-event-badge">${escapeHtml(event.event)}</span></header>` +
+          `<div class="mac-timeline-title"><strong>${escapeHtml(event.fieldLabel || fieldLabels[event.field] || event.field || "Событие")}</strong>` +
+          `<span>${escapeHtml(event.source || "Источник не указан")}</span></div>` +
+          change +
+          `</span></summary><div class="mac-timeline-details"><strong>Полная информация</strong>${contextHtml(event.device || {})}</div></details>`
+        );
+      })
+      .join("");
   }
 
   function renderSummary(events, appearances) {
-    const dates = events.map((item) => Date.parse(item.date || "")).filter(Number.isFinite).sort((a, b) => a - b);
+    const dates = events
+      .map((item) => Date.parse(item.date || ""))
+      .filter(Number.isFinite)
+      .sort((a, b) => a - b);
     const sources = new Set(events.map((item) => String(item.source || "").trim()).filter(Boolean));
     const metrics = [
       ["Событий", events.length],
@@ -307,26 +342,36 @@
       ["Первое появление", dates.length ? Time.formatUtc(dates[0]) : "—"],
       ["Последнее появление", dates.length ? Time.formatUtc(dates[dates.length - 1]) : "—"],
     ];
-    return metrics.map(([label, value]) => (
-      `<div class="mac-summary-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`
-    )).join("");
+    return metrics
+      .map(
+        ([label, value]) =>
+          `<div class="mac-summary-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`,
+      )
+      .join("");
   }
 
   function appearancesRowsHtml(appearances, options = {}) {
-    if (!appearances.length) return '<tr><td colspan="8" class="empty-state">История появлений MAC пока пуста.</td></tr>';
-    return appearances.slice().reverse().map((item) => {
-      const device = compactDevice(item.device);
-      return "<tr>" +
-        `<td>${escapeHtml(displayDate(item.createdAt, options.formatDate))}</td>` +
-        `<td>${escapeHtml(item.snapshotName || item.source || "Выгрузка")}</td>` +
-        `<td>${escapeHtml(device.vendor || "—")}</td>` +
-        `<td>${escapeHtml(device.model || "—")}</td>` +
-        `<td>${escapeHtml(device.ip || "—")}</td>` +
-        `<td>${escapeHtml(device.address || "—")}</td>` +
-        `<td>${escapeHtml(device.room || "—")}</td>` +
-        `<td>${escapeHtml(device.smartroomId || "—")}</td>` +
-        "</tr>";
-    }).join("");
+    if (!appearances.length)
+      return '<tr><td colspan="8" class="empty-state">История появлений MAC пока пуста.</td></tr>';
+    return appearances
+      .slice()
+      .reverse()
+      .map((item) => {
+        const device = compactDevice(item.device);
+        return (
+          "<tr>" +
+          `<td>${escapeHtml(displayDate(item.createdAt, options.formatDate))}</td>` +
+          `<td>${escapeHtml(item.snapshotName || item.source || "Выгрузка")}</td>` +
+          `<td>${escapeHtml(device.vendor || "—")}</td>` +
+          `<td>${escapeHtml(device.model || "—")}</td>` +
+          `<td>${escapeHtml(device.ip || "—")}</td>` +
+          `<td>${escapeHtml(device.address || "—")}</td>` +
+          `<td>${escapeHtml(device.room || "—")}</td>` +
+          `<td>${escapeHtml(device.smartroomId || "—")}</td>` +
+          "</tr>"
+        );
+      })
+      .join("");
   }
 
   window.MacAnalyzerMacChronology = Object.freeze({

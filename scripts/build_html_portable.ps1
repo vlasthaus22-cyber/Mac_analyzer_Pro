@@ -28,6 +28,7 @@ $scripts = @(
     "frontend/memory-guard.js",
     "frontend/file-readers.js",
     "frontend/state-persistence.js",
+    "frontend/record-validation.js",
     "frontend/device-identity.js",
     "frontend/enrichment-strategy.js",
     "frontend/browser-snapshot-store.js",

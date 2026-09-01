@@ -51,6 +51,26 @@ def test_device_analytics_builds_mac_chronology():
     assert "Vendor B" in exported["content"]
 
 
+def test_device_analytics_keeps_all_loaded_intermediate_events():
+    mac = "AABBCC000001"
+    history = [
+        {
+            "mac": mac,
+            "recorded_at": f"2026-01-{index + 1:02d}T10:00:00Z",
+            "model": f"Model {index + 1}",
+            "source": f"snapshot-{index + 1}",
+        }
+        for index in range(25)
+    ]
+    payload = build_device_analytics(mac, [{"mac": mac}], [], history=history)
+
+    assert payload["metrics"]["historyRecords"] == 25
+    assert len(payload["history"]) == 25
+    assert len(payload["timelineRows"]) == 25
+    assert "Model 1" in payload["chronologyRowsHtml"]
+
+
 if __name__ == "__main__":
     test_device_analytics_builds_mac_chronology()
+    test_device_analytics_keeps_all_loaded_intermediate_events()
     print("device analytics chronology test passed")

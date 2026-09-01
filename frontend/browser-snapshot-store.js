@@ -1458,7 +1458,11 @@
             return;
           }
           let modified = false;
-          const criticalMove = Boolean(previous.switchIp && device.switchIp && previous.switchIp !== device.switchIp);
+          const criticalMove = ["switchIp", "ip"].some((field) => {
+            const before = String(previous[field] || "").trim();
+            const after = String(device[field] || "").trim();
+            return Boolean(before && after && before !== after);
+          });
           for (const field of result.fields) {
             const before = String(previous[field] || "");
             const after = String(device[field] || "");

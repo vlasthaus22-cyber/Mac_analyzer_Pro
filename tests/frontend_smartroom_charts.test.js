@@ -41,6 +41,7 @@ require("../frontend/smartroom-charts.js");
   assert.equal(elements.get("state:smartroomChangesChart").hidden, false);
   assert.equal(await charts.render({ charts: [{ date: "2026-08-12", changes: 1, total: 2 }] }), true);
   assert.equal(global.Chart.instances.length, 3);
+  assert.notEqual(global.Chart.instances[0].config.options.parsing, false, "numeric arrays must be parsed by Chart.js");
   assert.equal(elements.get("smartroomChangesChart").hidden, false);
   console.log("frontend smartroom charts test passed");
 })().catch((error) => {

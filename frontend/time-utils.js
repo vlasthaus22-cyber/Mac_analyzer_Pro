@@ -3,7 +3,8 @@
 
   function timestamp(value) {
     if (value === null || value === undefined || String(value).trim() === "") return null;
-    const milliseconds = Date.parse(value);
+    const milliseconds =
+      typeof value === "number" ? value : value instanceof Date ? value.getTime() : Date.parse(value);
     return Number.isFinite(milliseconds) ? milliseconds : null;
   }
 

@@ -184,7 +184,7 @@
       );
       if (rooms.length) VirtualTable?.setData(body, rooms, roomRow);
       else body.innerHTML = '<tr><td colspan="8" class="empty-state">Помещения не найдены.</td></tr>';
-      summary.textContent = `Помещений: ${rooms.length.toLocaleString("ru-RU")} · пропущено строк без Smartroom ID: ${Number(value.skipped || 0).toLocaleString("ru-RU")} · красным отмечены исчезнувшие устройства.`;
+      summary.textContent = `Помещений: ${rooms.length.toLocaleString("ru-RU")} · пропущено строк без Smartroom ID и корректного MAC: ${Number(value.skipped || 0).toLocaleString("ru-RU")} · некорректных значений MAC: ${Number(value.invalidMacRows || 0).toLocaleString("ru-RU")} · красным отмечены исчезнувшие устройства.`;
       fillRoomSelect(value);
     } catch (error) {
       body.innerHTML = '<tr><td colspan="8" class="empty-state">Не удалось построить историю.</td></tr>';
@@ -248,7 +248,11 @@
 
   async function renderCharts(force = false) {
     if (!Charts) throw new Error("Модуль графиков не загружен");
-    return Charts.render(await build(force));
+    const value = await build(force);
+    const rendered = await Charts.render(value);
+    if (!rendered && value?.charts?.length)
+      throw new Error("Графики не построены. Проверьте доступность Chart.js и Canvas в браузере.");
+    return rendered;
   }
 
   async function autoLoad() {

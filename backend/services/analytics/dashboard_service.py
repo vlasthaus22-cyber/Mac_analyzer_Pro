@@ -62,6 +62,23 @@ CHANGE_FIELD_LABELS = {
     "mac": "MAC / физический адрес", "hostname": "Hostname", "serialNumber": "Серийный номер",
     "deviceId": "ID устройства", "deviceName": "Название устройства", "identityConflict": "Конфликт идентификации",
 }
+CHANGE_FIELD_ALIASES = {
+    **{key.casefold(): key for key in CHANGE_FIELD_LABELS},
+    **{label.casefold(): key for key, label in CHANGE_FIELD_LABELS.items()},
+    "switch_ip": "switchIp", "switch_port": "switchPort", "smartroom_id": "smartroomId",
+    "ip": "ip", "ip адрес": "ip", "ip-адрес": "ip", "коммутатор": "switchIp",
+    "-": "device",
+}
+CHANGE_TYPE_ALIASES = {
+    "added": "added", "добавлено": "added",
+    "removed": "removed", "удалено": "removed", "отсутствует": "removed",
+    "modified": "modified", "изменено": "modified",
+}
+
+
+def _normalize_change_field(value: Any) -> str:
+    field = _text(value) or "device"
+    return CHANGE_FIELD_ALIASES.get(field.casefold(), field)
 
 
 def _parse_date(value: Any, *, end_of_day: bool = False) -> datetime | None:
@@ -139,8 +156,14 @@ def _change_severity(
     field: str,
     before_device: dict[str, Any] | None = None,
     after_device: dict[str, Any] | None = None,
+    before_value: Any = "",
+    after_value: Any = "",
 ) -> str:
-    if field == "switchIp":
+    previous = _device_context(before_device)
+    current = _device_context(after_device)
+    old_value = _text((previous or {}).get(field) if previous and field in previous else before_value)
+    new_value = _text((current or {}).get(field) if current and field in current else after_value)
+    if field in {"switchIp", "ip"} and old_value and new_value and old_value != new_value:
         return "critical"
     if field in {"mac", "identityConflict"}:
         return "critical"
@@ -188,7 +211,7 @@ def _change_row(
     before_device: dict[str, Any] | None = None, after_device: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     labels = {"added": "Добавлено", "removed": "Удалено", "modified": "Изменено"}
-    normalized_field = {"switch_ip": "switchIp", "switch_port": "switchPort"}.get(field, field or "device")
+    normalized_field = _normalize_change_field(field)
     previous = _device_context(before_device)
     current = _device_context(after_device)
     result = {
@@ -197,7 +220,7 @@ def _change_row(
         "date": changed_at, "type": change_type, "typeLabel": labels.get(change_type, "Изменено"),
         "field": normalized_field, "fieldLabel": CHANGE_FIELD_LABELS.get(normalized_field, normalized_field),
         "before": _text(before) or "-", "after": _text(after) or "-", "source": source,
-        "severity": _change_severity(change_type, normalized_field, previous, current),
+        "severity": _change_severity(change_type, normalized_field, previous, current, before, after),
         "beforeDevice": previous, "afterDevice": current,
     }
     if normalized_field == "switchIp" and current:
@@ -292,9 +315,13 @@ def analyze_dashboard_changes(
             field = _movement_value(movement, "field", "field_name") or "device"
             before = movement.get("before", movement.get("from_value", movement.get("old_value", "")))
             after = movement.get("after", movement.get("to_value", movement.get("new_value", "")))
-            change_type = _text(movement.get("type") or movement.get("change_type") or "modified").lower()
-            if change_type not in {"added", "removed", "modified"}:
-                change_type = "modified"
+            change_type = CHANGE_TYPE_ALIASES.get(
+                _text(movement.get("type") or movement.get("change_type") or "modified").casefold(),
+                "modified",
+            )
+            if change_type == "modified" and _text(before) and not _text(after):
+                # A temporarily absent value is not proof of a real change.
+                continue
             changes.append(_change_row(mac=_mac(movement), changed_at=changed_at, change_type=change_type, field=field, before=before, after=after, source=_text(movement.get("source") or movement.get("file_name") or "history")))
 
     period_groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}

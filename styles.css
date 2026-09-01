@@ -356,9 +356,16 @@ table[data-virtual-scroll] tbody tr:not([data-virtual-spacer]) > td { height:44p
 .chart-canvas-wrap {
   position: relative;
   min-height: 260px;
+  height: 300px;
 }
+.chart-canvas-wrap > canvas { display:block; width:100% !important; height:100% !important; }
 .chart-state { position:absolute; inset:0; display:grid; place-items:center; margin:0; padding:24px; border:1px dashed var(--line); border-radius:6px; color:var(--muted); background:var(--surface-soft); text-align:center; }
+.chart-state[hidden], .chart-canvas-wrap > canvas[hidden] { display:none !important; }
 .chart-state.error { color:var(--danger); border-color:var(--danger); }
+.invalid-result-row td { background:color-mix(in srgb, var(--danger) 7%, var(--surface)); color:var(--text); }
+.invalid-result-row summary { cursor:pointer; color:var(--danger); }
+.invalid-result-details { display:grid; gap:6px; margin-top:10px; color:var(--text); white-space:normal; }
+.invalid-result-details code { color:var(--text); overflow-wrap:anywhere; }
 
 .smartroom-chart-panel {
   min-width: 0;
@@ -475,9 +482,17 @@ tr.critical-change > td {
 .room-timeline-horizontal .room-timeline-arrow { position: absolute; left: -.65rem; top: 50%; transform: translate(-50%, -50%); }
 .room-timeline-added { border-left: 4px solid var(--positive, #157a5b); }
 .room-timeline-removed { border-left: 4px solid var(--danger, #c74444); }
+.room-timeline-moved { border-left: 4px solid #d99a18; }
+.room-timeline-changed { border-left: 4px solid #3a78c2; }
 .room-status { display: inline-flex; padding: .2rem .5rem; border-radius: 999px; font-weight: 700; }
 .room-status-added { color: var(--positive, #157a5b); background: color-mix(in srgb, var(--positive, #157a5b) 14%, var(--surface)); }
 .room-status-removed { color: var(--danger, #c74444); background: color-mix(in srgb, var(--danger, #c74444) 14%, var(--surface)); }
+.room-status-moved { color: #7a5100; background: color-mix(in srgb, #d99a18 18%, var(--surface)); }
+.room-status-changed { color: #24598f; background: color-mix(in srgb, #3a78c2 16%, var(--surface)); }
+.room-timeline-changes { display:grid; gap:.2rem; margin-top:.35rem; font-size:.78rem; color:var(--muted); }
+.room-timeline-changes span { display:block; overflow-wrap:anywhere; }
+[data-theme="dark"] .room-status-moved { color:#ffd47c; }
+[data-theme="dark"] .room-status-changed { color:#9bc9ff; }
 .link-button { padding: 0; border: 0; color: var(--accent); background: transparent; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 
 .app-error-banner {

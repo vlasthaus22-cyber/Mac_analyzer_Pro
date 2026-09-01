@@ -139,6 +139,42 @@ def test_dashboard_change_analysis_filters_period_without_marking_port_change_cr
     assert result["changes"][0]["after"] == "Gi9"
 
 
+def test_dashboard_normalizes_russian_history_and_ignores_missing_new_values():
+    movements = [
+        {
+            "mac": "AABBCC000001", "type": "Изменено", "field": "IP коммутатора",
+            "before": " 10.0.0.1 ", "after": "10.0.0.2", "changedAt": "2026-07-10T09:00:00Z",
+        },
+        {
+            "mac": "AABBCC000002", "type": "Изменено", "field": "Модель",
+            "before": "Known", "after": "", "changedAt": "2026-07-10T09:01:00Z",
+        },
+    ]
+    result = analyze_dashboard_changes(
+        [], movements, {"changeMode": "period", "changeDateFrom": "2026-07-01", "changeDateTo": "2026-07-31"}
+    )
+
+    assert result["summary"]["modified"] == 1
+    assert result["summary"]["critical"] == 1
+    assert len(result["changes"]) == 1
+    assert result["changes"][0]["type"] == "modified"
+    assert result["changes"][0]["field"] == "switchIp"
+    assert result["changes"][0]["severity"] == "critical"
+
+
+def test_newly_filled_switch_ip_is_not_a_false_critical_change():
+    snapshots = [
+        {"id": "old", "createdAt": "2026-07-01T00:00:00Z", "devices": [{"mac": "AABBCC000001", "switchIp": ""}]},
+        {"id": "new", "createdAt": "2026-07-02T00:00:00Z", "devices": [{"mac": "AABBCC000001", "switchIp": "10.0.0.2"}]},
+    ]
+    result = analyze_dashboard_changes(
+        snapshots, [], {"changeMode": "snapshots", "baselineSnapshotId": "old", "comparisonSnapshotId": "new"}
+    )
+    change = next(item for item in result["changes"] if item["field"] == "switchIp")
+    assert change["severity"] == "medium"
+    assert result["summary"]["critical"] == 0
+
+
 def test_dashboard_change_analysis_compares_selected_snapshots():
     snapshots = [
         {"id": "old", "name": "Old", "createdAt": "2026-07-01T08:00:00Z", "devices": [
@@ -261,6 +297,8 @@ if __name__ == "__main__":
     test_dashboard_reproduces_python_status_filters_and_history_charts()
     test_dashboard_png_export_contains_real_image_and_expected_dimensions()
     test_dashboard_change_analysis_filters_period_without_marking_port_change_critical()
+    test_dashboard_normalizes_russian_history_and_ignores_missing_new_values()
+    test_newly_filled_switch_ip_is_not_a_false_critical_change()
     test_dashboard_change_analysis_compares_selected_snapshots()
     test_dashboard_uses_previous_and_current_final_snapshots_for_all_status_metrics()
     test_dashboard_reports_unique_macs_across_uploads_and_latest_count()
