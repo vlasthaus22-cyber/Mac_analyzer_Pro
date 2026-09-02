@@ -232,6 +232,18 @@ ignored safely, and the displayed interval is calculated from the actual
 boundaries. The fleet chart now shows the numeric device count for every final
 upload instead of the number of field-change events.
 
+Version v1.0.55 extends room and MAC chronology without changing the stored
+database contract. Room chronology now parses the comma-separated hierarchy
+`ТБ, Город, Площадка, Этаж, Помещение`, provides independent filters and a
+global search, and can show whether every device in the selected room changed
+between the two latest Final snapshots. MAC chronology and change history show
+explicit `previous Final → new Final` values and remove duplicate copies of the
+same stored and derived event. The change dashboard filters child events as
+well as devices, so the Critical, Added, Missing, Modified, and All tabs no
+longer mix unrelated rows. Smartroom dynamics are aggregated by calendar month,
+fill the interval from the first through the last upload, and show unique room
+and MAC counts in the tooltip.
+
 ## Primary autonomous mode
 
 In a downloaded GitHub Release, launch the root `MAC-Analyzer-Pro.html`. It

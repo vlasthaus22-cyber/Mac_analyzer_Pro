@@ -10,6 +10,10 @@
     model: "Модель",
     ip: "IP устройства",
     address: "Адрес помещения",
+    tb: "ТБ",
+    city: "Город",
+    site: "Площадка",
+    floor: "Этаж",
     room: "Помещение",
     smartroomId: "Smartroom ID",
     smartroom_id: "Smartroom ID",
@@ -57,6 +61,10 @@
       model: deviceValue(device, "model"),
       ip: deviceValue(device, "ip"),
       address: deviceValue(device, "address"),
+      tb: deviceValue(device, "tb", "territorialBank", "territorial_bank"),
+      city: deviceValue(device, "city", "city_name"),
+      site: deviceValue(device, "site", "siteName", "site_name"),
+      floor: deviceValue(device, "floor", "floorName", "floor_name"),
       room: deviceValue(device, "room"),
       smartroomId: deviceValue(device, "smartroomId", "smartroom_id"),
       switchIp: deviceValue(device, "switchIp", "switch_ip"),
@@ -148,6 +156,8 @@
       after: item?.after ?? item?.to_value ?? item?.new_value ?? "",
       source: item?.source || item?.source_file || "История изменений",
       device: Object.keys(afterDevice).length ? afterDevice : beforeDevice,
+      beforeDevice,
+      afterDevice,
     };
   }
 
@@ -190,7 +200,7 @@
           (Time.timestamp(left.createdAt) ?? Number.MAX_SAFE_INTEGER) -
           (Time.timestamp(right.createdAt) ?? Number.MAX_SAFE_INTEGER),
       );
-    const fields = ["vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort"];
+    const fields = ["vendor", "model", "ip", "address", "tb", "city", "site", "floor", "room", "smartroomId", "switchIp", "switchPort"];
     const events = [];
     for (let index = 1; index < ordered.length; index += 1) {
       const previous = compactDevice(ordered[index - 1].device);
@@ -209,8 +219,10 @@
           fieldLabel: fieldLabels[field] || field,
           before: previous[field] || "",
           after: current[field] || "",
-          source: `${ordered[index - 1].snapshotName || "Выгрузка"} → ${ordered[index].snapshotName || "Выгрузка"}`,
+          source: `Final «${ordered[index - 1].snapshotName || "Предыдущая выгрузка"}» → Final «${ordered[index].snapshotName || "Новая выгрузка"}»`,
           device: current,
+          beforeDevice: previous,
+          afterDevice: current,
         });
       }
     }
@@ -218,7 +230,8 @@
   }
 
   function eventKey(item) {
-    return [item.type, item.date, item.field, item.before, item.after, item.source, item.device?.mac, item.snapshotId]
+    const source = item.type === "movement" ? "" : item.source;
+    return [item.type, item.date, item.field, item.before, item.after, source, item.device?.mac, item.snapshotId]
       .map((value) => String(value || ""))
       .join("|");
   }
@@ -236,7 +249,10 @@
       }),
     ];
     const unique = new Map();
-    for (const event of events) unique.set(eventKey(event), event);
+    for (const event of events) {
+      const key = eventKey(event);
+      if (!unique.has(key)) unique.set(key, event);
+    }
     return Array.from(unique.values()).sort(
       (left, right) => (Time.timestamp(right.date) ?? -1) - (Time.timestamp(left.date) ?? -1),
     );
@@ -275,6 +291,10 @@
       ["Модель", device.model],
       ["IP устройства", device.ip],
       ["Адрес", device.address],
+      ["ТБ", device.tb],
+      ["Город", device.city],
+      ["Площадка", device.site],
+      ["Этаж", device.floor],
       ["Помещение", device.room],
       ["Smartroom ID", device.smartroomId],
       ["Коммутатор", device.switchIp],
@@ -284,6 +304,17 @@
     return `<dl class="mac-timeline-context">${items
       .map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`)
       .join("")}</dl>`;
+  }
+
+  function comparisonHtml(event) {
+    if (!Object.keys(event?.beforeDevice || {}).length || !Object.keys(event?.afterDevice || {}).length) return "";
+    return (
+      '<div class="mac-final-comparison">' +
+      `<section><h4>Было в предыдущем Final</h4>${contextHtml(event.beforeDevice) || "<p>Данные не заполнены.</p>"}</section>` +
+      `<span class="mac-change-arrow" aria-hidden="true">→</span>` +
+      `<section><h4>Стало в новом Final</h4>${contextHtml(event.afterDevice) || "<p>Данные не заполнены.</p>"}</section>` +
+      "</div>"
+    );
   }
 
   function renderTimeline(events, options = {}) {
@@ -322,7 +353,7 @@
           `<div class="mac-timeline-title"><strong>${escapeHtml(event.fieldLabel || fieldLabels[event.field] || event.field || "Событие")}</strong>` +
           `<span>${escapeHtml(event.source || "Источник не указан")}</span></div>` +
           change +
-          `</span></summary><div class="mac-timeline-details"><strong>Полная информация</strong>${contextHtml(event.device || {})}</div></details>`
+          `</span></summary><div class="mac-timeline-details"><strong>Полная информация</strong>${comparisonHtml(event) || contextHtml(event.device || {})}</div></details>`
         );
       })
       .join("");

@@ -234,6 +234,7 @@ def test_dashboard_change_analysis_compares_selected_snapshots():
     assert [item["id"] for item in result["snapshotOptions"]] == ["old", "new"]
     switch_change = next(item for item in result["changes"] if item["field"] == "switchIp")
     assert switch_change["severity"] == "critical"
+    assert switch_change["source"] == "Final «Old» → Final «New»"
     assert switch_change["beforeDevice"]["room"] == "101"
     assert switch_change["afterDevice"]["ip"] == "192.0.2.10"
     assert next(item for item in result["changes"] if item["type"] == "removed")["severity"] == "high"

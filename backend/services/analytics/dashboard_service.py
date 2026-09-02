@@ -266,18 +266,22 @@ def analyze_dashboard_changes(
         comparison_devices = [device for device in comparison.get("devices", []) if isinstance(device, dict)]
         pairs, added_devices, removed_devices = pair_device_sets(baseline_devices, comparison_devices)
         changed_at = _text(comparison.get("fileCreatedAt") or comparison.get("createdAt") or comparison.get("created_at"))
+        comparison_source = (
+            f'Final «{_text(baseline.get("name") or baseline_id or "Предыдущая выгрузка")}» → '
+            f'Final «{_text(comparison.get("name") or comparison_id or "Новая выгрузка")}»'
+        )
         for device in added_devices:
             mac = _mac(device)
             changes.append(_change_row(
                 mac=mac, changed_at=changed_at, change_type="added",
-                after=device.get("source") or "Устройство", source="snapshot",
+                after=device.get("source") or "Устройство", source=comparison_source,
                 after_device=device,
             ))
         for device in removed_devices:
             mac = _mac(device)
             changes.append(_change_row(
                 mac=mac, changed_at=changed_at, change_type="removed",
-                before=device.get("source") or "Устройство", source="snapshot",
+                before=device.get("source") or "Устройство", source=comparison_source,
                 before_device=device,
             ))
         for before_device, after_device in pairs:
@@ -290,7 +294,7 @@ def analyze_dashboard_changes(
                 if _text(before) != _text(after):
                     changes.append(_change_row(
                         mac=mac, changed_at=changed_at, change_type="modified", field=field,
-                        before=before, after=after, source="snapshot",
+                        before=before, after=after, source=comparison_source,
                         before_device=before_device, after_device=after_device,
                     ))
             if after_device.get("hasConflict"):
@@ -298,7 +302,7 @@ def analyze_dashboard_changes(
                 changes.append(_change_row(
                     mac=mac, changed_at=changed_at, change_type="modified", field="identityConflict",
                     before="-", after="; ".join(_text(item.get("field")) for item in conflicts if isinstance(item, dict)) or "Обнаружен конфликт",
-                    source="snapshot", before_device=before_device, after_device=after_device,
+                    source=comparison_source, before_device=before_device, after_device=after_device,
                 ))
     else:
         movement_dates = [

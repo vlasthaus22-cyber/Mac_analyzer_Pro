@@ -44,8 +44,7 @@ require("../frontend/smartroom-worker.js");
       mac: first[0].mac,
       smartroomId: "ROOM-1",
       room: "Переговорная 1",
-      city: "Москва",
-      address: "Ленина 1",
+      address: "ЦБ, Москва, Центральная, 5, Переговорная 1",
       switchIp: "10.0.0.2",
       switchPort: "Gi9",
     },
@@ -70,8 +69,13 @@ require("../frontend/smartroom-worker.js");
   assert.strictEqual(report.macTimelines[first[0].mac].length, 2, "the full MAC chain is retained");
   assert.strictEqual(report.rooms.find((room) => room.smartroomId === "ROOM-BULK").missing.length, 1000);
   assert.strictEqual(report.rooms.find((room) => room.smartroomId === "ROOM-1").city, "Москва");
+  assert.strictEqual(report.rooms.find((room) => room.smartroomId === "ROOM-1").tb, "ЦБ");
+  assert.strictEqual(report.rooms.find((room) => room.smartroomId === "ROOM-1").site, "Центральная");
+  assert.strictEqual(report.rooms.find((room) => room.smartroomId === "ROOM-1").floor, "5");
   assert.strictEqual(report.rooms.find((room) => room.smartroomId === "ROOM-1").history[0].devices.length, 1);
   assert.strictEqual(report.charts.at(-1).changes, 1, "a confirmed switch change must be visible in charts");
+  assert.deepStrictEqual(Array.from(report.charts.at(-1).changedRooms), ["ROOM-1"]);
+  assert.deepStrictEqual(Array.from(report.charts.at(-1).changedMacs), [first[0].mac]);
 
   const invalidReport = await global.MacAnalyzerSmartroomWorker.build([
     {
@@ -90,6 +94,19 @@ require("../frontend/smartroom-worker.js");
     1,
     "room identity may retain a row but malformed MAC must not become a MAC identity",
   );
+
+  const serialReport = await global.MacAnalyzerSmartroomWorker.build([
+    {
+      id: "serials",
+      createdAt: "2026-08-02T01:00:00Z",
+      devices: [
+        { smartroomId: "ROOM-SERIAL", serialNumber: "SERIAL-1", model: "Codec" },
+        { smartroomId: "ROOM-SERIAL", serialNumber: "SERIAL-2", model: "Panel" },
+      ],
+    },
+  ]);
+  assert.strictEqual(serialReport.snapshots[0].total, 2, "serial numbers must keep distinct room devices without MAC");
+  assert.strictEqual(serialReport.rooms[0].history[0].devices.length, 2);
 
   const large = Array.from({ length: 10000 }, (_value, index) => ({
     mac: `AABBCC${index.toString(16).padStart(6, "0")}`,

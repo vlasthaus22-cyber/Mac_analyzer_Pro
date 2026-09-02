@@ -7,7 +7,7 @@
   <title>MAC Analyzer Pro Web</title>
   <meta name="application-build" content="2026.08.12.2">
   <meta name="application-version" content="1.0.54">
-  <link rel="stylesheet" href="styles.css?v=20260812.1">
+  <link rel="stylesheet" href="styles.css?v=1055">
 </head>
 <body>
   <div class="app-error-banner" id="appErrorBanner" role="alert" aria-live="assertive" hidden><span data-error-message>Ошибка приложения.</span><button type="button" id="closeAppErrorBanner" aria-label="Закрыть сообщение">×</button></div>
@@ -420,8 +420,19 @@
 
       <section class="view" id="roomhistoryView" role="tabpanel">
         <section class="results-section">
-          <div class="results-toolbar"><h2>Хронология помещения</h2><select id="roomChronologyCityFilter" aria-label="Город"><option value="">Все города</option></select><select id="roomChronologySelect" aria-label="Smartroom ID"><option value="">Выберите Smartroom ID</option></select><button class="button secondary" id="refreshRoomChronologyButton" type="button">Обновить</button></div>
+          <div class="results-toolbar"><h2>Хронология помещения</h2><button class="button secondary" id="refreshRoomChronologyButton" type="button">Обновить</button></div>
+          <div class="room-chronology-filters" aria-label="Фильтры хронологии помещения">
+            <input id="roomChronologySearchInput" type="search" placeholder="Поиск по ТБ, городу, площадке, этажу, помещению, MAC…" aria-label="Поиск помещения">
+            <select id="roomChronologyTbFilter" aria-label="ТБ"><option value="">Все ТБ</option></select>
+            <select id="roomChronologyCityFilter" aria-label="Город"><option value="">Все города</option></select>
+            <select id="roomChronologySiteFilter" aria-label="Площадка"><option value="">Все площадки</option></select>
+            <select id="roomChronologyFloorFilter" aria-label="Этаж"><option value="">Все этажи</option></select>
+            <select id="roomChronologyRoomFilter" aria-label="Помещение"><option value="">Все помещения</option></select>
+            <select id="roomChronologySelect" aria-label="Smartroom ID"><option value="">Выберите Smartroom ID</option></select>
+            <button class="button secondary" id="roomChronologyAllChangedButton" type="button" aria-expanded="false" disabled>Нужно минимум две финальные выгрузки</button>
+          </div>
           <p class="muted" id="roomChronologySummary">Выберите помещение, чтобы увидеть всю цепочку замен оборудования.</p>
+          <div id="roomChronologyCoverageDetails" class="room-coverage-details" hidden></div>
           <div class="room-timeline room-timeline-horizontal" id="roomChronologyTimeline"></div>
           <div class="table-wrap"><table><thead><tr><th>Дата</th><th>MAC-адрес</th><th>Модель</th><th>Статус</th></tr></thead><tbody id="roomChronologyTableBody"><tr><td colspan="4" class="empty-state">Выберите помещение.</td></tr></tbody></table></div>
         </section>
@@ -861,7 +872,7 @@
   <script src="frontend/enrichment-strategy.js?v=1050"></script>
   <script src="frontend/browser-snapshot-store.js?v=20260814.2"></script>
   <script src="frontend/time-utils.js?v=1047"></script>
-  <script src="frontend/mac-chronology.js?v=20260729.1"></script>
+  <script src="frontend/mac-chronology.js?v=1055"></script>
   <script src="frontend/local-analytics.js?v=20260729.3"></script>
   <script src="frontend/xlsx-exporter.js?v=20260727.5"></script>
   <script src="frontend/full-xlsx-report.js?v=20260729.1"></script>
@@ -872,16 +883,16 @@
   <script src="frontend/ddio-overlay.js?v=20260813.1"></script>
   <script src="frontend/dashboard-change-tabs.js?v=20260803.1"></script>
   <script src="frontend/guide.js?v=20260722.7"></script>
-  <script src="frontend/ui-feedback.js?v=20260812.2"></script>
-  <script src="frontend/lazy-tabs.js?v=20260812.1"></script>
-  <script src="frontend/virtual-table.js?v=20260812.1"></script>
-  <script src="frontend/smartroom-worker.js?v=1048"></script>
-  <script src="frontend/smartroom-store.js?v=20260812.1"></script>
-  <script src="frontend/smartroom-charts.js?v=1047"></script>
-  <script src="frontend/room-timeline.js?v=1047"></script>
-  <script src="frontend/smartroom-ui.js?v=1048"></script>
-  <script src="frontend/table-sorter.js?v=20260812.1"></script>
-  <script src="app.js?v=20260814.2"></script>
+  <script src="frontend/ui-feedback.js?v=1055"></script>
+  <script src="frontend/lazy-tabs.js?v=1055"></script>
+  <script src="frontend/virtual-table.js?v=1055"></script>
+  <script src="frontend/smartroom-worker.js?v=1055"></script>
+  <script src="frontend/smartroom-store.js?v=1055"></script>
+  <script src="frontend/smartroom-charts.js?v=1055"></script>
+  <script src="frontend/room-timeline.js?v=1055"></script>
+  <script src="frontend/smartroom-ui.js?v=1055"></script>
+  <script src="frontend/table-sorter.js?v=1055"></script>
+  <script src="app.js?v=1055"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;

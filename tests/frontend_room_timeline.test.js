@@ -60,4 +60,35 @@ const duplicateRows = timeline.events({
   ],
 });
 assert.equal(duplicateRows.length, 1, "duplicate source rows must remain one room device event");
+
+const coverage = timeline.compareLatest({
+  history: [
+    {
+      date: "2026-02-01T00:00:00Z",
+      devices: [
+        { mac: "001122334455", model: "Old" },
+        { mac: "AABBCCDDEEFF", model: "Stable" },
+      ],
+    },
+    {
+      date: "2026-03-01T00:00:00Z",
+      devices: [
+        { mac: "001122334455", model: "New" },
+        { mac: "AABBCCDDEEFF", model: "Stable" },
+      ],
+    },
+  ],
+});
+assert.equal(coverage.total, 2);
+assert.equal(coverage.changed, 1);
+assert.equal(coverage.allChanged, false);
+assert.equal(coverage.entries.find((item) => item.mac === "001122334455").status, "Изменен");
+
+const allChanged = timeline.compareLatest({
+  history: [
+    { date: "2026-02-01T00:00:00Z", devices: [{ mac: "001122334455" }] },
+    { date: "2026-03-01T00:00:00Z", devices: [{ mac: "AABBCCDDEEFF" }] },
+  ],
+});
+assert.equal(allChanged.allChanged, true, "replacement means every room device changed between adjacent finals");
 console.log("frontend room timeline test passed");

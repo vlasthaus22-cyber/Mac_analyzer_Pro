@@ -1429,7 +1429,8 @@ def test_device_dialog_uses_backend_analytics():
     assert 'fields.map((field)=>' not in app
     assert 'analytics.modelPrefixes?.length' not in app
     assert 'MacChronology.appearancesRowsHtml(appearances,{formatDate:formatDisplayDateTime})' in app
-    assert '$("#deviceHistoryBody").innerHTML=analytics?.movementRowsHtml||localMovements.html;' in app
+    assert 'const chronologicalMovements=events.filter((item)=>item.type==="movement")' in app
+    assert '$("#deviceHistoryBody").innerHTML=localMovements.count?localMovements.html:(analytics?.movementRowsHtml||localMovements.html);' in app
     assert 'await api("/history?mac="+encodeURIComponent(mac),{method:"DELETE"});await showDevice(mac);' in app
     assert "'<tr><td colspan=\"5\" class=\"empty-state\">История удалена.</td></tr>'" not in app
     assert 'const rows=analytics.timelineRows||[];' not in app

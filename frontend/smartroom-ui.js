@@ -113,16 +113,49 @@
     return promise;
   }
 
-  function roomCity(room) {
-    const explicit = text(room?.city);
-    if (explicit) return explicit;
-    return text(text(room?.address).match(/^(?:г\.?\s*)?([^,]+),/i)?.[1]);
+  function roomLocation(room) {
+    const result = {
+      tb: text(room?.tb),
+      city: text(room?.city),
+      site: text(room?.site),
+      floor: text(room?.floor),
+      room: text(room?.room),
+    };
+    const parts = text(room?.locationPath || room?.address)
+      .split(",")
+      .map(text)
+      .filter(Boolean);
+    if (parts.length >= 5) {
+      if (!result.tb) result.tb = parts[0];
+      if (!result.city) result.city = parts[1];
+      if (!result.site) result.site = parts[2];
+      if (!result.floor) result.floor = parts[3];
+      if (!result.room) result.room = parts.slice(4).join(", ");
+    } else if (!result.city && parts.length) result.city = text(parts[0].replace(/^г\.?\s*/i, ""));
+    return result;
   }
 
-  function fillCityFilters(value) {
-    const cities = Array.from(new Set((value.rooms || []).map(roomCity).filter(Boolean))).sort((a, b) =>
-      a.localeCompare(b, "ru"),
-    );
+  function roomCity(room) {
+    return roomLocation(room).city;
+  }
+
+  function fillSelect(id, label, values) {
+    const select = $("#" + id);
+    if (!select) return;
+    const selected = text(select.value);
+    select.innerHTML =
+      `<option value="">${escapeHtml(label)}</option>` +
+      values.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("");
+    if (values.includes(selected)) select.value = selected;
+  }
+
+  function fillLocationFilters(value) {
+    const locations = (value.rooms || []).map(roomLocation);
+    const unique = (field) =>
+      Array.from(new Set(locations.map((location) => location[field]).filter(Boolean))).sort((a, b) =>
+        a.localeCompare(b, "ru", { numeric: true }),
+      );
+    const cities = unique("city");
     for (const id of ["roomsCityFilter", "roomChronologyCityFilter"]) {
       const select = $("#" + id);
       if (!select) continue;
@@ -132,14 +165,53 @@
         cities.map((city) => `<option value="${escapeHtml(city)}">${escapeHtml(city)}</option>`).join("");
       if (cities.includes(selected)) select.value = selected;
     }
+    fillSelect("roomChronologyTbFilter", "Все ТБ", unique("tb"));
+    fillSelect("roomChronologySiteFilter", "Все площадки", unique("site"));
+    fillSelect("roomChronologyFloorFilter", "Все этажи", unique("floor"));
+    fillSelect("roomChronologyRoomFilter", "Все помещения", unique("room"));
+  }
+
+  function chronologyRooms(value) {
+    const filters = {
+      tb: text($("#roomChronologyTbFilter")?.value),
+      city: text($("#roomChronologyCityFilter")?.value),
+      site: text($("#roomChronologySiteFilter")?.value),
+      floor: text($("#roomChronologyFloorFilter")?.value),
+      room: text($("#roomChronologyRoomFilter")?.value),
+    };
+    const query = text($("#roomChronologySearchInput")?.value).toLowerCase();
+    return (value.rooms || []).filter((room) => {
+      const location = roomLocation(room);
+      if (Object.entries(filters).some(([field, expected]) => expected && location[field] !== expected)) return false;
+      if (!query) return true;
+      return [
+        room.smartroomId,
+        location.tb,
+        location.city,
+        location.site,
+        location.floor,
+        location.room,
+        room.address,
+        ...(room.devices || []).flatMap((device) => [
+          device.mac,
+          device.ip,
+          device.switchIp,
+          device.hostname,
+          device.vendor,
+          device.model,
+        ]),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(query);
+    });
   }
 
   function fillRoomSelect(value) {
     const select = $("#roomChronologySelect");
     if (!select) return;
     const saved = text(select.value || sessionStorage.getItem(selectedRoomKey));
-    const city = text($("#roomChronologyCityFilter")?.value);
-    const rooms = (value.rooms || []).filter((room) => !city || roomCity(room) === city);
+    const rooms = chronologyRooms(value);
     select.innerHTML =
       '<option value="">Выберите Smartroom ID</option>' +
       rooms
@@ -148,7 +220,7 @@
             `<option value="${escapeHtml(room.smartroomId)}">${escapeHtml(room.smartroomId)}${room.room ? ` · ${escapeHtml(room.room)}` : ""}</option>`,
         )
         .join("");
-    if (value.rooms.some((room) => room.smartroomId === saved)) select.value = saved;
+    if (rooms.some((room) => room.smartroomId === saved)) select.value = saved;
   }
 
   function roomRow(room) {
@@ -166,7 +238,7 @@
       const value = await build(force),
         query = text($("#roomsSearchInput")?.value).toLowerCase(),
         city = text($("#roomsCityFilter")?.value);
-      fillCityFilters(value);
+      fillLocationFilters(value);
       const rooms = (value.rooms || []).filter(
         (room) =>
           (!city || roomCity(room) === city) &&
@@ -203,10 +275,60 @@
     return rendered;
   }
 
+  function renderRoomCoverage(room) {
+    const button = $("#roomChronologyAllChangedButton"),
+      target = $("#roomChronologyCoverageDetails");
+    if (!button || !target) return null;
+    const comparison = RoomTimeline?.compareLatest?.(room) || {
+      total: 0,
+      changed: 0,
+      unchanged: 0,
+      allChanged: false,
+      entries: [],
+    };
+    const available = Boolean(room && room.history?.length >= 2);
+    button.disabled = !available;
+    button.classList.toggle("critical-change", comparison.allChanged);
+    button.textContent = comparison.allChanged
+      ? `Все устройства изменились (${comparison.changed}/${comparison.total})`
+      : available
+        ? `Изменения устройств (${comparison.changed}/${comparison.total})`
+        : "Нужно минимум две финальные выгрузки";
+    if (!available) button.setAttribute("aria-expanded", "false");
+    const expanded = available && button.getAttribute("aria-expanded") === "true";
+    target.hidden = !expanded;
+    if (!available) {
+      target.innerHTML = "";
+      return comparison;
+    }
+    const verdict = comparison.allChanged
+      ? "Во всех устройствах этой переговорной есть подтверждённые изменения."
+      : `Изменено ${comparison.changed} из ${comparison.total}; без изменений: ${comparison.unchanged}.`;
+    target.innerHTML =
+      `<p class="${comparison.allChanged ? "critical-change" : "muted"}">${escapeHtml(verdict)} Сравнение: ${escapeHtml(formatDate(comparison.previousDate))} → ${escapeHtml(formatDate(comparison.currentDate))}.</p>` +
+      '<div class="table-wrap"><table><thead><tr><th>MAC / идентификатор</th><th>Модель</th><th>Результат</th><th>Было → стало</th></tr></thead><tbody>' +
+      comparison.entries
+        .map((entry) => {
+          const details = entry.changes?.length
+            ? entry.changes
+                .map((change) => `${change.label}: ${change.before || "Не заполнено"} → ${change.after}`)
+                .join("; ")
+            : entry.status === "Добавлен"
+              ? "Нет в предыдущем Final → есть в новом Final"
+              : entry.status === "Удален"
+                ? "Есть в предыдущем Final → нет в новом Final"
+                : "Значения совпадают";
+          return `<tr><td>${escapeHtml(formatMac(entry.mac) || entry.identity)}</td><td>${escapeHtml(entry.model)}</td><td><span class="room-status room-status-${entry.status === "Без изменений" ? "unchanged" : "changed"}">${escapeHtml(entry.status)}</span></td><td>${escapeHtml(details)}</td></tr>`;
+        })
+        .join("") +
+      "</tbody></table></div>";
+    return comparison;
+  }
+
   async function renderRoomChronology(force = false) {
     try {
       const value = await build(force);
-      fillCityFilters(value);
+      fillLocationFilters(value);
       fillRoomSelect(value);
       const id = text($("#roomChronologySelect")?.value),
         room = value.rooms.find((item) => item.smartroomId === id),
@@ -214,9 +336,10 @@
       if (id) sessionStorage.setItem(selectedRoomKey, id);
       else sessionStorage.removeItem(selectedRoomKey);
       const rendered = renderTimelineInto(room, $("#roomChronologyTimeline"), $("#roomChronologyTableBody"));
+      const comparison = renderRoomCoverage(room);
       if (summary)
         summary.textContent = room
-          ? `${room.smartroomId}${room.room ? ` · ${room.room}` : ""} · событий: ${rendered.rows.length}`
+          ? `${[room.smartroomId, roomLocation(room).tb, roomLocation(room).city, roomLocation(room).site, roomLocation(room).floor, roomLocation(room).room].filter(Boolean).join(" · ")} · событий: ${rendered.rows.length} · изменено устройств: ${comparison?.changed || 0}/${comparison?.total || 0}`
           : "Выберите помещение, чтобы увидеть всю цепочку замен оборудования.";
     } catch (error) {
       Feedback?.showError(error);
@@ -229,7 +352,19 @@
     if (!room) return;
     sessionStorage.setItem(selectedRoomKey, id);
     $("#roomChronologyDialogTitle").textContent = `Хронология ${room.smartroomId}`;
-    $("#roomChronologyDialogSubtitle").textContent = [room.room, room.address].filter(Boolean).join(" · ");
+    const location = roomLocation(room),
+      comparison = RoomTimeline?.compareLatest?.(room);
+    $("#roomChronologyDialogSubtitle").textContent = [
+      location.tb,
+      location.city,
+      location.site,
+      location.floor,
+      location.room,
+      room.address,
+      comparison ? `Изменено ${comparison.changed}/${comparison.total}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
     renderTimelineInto(room, $("#roomChronologyDialogTimeline"), $("#roomChronologyDialogTableBody"));
     $("#roomChronologyDialog").showModal();
   }
@@ -297,9 +432,30 @@
     );
     $("#roomsCityFilter")?.addEventListener("change", () => renderRooms(false));
     $("#roomChronologySelect")?.addEventListener("change", () => renderRoomChronology(false));
-    $("#roomChronologyCityFilter")?.addEventListener("change", () => {
-      fillRoomSelect(report || { rooms: [] });
-      renderRoomChronology(false);
+    [
+      "roomChronologyTbFilter",
+      "roomChronologyCityFilter",
+      "roomChronologySiteFilter",
+      "roomChronologyFloorFilter",
+      "roomChronologyRoomFilter",
+    ].forEach((id) =>
+      $("#" + id)?.addEventListener("change", () => {
+        fillRoomSelect(report || { rooms: [] });
+        renderRoomChronology(false);
+      }),
+    );
+    $("#roomChronologySearchInput")?.addEventListener(
+      "input",
+      debounce(() => {
+        fillRoomSelect(report || { rooms: [] });
+        renderRoomChronology(false);
+      }),
+    );
+    $("#roomChronologyAllChangedButton")?.addEventListener("click", (event) => {
+      const button = event.currentTarget;
+      button.setAttribute("aria-expanded", button.getAttribute("aria-expanded") === "true" ? "false" : "true");
+      const room = report?.rooms?.find((item) => item.smartroomId === text($("#roomChronologySelect")?.value));
+      renderRoomCoverage(room);
     });
     $("#refreshRoomChronologyButton")?.addEventListener("click", () => renderRoomChronology(true));
     $("#roomsBody")?.addEventListener("click", (event) => {

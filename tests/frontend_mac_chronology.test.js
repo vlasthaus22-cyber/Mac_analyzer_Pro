@@ -102,6 +102,7 @@ const chronology = global.MacAnalyzerMacChronology;
   );
   assert.equal(events.find((item) => item.field === "room").fieldLabel, "Помещение");
   assert.ok(events.some((item) => item.field === "model" && item.before === "C2960" && item.after === "C3560"));
+  assert.match(events.find((item) => item.field === "model").source, /Final «Первая выгрузка» → Final «Вторая выгрузка»/);
 
   const sparseEvents = chronology.buildEvents({
     appearances: [appearances[0], { ...appearances[1], device: { ...appearances[1].device, model: "" } }],

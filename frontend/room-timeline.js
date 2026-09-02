@@ -56,6 +56,10 @@
     ["ip", ["ip", "deviceIp", "device_ip"], "IP устройства"],
     ["model", ["model"], "Модель"],
     ["vendor", ["vendor", "manufacturer"], "Производитель"],
+    ["tb", ["tb", "territorialBank", "territorial_bank"], "ТБ"],
+    ["city", ["city", "city_name"], "Город"],
+    ["site", ["site", "siteName", "site_name"], "Площадка"],
+    ["floor", ["floor", "floorName", "floor_name"], "Этаж"],
     ["room", ["room", "room_name"], "Помещение"],
     ["address", ["address", "physicalAddress"], "Адрес"],
   ]);
@@ -69,6 +73,46 @@
       changes.push({ field, label, before: oldValue, after: newValue });
     }
     return changes;
+  }
+
+  function compareLatest(room) {
+    const history = Array.from(room?.history || []).filter((item) => item && typeof item === "object");
+    const previousObservation = history.at(-2) || null;
+    const currentObservation = history.at(-1) || null;
+    const previous = deviceMap(previousObservation?.devices || []);
+    const current = deviceMap(currentObservation?.devices || []);
+    const identities = new Set([...previous.keys(), ...current.keys()]);
+    const entries = [];
+    for (const identity of identities) {
+      const beforeDevice = previous.get(identity) || null;
+      const device = current.get(identity) || null;
+      const changes = beforeDevice && device ? changedValues(beforeDevice, device) : [];
+      const moved = changes.some((change) => change.field === "switchIp" || change.field === "switchPort");
+      let status = "Без изменений";
+      if (!beforeDevice) status = "Добавлен";
+      else if (!device) status = "Удален";
+      else if (moved) status = "Перемещен";
+      else if (changes.length) status = "Изменен";
+      entries.push({
+        identity,
+        mac: normalizeMac(device?.mac || beforeDevice?.mac),
+        model: text(device?.model || beforeDevice?.model) || "Unknown",
+        status,
+        changes,
+        beforeDevice,
+        device: device || beforeDevice || {},
+      });
+    }
+    const changed = entries.filter((item) => item.status !== "Без изменений");
+    return {
+      previousDate: Time.toUtcIso(previousObservation?.date),
+      currentDate: Time.toUtcIso(currentObservation?.date),
+      total: entries.length,
+      changed: changed.length,
+      unchanged: entries.length - changed.length,
+      allChanged: entries.length > 0 && changed.length === entries.length,
+      entries,
+    };
   }
 
   function events(room) {
@@ -177,5 +221,5 @@
     return { rows, tableHtml: rowHtml, timelineHtml };
   }
 
-  window.MacAnalyzerRoomTimeline = Object.freeze({ events, render });
+  window.MacAnalyzerRoomTimeline = Object.freeze({ events, compareLatest, render });
 })();

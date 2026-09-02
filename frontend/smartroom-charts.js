@@ -103,12 +103,84 @@
       }));
   }
 
+  function monthKey(value) {
+    const direct = String(value || "").match(/^(\d{4})-(\d{2})/);
+    if (direct) return `${direct[1]}-${direct[2]}`;
+    const timestamp = Date.parse(String(value || ""));
+    if (!Number.isFinite(timestamp)) return "";
+    const date = new Date(timestamp);
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+  }
+
+  function monthLabel(key) {
+    const match = String(key).match(/^(\d{4})-(\d{2})$/);
+    if (!match) return "Без даты";
+    const formatted = new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric", timeZone: "UTC" }).format(
+      new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1)),
+    );
+    return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+  }
+
+  function monthlyRows(report) {
+    const source = Array.isArray(report?.charts) ? report.charts : [];
+    const buckets = new Map();
+    for (const row of source) {
+      if (!row || typeof row !== "object") continue;
+      const key = monthKey(row.date);
+      if (!key) continue;
+      const bucket = buckets.get(key) || {
+        date: key,
+        label: monthLabel(key),
+        changes: 0,
+        added: 0,
+        removed: 0,
+        total: 0,
+        changedRooms: new Set(),
+        changedMacs: new Set(),
+      };
+      bucket.changes += Math.max(0, Number(row.changes) || 0);
+      bucket.added += Math.max(0, Number(row.added) || 0);
+      bucket.removed += Math.max(0, Number(row.removed) || 0);
+      bucket.total = Math.max(0, Number(row.total) || 0);
+      for (const value of row.changedRooms || [])
+        if (String(value || "").trim()) bucket.changedRooms.add(String(value).trim());
+      for (const value of row.changedMacs || [])
+        if (String(value || "").trim()) bucket.changedMacs.add(String(value).trim());
+      buckets.set(key, bucket);
+    }
+    const keys = Array.from(buckets.keys()).sort();
+    if (!keys.length) return [];
+    const cursor = new Date(`${keys[0]}-01T00:00:00Z`);
+    const last = keys.at(-1);
+    const result = [];
+    while (`${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, "0")}` <= last) {
+      const key = `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, "0")}`;
+      const bucket = buckets.get(key) || {
+        date: key,
+        label: monthLabel(key),
+        changes: 0,
+        added: 0,
+        removed: 0,
+        total: result.at(-1)?.total || 0,
+        changedRooms: new Set(),
+        changedMacs: new Set(),
+      };
+      result.push({
+        ...bucket,
+        changedRooms: Array.from(bucket.changedRooms),
+        changedMacs: Array.from(bucket.changedMacs),
+      });
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    }
+    return result;
+  }
+
   function nextFrame() {
     return new Promise((resolve) => (window.requestAnimationFrame || setTimeout)(resolve));
   }
 
   async function render(report = {}) {
-    const rows = normalizeRows(report);
+    const rows = monthlyRows(report);
     const ids = ["smartroomChangesChart", "smartroomAddedRemovedChart", "smartroomTotalChart"];
     if (!rows.length) {
       ids.forEach((id) => {
@@ -121,21 +193,30 @@
     await nextFrame();
     const c = colors();
     const rendered = [];
+    const changesOptions = options(c);
+    changesOptions.plugins.tooltip = {
+      callbacks: {
+        afterLabel(context) {
+          const row = rows[context.dataIndex] || {};
+          return `Переговорных: ${(row.changedRooms || []).length.toLocaleString("ru-RU")} · MAC-адресов: ${(row.changedMacs || []).length.toLocaleString("ru-RU")}`;
+        },
+      },
+    };
     rendered.push(
       upsert("smartroomChangesChart", {
         type: "bar",
         data: {
-          labels: rows.map((row) => row.date),
+          labels: rows.map((row) => row.label),
           datasets: [{ label: "Изменений", data: rows.map((row) => row.changes), backgroundColor: c.yellow }],
         },
-        options: options(c),
+        options: changesOptions,
       }),
     );
     rendered.push(
       upsert("smartroomAddedRemovedChart", {
         type: "line",
         data: {
-          labels: rows.map((row) => row.date),
+          labels: rows.map((row) => row.label),
           datasets: [
             { label: "Добавлено", data: rows.map((row) => row.added), borderColor: c.green, backgroundColor: c.green },
             { label: "Пропало", data: rows.map((row) => row.removed), borderColor: c.red, backgroundColor: c.red },
@@ -173,5 +254,5 @@
     return rendered.every(Boolean);
   }
 
-  window.MacAnalyzerSmartroomCharts = Object.freeze({ destroy, normalizeRows, render });
+  window.MacAnalyzerSmartroomCharts = Object.freeze({ destroy, normalizeRows, monthlyRows, render });
 })();

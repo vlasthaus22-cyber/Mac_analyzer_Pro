@@ -19,6 +19,12 @@ def test_smartroom_tabs_and_chart_canvases_are_present():
     for canvas in ("smartroomChangesChart", "smartroomAddedRemovedChart", "smartroomTotalChart"):
         assert f'id="{canvas}"' in html
     assert 'frontend/vendor/chart.umd.min.js?v=4.5.1' in html
+    for control in (
+        "roomChronologySearchInput", "roomChronologyTbFilter", "roomChronologyCityFilter",
+        "roomChronologySiteFilter", "roomChronologyFloorFilter", "roomChronologyRoomFilter",
+        "roomChronologyAllChangedButton", "roomChronologyCoverageDetails",
+    ):
+        assert f'id="{control}"' in html
 
 
 def test_worker_uses_chunked_ingestion_and_full_timeline_fields():
@@ -29,6 +35,21 @@ def test_worker_uses_chunked_ingestion_and_full_timeline_fields():
     assert "macTimelines" in source
     assert "Possible_IPs" in source
     assert "switchPort" in source
+    assert "locationPath" in source
+    assert "changedRooms" in source
+    assert "changedMacs" in source
+
+
+def test_smartroom_history_filters_and_monthly_chart_are_wired():
+    ui = read("frontend/smartroom-ui.js")
+    timeline = read("frontend/room-timeline.js")
+    charts = read("frontend/smartroom-charts.js")
+    assert "function chronologyRooms" in ui
+    assert "function renderRoomCoverage" in ui
+    assert "function compareLatest" in timeline
+    assert "function monthlyRows" in charts
+    assert "Переговорных:" in charts
+    assert "MAC-адресов:" in charts
 
 
 def test_virtual_scroll_keeps_twenty_visible_rows():
@@ -74,6 +95,7 @@ def test_portable_build_embeds_new_runtime_modules():
 if __name__ == "__main__":
     test_smartroom_tabs_and_chart_canvases_are_present()
     test_worker_uses_chunked_ingestion_and_full_timeline_fields()
+    test_smartroom_history_filters_and_monthly_chart_are_wired()
     test_virtual_scroll_keeps_twenty_visible_rows()
     test_indexeddb_contract_has_requested_stores()
     test_lazy_tabs_keep_detached_content_in_document_fragments()
