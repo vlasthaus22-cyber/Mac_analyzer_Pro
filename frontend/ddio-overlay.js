@@ -144,7 +144,10 @@
       compiled.leaseMac !== undefined && (compiled.leaseIp !== undefined || compiled.ip !== undefined);
     const deviceComplete =
       compiled.deviceId !== undefined &&
-      (compiled.reservationIp !== undefined || compiled.leaseIp !== undefined || compiled.ip !== undefined || compiled.possibleIps !== undefined);
+      (compiled.reservationIp !== undefined ||
+        compiled.leaseIp !== undefined ||
+        compiled.ip !== undefined ||
+        compiled.possibleIps !== undefined);
     return {
       valid: reservationComplete || leaseComplete || deviceComplete,
       hasIp: compiled.reservationIp !== undefined || compiled.leaseIp !== undefined || compiled.ip !== undefined,
@@ -309,7 +312,7 @@
     if (!(changes instanceof Map) || !(candidates instanceof Map)) return overlay;
     for (const [mac, change] of changes.entries()) {
       const candidate = candidates.get(mac);
-      if (!candidate || !(candidate.possibleIps || []).length && !candidate.ip) continue;
+      if (!candidate || (!(candidate.possibleIps || []).length && !candidate.ip)) continue;
       const possibleIps = Array.from(
         new Set((candidate.possibleIps || [candidate.ip]).map(normalizeIp).filter(Boolean)),
       );

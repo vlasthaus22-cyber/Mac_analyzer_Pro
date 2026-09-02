@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
   <meta name="application-build" content="2026.08.12.2">
-  <meta name="application-version" content="1.0.53">
+  <meta name="application-version" content="1.0.54">
   <link rel="stylesheet" href="styles.css?v=20260812.1">
 </head>
 <body>
@@ -817,7 +817,7 @@
     </section>
     <section class="dashboard-settings-panel" data-dashboard-settings-panel="charts" role="tabpanel" hidden>
       <fieldset><legend>Отображение графиков</legend><div class="dashboard-toggle-grid">
-        <label class="check"><input type="checkbox" data-dashboard-chart-toggle="dynamics">Динамика изменений</label>
+        <label class="check"><input type="checkbox" data-dashboard-chart-toggle="dynamics">Динамика общего числа устройств</label>
         <label class="check"><input type="checkbox" data-dashboard-chart-toggle="vendors">Топ производителей</label>
         <label class="check"><input type="checkbox" data-dashboard-chart-toggle="fields">Изменения по полям</label>
         <label class="check"><input type="checkbox" data-dashboard-chart-toggle="missing">Отсутствовавшие устройства</label>
@@ -859,7 +859,7 @@
   <script src="frontend/record-validation.js?v=1053"></script>
   <script src="frontend/device-identity.js?v=1048"></script>
   <script src="frontend/enrichment-strategy.js?v=1050"></script>
-  <script src="frontend/browser-snapshot-store.js?v=20260814.1"></script>
+  <script src="frontend/browser-snapshot-store.js?v=20260814.2"></script>
   <script src="frontend/time-utils.js?v=1047"></script>
   <script src="frontend/mac-chronology.js?v=20260729.1"></script>
   <script src="frontend/local-analytics.js?v=20260729.3"></script>
@@ -881,7 +881,7 @@
   <script src="frontend/room-timeline.js?v=1047"></script>
   <script src="frontend/smartroom-ui.js?v=1048"></script>
   <script src="frontend/table-sorter.js?v=20260812.1"></script>
-  <script src="app.js?v=20260814.1"></script>
+  <script src="app.js?v=20260814.2"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;
@@ -2158,7 +2158,7 @@
         ctx.fillStyle = muted; ctx.font = "17px Arial"; ctx.fillText("Создано: " + new Date().toLocaleString("ru-RU"), 40, 90);
         const metricSpecs = [["Всего устройств", "#dashboardTotalMetric"], ["Изменённые", "#dashboardChangedMetric"], ["Отсутствовавшие", "#dashboardMissingMetric"], ["Без изменений", "#dashboardUnchangedMetric"], ["Производителей", "#dashboardVendorMetric"], ["Помещений", "#dashboardRoomCountMetric"]], gap = 14, cardWidth = (1920 - gap * 5) / 6;
         metricSpecs.forEach(([label, selector], index) => { const x = 40 + index * (cardWidth + gap); ctx.fillStyle = "#fff"; ctx.fillRect(x, 112, cardWidth, 112); ctx.strokeStyle = "#d7dee8"; ctx.strokeRect(x, 112, cardWidth, 112); ctx.fillStyle = muted; ctx.font = "16px Arial"; ctx.fillText(label, x + 18, 146); ctx.fillStyle = text; ctx.font = "bold 31px Arial"; ctx.fillText($(selector)?.textContent || "0", x + 18, 193); });
-        const charts = [["Динамика изменений по дням", "#dashboardDynamicsChart"], ["Топ производителей", "#dashboardStatusVendorChart"], ["Изменения по полям", "#dashboardFieldChangesChart"], ["Отсутствовавшие устройства", "#dashboardMissingChart"]];
+        const charts = [["Динамика общего числа устройств", "#dashboardDynamicsChart"], ["Топ производителей", "#dashboardStatusVendorChart"], ["Изменения по полям", "#dashboardFieldChangesChart"], ["Отсутствовавшие устройства", "#dashboardMissingChart"]];
         charts.forEach(([title, selector], index) => { const x = 40 + (index % 2) * 970, y = 250 + Math.floor(index / 2) * 465, panel = $(selector), rows = panel ? Array.from(panel.querySelectorAll(".bar-item")).slice(0, 8).map((item) => [item.querySelector(".bar-label span")?.textContent || "", Number(item.querySelector(".bar-label strong")?.textContent || 0)]) : [], max = Math.max(1, ...rows.map((row) => row[1])); ctx.fillStyle = "#fff"; ctx.fillRect(x, y, 950, 445); ctx.strokeStyle = "#d7dee8"; ctx.strokeRect(x, y, 950, 445); ctx.fillStyle = text; ctx.font = "bold 21px Arial"; ctx.fillText(title, x + 22, y + 42); if (!rows.length) { ctx.fillStyle = muted; ctx.font = "15px Arial"; ctx.fillText("Нет данных", x + 22, y + 92); return; } rows.forEach(([label, value], rowIndex) => { const rowY = y + 72 + rowIndex * 43; ctx.fillStyle = text; ctx.font = "15px Arial"; ctx.fillText(String(label).slice(0, 25), x + 22, rowY + 18); ctx.fillStyle = "#e8edf5"; ctx.fillRect(x + 245, rowY, 610, 20); ctx.fillStyle = accent; ctx.fillRect(x + 245, rowY, Math.max(2, 610 * value / max), 20); ctx.fillStyle = text; ctx.fillText(String(value), x + 867, rowY + 17); }); });
         canvas.toBlob((blob) => { if (!blob) return toast("Не удалось создать PNG dashboard."); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "mac-dashboard.png"; link.click(); URL.revokeObjectURL(link.href); toast("Dashboard экспортирован в PNG локально."); }, "image/png");
       }

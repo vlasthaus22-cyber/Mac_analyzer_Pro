@@ -1710,30 +1710,63 @@ def dashboard_snapshot_context(
         as_text(item.get("id")),
     ))
 
-    normalized_settings = dict(settings or {})
+    normalized_settings = normalize_dashboard_settings(settings or {})
     option_ids = [as_text(item.get("id") or item.get("snapshotId")) for item in options]
     option_ids = [snapshot_id for snapshot_id in option_ids if snapshot_id]
     comparison_id = as_text(normalized_settings.get("comparisonSnapshotId"))
-    if comparison_id not in option_ids:
-        comparison_id = current_id if current_id in option_ids else (option_ids[-1] if option_ids else "")
     baseline_id = as_text(normalized_settings.get("baselineSnapshotId"))
-    if baseline_id not in option_ids or baseline_id == comparison_id:
-        try:
-            comparison_index = option_ids.index(comparison_id)
-        except ValueError:
-            comparison_index = len(option_ids)
-        baseline_id = option_ids[comparison_index - 1] if comparison_index > 0 else ""
-
-    explicit_period = bool(normalized_settings.get("changeDateFrom") or normalized_settings.get("changeDateTo"))
-    if baseline_id and comparison_id and (current_id or not explicit_period):
-        normalized_settings["changeMode"] = "snapshots"
+    if normalized_settings["changeMode"] == "snapshots":
+        if comparison_id not in option_ids:
+            comparison_id = current_id if current_id in option_ids else (option_ids[-1] if option_ids else "")
+        if baseline_id not in option_ids or baseline_id == comparison_id:
+            try:
+                comparison_index = option_ids.index(comparison_id)
+            except ValueError:
+                comparison_index = len(option_ids)
+            baseline_id = option_ids[comparison_index - 1] if comparison_index > 0 else ""
         normalized_settings["baselineSnapshotId"] = baseline_id
         normalized_settings["comparisonSnapshotId"] = comparison_id
+        selected_ids = {baseline_id, comparison_id} - {""}
+        selected = [item for item in options if as_text(item.get("id") or item.get("snapshotId")) in selected_ids]
+        hydrated = hydrate_snapshot_devices(selected)
+        hydrated.sort(key=lambda item: option_ids.index(as_text(item.get("id") or item.get("snapshotId"))))
+    else:
+        def option_time(item: dict[str, Any]) -> datetime | None:
+            text = as_text(item.get("fileCreatedAt") or item.get("createdAt") or item.get("created_at") or item.get("savedAt"))
+            if not text:
+                return None
+            try:
+                return datetime.fromisoformat(text.replace("Z", "+00:00")).replace(tzinfo=None)
+            except ValueError:
+                return None
 
-    selected_ids = {baseline_id, comparison_id} - {""}
-    selected = [item for item in options if as_text(item.get("id") or item.get("snapshotId")) in selected_ids]
-    hydrated = hydrate_snapshot_devices(selected)
-    hydrated.sort(key=lambda item: option_ids.index(as_text(item.get("id") or item.get("snapshotId"))))
+        dated = [(item, option_time(item)) for item in options]
+        valid_dated = [(item, value) for item, value in dated if value is not None]
+        try:
+            from_time = datetime.fromisoformat(as_text(normalized_settings.get("changeDateFrom"))) if normalized_settings.get("changeDateFrom") else None
+        except ValueError:
+            from_time = None
+        try:
+            to_time = datetime.fromisoformat(as_text(normalized_settings.get("changeDateTo"))) + timedelta(days=1) if normalized_settings.get("changeDateTo") else None
+        except ValueError:
+            to_time = None
+        comparison_item = next((item for item, value in reversed(valid_dated) if to_time is None or value < to_time), None)
+        if comparison_item is None and options:
+            comparison_item = options[-1]
+        comparison_index = options.index(comparison_item) if comparison_item in options else -1
+        baseline_item = next((item for item, value in reversed(valid_dated) if from_time is not None and value < from_time and options.index(item) < comparison_index), None)
+        if baseline_item is None:
+            baseline_item = next((item for item, value in valid_dated if (from_time is None or value >= from_time) and options.index(item) < comparison_index), None)
+        if baseline_item is None and comparison_index > 0:
+            baseline_item = options[comparison_index - 1]
+        baseline_id = as_text((baseline_item or {}).get("id") or (baseline_item or {}).get("snapshotId"))
+        comparison_id = as_text((comparison_item or {}).get("id") or (comparison_item or {}).get("snapshotId"))
+        normalized_settings["baselineSnapshotId"] = baseline_id
+        normalized_settings["comparisonSnapshotId"] = comparison_id
+        selected_ids = {baseline_id, comparison_id} - {""}
+        selected = [item for item in options if as_text(item.get("id") or item.get("snapshotId")) in selected_ids]
+        hydrated = hydrate_snapshot_devices(selected) if len(selected_ids) >= 2 else []
+        hydrated.sort(key=lambda item: option_ids.index(as_text(item.get("id") or item.get("snapshotId"))))
     return options, hydrated, normalized_settings
 
 
@@ -5115,13 +5148,37 @@ def save_dashboard_settings(settings: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def dashboard_history_context() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Load the same 30-day change context used by the PyQt DashboardWidget."""
+def dashboard_history_context(settings: dict[str, Any] | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Load the exact movement interval selected on Dashboard.
+
+    With no explicit interval the window is anchored to the newest stored
+    movement, so an offline historical database remains analyzable later.
+    """
+    normalized = normalize_dashboard_settings(settings or {})
+    date_from = as_text(normalized.get("changeDateFrom"))
+    date_to = as_text(normalized.get("changeDateTo"))
+    clauses: list[str] = []
+    parameters: list[Any] = []
+    if date_from:
+        clauses.append("datetime(m.changed_at) >= datetime(?)")
+        parameters.append(date_from)
+    if date_to:
+        clauses.append("datetime(m.changed_at) < datetime(?, '+1 day')")
+        parameters.append(date_to)
+    if not clauses:
+        clauses.append("datetime(m.changed_at) >= datetime((SELECT MAX(changed_at) FROM mac_movements), '-30 days')")
+    where_sql = " WHERE " + " AND ".join(clauses)
     with db_connection() as conn:
         movements = [dict(row) for row in conn.execute(
-            "SELECT * FROM mac_movements "
-            "WHERE datetime(changed_at) >= datetime('now', '-30 days') "
-            "ORDER BY changed_at DESC, id DESC LIMIT 5000"
+            "SELECT m.*, h.vendor AS history_vendor, h.model AS history_model, h.ip AS history_ip, "
+            "h.address AS history_address, h.room AS history_room, h.smartroom_id AS history_smartroom_id, "
+            "h.switch_ip AS history_switch_ip, h.switch_port AS history_switch_port, h.hostname AS history_hostname, "
+            "h.serial_number AS history_serial_number, h.device_id AS history_device_id, h.device_name AS history_device_name "
+            "FROM mac_movements AS m LEFT JOIN mac_history AS h ON h.id = ("
+            "SELECT id FROM mac_history WHERE mac = m.mac AND recorded_at <= m.changed_at "
+            "ORDER BY recorded_at DESC, id DESC LIMIT 1)" + where_sql +
+            " ORDER BY m.changed_at DESC, m.id DESC LIMIT 100000",
+            parameters,
         ).fetchall()]
         recent_history = [dict(row) for row in conn.execute(
             "SELECT * FROM mac_history ORDER BY id DESC LIMIT 20000"
@@ -6133,20 +6190,28 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def json_response(self, data: Any, status: int = HTTPStatus.OK) -> None:
         payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(payload)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(payload)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(payload)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            # Closing/reloading a browser tab can cancel an in-flight response.
+            # That is not an API failure and must not trigger a second response.
+            return
 
     def binary_response(self, payload: bytes, filename: str) -> None:
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
+        try:
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            return
 
     def error_response(self, message: str, status: int = HTTPStatus.BAD_REQUEST) -> None:
         self.json_response({"error": message}, status)
@@ -7369,7 +7434,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     as_text(payload.get("snapshotId") or payload.get("resultSnapshotId")),
                     settings,
                 )
-                database_movements, history_devices = dashboard_history_context()
+                database_movements, history_devices = dashboard_history_context(settings)
                 result = build_dashboard_payload(
                     devices,
                     snapshot_options,

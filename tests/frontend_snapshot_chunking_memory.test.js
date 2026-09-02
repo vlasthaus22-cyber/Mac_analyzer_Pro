@@ -15,6 +15,13 @@ assert.equal(typeof snapshots.finishStreamedSnapshot, "function");
 assert.equal(typeof snapshots.copySnapshotWithTransform, "function");
 assert.equal(typeof snapshots.updateSnapshotWithTransform, "function");
 assert.equal(typeof snapshots.transformChunkRows, "function");
+assert.equal(typeof snapshots.comparisonIdentity, "function");
+assert.equal(typeof snapshots.comparisonStorageKey, "function");
+assert.equal(
+  snapshots.comparisonStorageKey("comparison-job", { internalDeviceId: "DEVICE-42", mac: "AA:BB:CC:00:00:42" }),
+  "comparison-job:internal-id:device-42",
+  "baseline and current snapshots must use the same prefixed key when a stable internal id exists",
+);
 assert.equal(typeof snapshots.matchesDashboardFilter, "function");
 assert.equal(snapshots.matchesDashboardFilter({ vendor: "Cisco", room: "101" }, { room: "101" }), true);
 assert.equal(snapshots.matchesDashboardFilter({ vendor: "Cisco", room: "101" }, { room: "202" }), false);

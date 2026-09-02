@@ -96,7 +96,7 @@ def test_dashboard_reproduces_python_status_filters_and_history_charts():
     assert payload["metrics"]["missing"] == 1
     assert payload["metrics"]["unchanged"] == 1
     assert payload["statusCounts"] == {"all": 2, "changed": 1, "missing": 1, "unchanged": 1}
-    assert payload["statusCharts"]["dynamics"] == [{"label": "2026-07-13", "value": 1}]
+    assert payload["statusCharts"]["dynamics"] == [{"label": "Выгрузка 1", "value": 3}]
     assert payload["statusCharts"]["fields"] == [{"label": "Порт", "value": 1}]
     assert payload["statusCharts"]["missing"] == [{"label": "Juniper", "value": 1}]
 
@@ -137,6 +137,42 @@ def test_dashboard_change_analysis_filters_period_without_marking_port_change_cr
     assert result["changes"][0]["severity"] == "medium"
     assert result["changes"][0]["before"] == "Gi1"
     assert result["changes"][0]["after"] == "Gi9"
+    assert result["durationMs"] > 0
+    assert result["skippedInvalidDates"] == 0
+
+
+def test_dashboard_period_uses_only_selected_movements_and_keeps_numeric_metrics_consistent():
+    current = [
+        {"mac": "AABBCC000001", "vendor": "Cisco", "model": "B", "room": "101"},
+        {"mac": "AABBCC000002", "vendor": "Apple", "model": "C", "room": "102"},
+    ]
+    movements = [
+        {
+            "mac": "AABBCC000001", "field_name": "model", "from_value": "A", "to_value": "B",
+            "changed_at": "2026-07-10T09:00:00Z", "history_room": "101", "history_vendor": "Cisco",
+        },
+        {
+            "mac": "AABBCC000002", "field_name": "model", "from_value": "Old", "to_value": "C",
+            "changed_at": "2026-06-10T09:00:00Z", "history_room": "102", "history_vendor": "Apple",
+        },
+        {"mac": "AABBCC000003", "field_name": "ip", "from_value": "", "to_value": "192.0.2.3", "changed_at": ""},
+    ]
+    payload = build_dashboard_payload(
+        current,
+        snapshots=[{"id": "historical", "devices": [{"mac": "FFFFFFFFFFFF", "vendor": "Old"}]}],
+        settings={"changeMode": "period", "changeDateFrom": "2026-07-01", "changeDateTo": "2026-07-31"},
+        movements=movements,
+        history_devices=[{"mac": "EEEEEEEEEEEE", "vendor": "Old inventory"}],
+    )
+
+    assert payload["changeAnalysis"]["summary"]["modified"] == 1
+    assert payload["changeAnalysis"]["summary"]["changedRooms"] == 1
+    assert payload["changeAnalysis"]["skippedInvalidDates"] == 1
+    assert payload["metrics"]["changed"] == 1
+    assert payload["metrics"]["missing"] == 0
+    assert payload["metrics"]["unchanged"] == 1
+    assert [row["mac"] for row in payload["devices"]] == ["AABBCC000001", "AABBCC000002"]
+    assert payload["statusCharts"]["fields"] == [{"label": "Модель", "value": 1}]
 
 
 def test_dashboard_normalizes_russian_history_and_ignores_missing_new_values():
@@ -201,6 +237,29 @@ def test_dashboard_change_analysis_compares_selected_snapshots():
     assert switch_change["beforeDevice"]["room"] == "101"
     assert switch_change["afterDevice"]["ip"] == "192.0.2.10"
     assert next(item for item in result["changes"] if item["type"] == "removed")["severity"] == "high"
+
+
+def test_dashboard_period_compares_the_final_snapshots_at_its_boundaries():
+    snapshots = [
+        {"id": "period-before", "createdAt": "2026-07-01T08:00:00Z", "devices": [
+            {"internalDeviceId": "device-1", "mac": "AABBCC000001", "model": "A", "room": "101"},
+        ]},
+        {"id": "period-after", "createdAt": "2026-07-20T10:30:00Z", "devices": [
+            {"internalDeviceId": "device-1", "mac": "AABBCC000001", "model": "B", "room": "101"},
+        ]},
+    ]
+    result = analyze_dashboard_changes(
+        snapshots,
+        movements=[],
+        settings={"changeMode": "period", "changeDateFrom": "2026-07-01", "changeDateTo": "2026-07-31"},
+    )
+
+    assert result["mode"] == "period"
+    assert result["baselineSnapshotId"] == "period-before"
+    assert result["comparisonSnapshotId"] == "period-after"
+    assert result["summary"]["modified"] == 1
+    assert result["changes"][0]["field"] == "model"
+    assert result["durationMs"] == 2_678_399_999
 
 
 def test_dashboard_uses_previous_and_current_final_snapshots_for_all_status_metrics():
@@ -297,9 +356,11 @@ if __name__ == "__main__":
     test_dashboard_reproduces_python_status_filters_and_history_charts()
     test_dashboard_png_export_contains_real_image_and_expected_dimensions()
     test_dashboard_change_analysis_filters_period_without_marking_port_change_critical()
+    test_dashboard_period_uses_only_selected_movements_and_keeps_numeric_metrics_consistent()
     test_dashboard_normalizes_russian_history_and_ignores_missing_new_values()
     test_newly_filled_switch_ip_is_not_a_false_critical_change()
     test_dashboard_change_analysis_compares_selected_snapshots()
+    test_dashboard_period_compares_the_final_snapshots_at_its_boundaries()
     test_dashboard_uses_previous_and_current_final_snapshots_for_all_status_metrics()
     test_dashboard_reports_unique_macs_across_uploads_and_latest_count()
     test_dashboard_tracks_smartroom_change_without_false_device_replacement()

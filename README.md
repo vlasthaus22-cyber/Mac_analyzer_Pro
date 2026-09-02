@@ -220,6 +220,18 @@ new value, and displays correct UTC first/last dates. Smartroom charts are rebui
 after persistent state restoration, including direct startup on the Analytics
 tab.
 
+Version v1.0.54 repairs Analytics comparison in both supported modes. The
+backend no longer changes an explicitly selected period into snapshot mode,
+and a selected period is evaluated against the final snapshots at its
+boundaries (with the durable movement journal as a fallback). Snapshot
+comparison now uses the same stable identity key while indexing and reading
+IndexedDB, so an unchanged device is not reported as an artificial removal and
+addition. Dashboard counters retain the complete comparison totals even when
+the visible change table is limited, dates without a valid timestamp are
+ignored safely, and the displayed interval is calculated from the actual
+boundaries. The fleet chart now shows the numeric device count for every final
+upload instead of the number of field-change events.
+
 ## Primary autonomous mode
 
 In a downloaded GitHub Release, launch the root `MAC-Analyzer-Pro.html`. It

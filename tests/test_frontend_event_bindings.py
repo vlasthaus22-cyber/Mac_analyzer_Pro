@@ -1023,7 +1023,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260814.1"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=20260814.2"></script>' in html
     assert '<script src="frontend/xlsx-exporter.js?v=20260727.5"></script>' in html
     assert '<script src="frontend/full-xlsx-report.js?v=20260729.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
@@ -2114,6 +2114,7 @@ def test_pyqt_mac_history_dialog_keeps_separate_history_and_movement_tables():
 def test_dashboard_change_period_snapshot_drilldown_is_wired_backend_and_local():
     html = read_index_html()
     app = read_app_js()
+    snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     styles = Path("styles.css").read_text(encoding="utf-8")
 
     for marker in (
@@ -2133,8 +2134,11 @@ def test_dashboard_change_period_snapshot_drilldown_is_wired_backend_and_local()
         "function groupDashboardChanges", "function showDashboardDynamicsDialog",
         "function selectDashboardChangeTab", "function syncDashboardChangeTabState",
         "function handleDashboardChangeTabKeydown", "DashboardChangeTabs.filtersForTab",
+        "dashboardDurationLabel", "dashboardDurationMs",
+        "Нет сохранённых финальных выгрузок.",
     ):
         assert marker in app
+    assert "indexComparisonBaselineChunk" in snapshot_store
     for marker in (
         "function selectFallbackDashboardChangeTab", "function syncFallbackDashboardChangeTabState",
         "dashboardChangeTypeFilter\")?.addEventListener", "dashboardChangeMacSearch\")?.addEventListener",

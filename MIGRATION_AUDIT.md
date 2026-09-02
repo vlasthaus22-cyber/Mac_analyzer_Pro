@@ -10,7 +10,7 @@ SQLite persistence. The machine-checkable source of truth is
 ## Current Coverage
 
 - PyQt blocks covered by web equivalents: 31/31.
-- PARITY_REGISTRY.md requirements: 80/80.
+- PARITY_REGISTRY.md requirements: 84/84.
 - Missing web equivalents: 0.
 - Unchecked items in `PARITY_REGISTRY.md`: 0.
 - Legacy SQLite import: available through `GET /api/legacy/import/status` and
@@ -81,10 +81,10 @@ SQLite persistence. The machine-checkable source of truth is
 
 ## Latest Verification
 
-- Full automated suite: 95/95 Python test files, 299/299 test functions, plus
+- Full automated suite: 100/100 Python test files, 336/336 test functions, plus
   all frontend Node regression and syntax checks.
 - Smartroom worker performance: 10,000 composite `smartroom_id + mac` rows were
-  aggregated in 81.7 ms in the release run, below the 500 ms requirement.
+  aggregated in 92.3 ms in the release run, below the 500 ms requirement.
 - The complete browser Excel report is verified as a real ten-sheet XLSX with
   current devices, analytics, snapshots, every available MAC appearance,
   changes, invalid rows, source-file metadata, references, and settings.

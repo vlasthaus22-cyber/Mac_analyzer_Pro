@@ -1547,6 +1547,28 @@ def test_rest_api_and_ui_controls_smoke():
         assert "summary" in legacy_post
 
 
+def test_cancelled_browser_response_is_not_reported_as_an_api_failure():
+    class ClosedOutput:
+        def write(self, _payload):
+            raise ConnectionAbortedError("browser tab closed")
+
+    class HandlerStub:
+        wfile = ClosedOutput()
+
+        def send_response(self, _status):
+            return None
+
+        def send_header(self, _name, _value):
+            return None
+
+        def end_headers(self):
+            return None
+
+    AppHandler.json_response(HandlerStub(), {"ok": True})
+    AppHandler.binary_response(HandlerStub(), b"content", "report.xlsx")
+
+
 if __name__ == "__main__":
     test_rest_api_and_ui_controls_smoke()
+    test_cancelled_browser_response_is_not_reported_as_an_api_failure()
     print("web api/ui smoke test passed")

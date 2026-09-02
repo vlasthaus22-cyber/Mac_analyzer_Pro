@@ -143,6 +143,15 @@ def test_dashboard_context_hydrates_only_previous_and_current_final_results():
     assert [item["id"] for item in options][-2:] == list(SNAPSHOTS)
     assert [item["id"] for item in hydrated] == list(SNAPSHOTS)
     assert [len(item["devices"]) for item in hydrated] == [1, 2]
+    assert settings["changeMode"] == "period"
+
+    _, hydrated, settings = dashboard_snapshot_context(
+        [{"id": SNAPSHOTS[1], "backendStored": True}, {"id": SNAPSHOTS[0], "backendStored": True}],
+        SNAPSHOTS[1],
+        {"changeMode": "snapshots"},
+    )
+    assert [item["id"] for item in hydrated] == list(SNAPSHOTS)
+    assert [len(item["devices"]) for item in hydrated] == [1, 2]
     assert settings["changeMode"] == "snapshots"
     assert settings["baselineSnapshotId"] == SNAPSHOTS[0]
     assert settings["comparisonSnapshotId"] == SNAPSHOTS[1]

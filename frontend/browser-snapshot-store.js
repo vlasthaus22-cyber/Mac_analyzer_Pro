@@ -1434,6 +1434,30 @@
     return internalId ? `internal-id:${internalId}` : mac ? `mac:${mac}` : serial ? `serial:${serial}` : deviceId ? `device:${deviceId}` : "";
   }
 
+  function comparisonStorageKey(jobId, device) {
+    const identity = comparisonIdentity(device);
+    return identity ? `${String(jobId || "")}:${identity}` : "";
+  }
+
+  async function indexComparisonBaselineChunk(jobId, rows) {
+    const database = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const current = database.transaction(enrichmentRowStore, "readwrite");
+      const store = current.objectStore(enrichmentRowStore);
+      let indexed = 0;
+      for (const source of rows) {
+        const device = compactComparisonDevice(source);
+        const key = comparisonStorageKey(jobId, device);
+        if (!key) continue;
+        store.put({ key, jobId, mac: device.mac, aliases: [], device, updatedAt: Date.now() });
+        indexed += 1;
+      }
+      current.oncomplete = () => { database.close(); resolve(indexed); };
+      current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Snapshot comparison baseline failed")); };
+      current.onabort = current.onerror;
+    });
+  }
+
   async function compareCurrentChunk(jobId, rows, result, limit) {
     const database = await openDatabase();
     return new Promise((resolve, reject) => {
@@ -1443,7 +1467,7 @@
         const device = compactComparisonDevice(source);
         const identity = comparisonIdentity(device);
         if (!identity) continue;
-        const key = `${jobId}:${identity}`;
+        const key = comparisonStorageKey(jobId, device);
         const request = store.get(key);
         request.onsuccess = () => {
           const previous = request.result?.device;
@@ -1539,9 +1563,7 @@
     try {
       const baseline = await streamSnapshot(baselineId, async (kind, rows) => {
         if (kind !== "device") return;
-        const compact = rows.map(compactComparisonDevice).filter((device) => comparisonIdentity(device)).map((device) => ({ ...device, storageIdentity: comparisonIdentity(device) }));
-        await mergeEnrichmentRows(jobId, compact, { allowNew: true });
-        compact.length = 0;
+        await indexComparisonBaselineChunk(jobId, rows);
       });
       if (!baseline) return null;
       const comparison = await streamSnapshot(comparisonId, async (kind, rows) => {
@@ -1702,6 +1724,8 @@
     aggregate,
     aggregateSeries,
     matchesDashboardFilter,
+    comparisonIdentity,
+    comparisonStorageKey,
     compareSnapshots,
     createPageCollector,
     clearEnrichment,

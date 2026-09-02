@@ -1,6 +1,6 @@
 param(
     [string]$OutputDirectory = "",
-    [string]$Version = "v1.0.53"
+    [string]$Version = "v1.0.54"
 )
 
 $ErrorActionPreference = "Stop"

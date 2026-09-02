@@ -247,13 +247,21 @@ def analyze_dashboard_changes(
     selected_to = normalized["changeDateTo"]
     baseline_id = normalized["baselineSnapshotId"]
     comparison_id = normalized["comparisonSnapshotId"]
+    baseline_date = ""
+    comparison_date = ""
+    skipped_invalid_dates = 0
 
-    if normalized["changeMode"] == "snapshots" and len(snapshots) >= 2:
+    if len(snapshots) >= 2:
         baseline_id = baseline_id or options[-2]["id"]
         comparison_id = comparison_id or options[-1]["id"]
         indexed = {_snapshot_id(snapshot, index): snapshot for index, snapshot in enumerate(snapshots) if isinstance(snapshot, dict)}
         baseline = indexed.get(baseline_id) or indexed.get(options[-2]["id"]) or snapshots[-2]
         comparison = indexed.get(comparison_id) or indexed.get(options[-1]["id"]) or snapshots[-1]
+        baseline_date = _text(baseline.get("fileCreatedAt") or baseline.get("createdAt") or baseline.get("created_at") or baseline.get("savedAt"))
+        comparison_date = _text(comparison.get("fileCreatedAt") or comparison.get("createdAt") or comparison.get("created_at") or comparison.get("savedAt"))
+        if normalized["changeMode"] == "period":
+            selected_from = selected_from or (_parse_date(baseline_date) or datetime.now()).date().isoformat()
+            selected_to = selected_to or (_parse_date(comparison_date) or datetime.now()).date().isoformat()
         baseline_devices = [device for device in baseline.get("devices", []) if isinstance(device, dict)]
         comparison_devices = [device for device in comparison.get("devices", []) if isinstance(device, dict)]
         pairs, added_devices, removed_devices = pair_device_sets(baseline_devices, comparison_devices)
@@ -303,14 +311,21 @@ def analyze_dashboard_changes(
         # to the newest supplied event, not to the wall clock at viewing time.
         date_to = _parse_date(selected_to, end_of_day=True) or latest_movement or datetime.now()
         date_from = _parse_date(selected_from) or (date_to - timedelta(days=30))
+        if date_from > date_to:
+            date_from, date_to = date_to.replace(hour=0, minute=0, second=0, microsecond=0), date_from.replace(hour=23, minute=59, second=59, microsecond=999999)
         selected_from = selected_from or date_from.date().isoformat()
         selected_to = selected_to or date_to.date().isoformat()
+        if selected_from > selected_to:
+            selected_from, selected_to = selected_to, selected_from
         for movement in movements:
             if not isinstance(movement, dict) or not _mac(movement):
                 continue
             changed_at = _movement_value(movement, "changedAt", "changed_at") or _text(movement.get("date_str"))
             parsed = _parse_date(changed_at)
-            if parsed and not date_from <= parsed <= date_to:
+            if parsed is None:
+                skipped_invalid_dates += 1
+                continue
+            if not date_from <= parsed <= date_to:
                 continue
             field = _movement_value(movement, "field", "field_name") or "device"
             before = movement.get("before", movement.get("from_value", movement.get("old_value", "")))
@@ -322,7 +337,15 @@ def analyze_dashboard_changes(
             if change_type == "modified" and _text(before) and not _text(after):
                 # A temporarily absent value is not proof of a real change.
                 continue
-            changes.append(_change_row(mac=_mac(movement), changed_at=changed_at, change_type=change_type, field=field, before=before, after=after, source=_text(movement.get("source") or movement.get("file_name") or "history")))
+            context = _movement_device_context(movement)
+            before_device = {**context, _normalize_change_field(field): before} if context else None
+            after_device = {**context, _normalize_change_field(field): after} if context else None
+            changes.append(_change_row(
+                mac=_mac(movement), changed_at=changed_at, change_type=change_type, field=field,
+                before=before, after=after,
+                source=_text(movement.get("source") or movement.get("file_name") or "history"),
+                before_device=before_device, after_device=after_device,
+            ))
 
     period_groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
     for item in changes:
@@ -350,11 +373,20 @@ def analyze_dashboard_changes(
     summary["changedRooms"] = len(changed_rooms)
     summary["changedRoomValues"] = sorted(changed_rooms)
     field_counts = Counter(item["fieldLabel"] for item in changes)
+    baseline_time = _parse_date(baseline_date)
+    comparison_time = _parse_date(comparison_date)
+    if normalized["changeMode"] == "period":
+        baseline_time = _parse_date(selected_from)
+        comparison_time = _parse_date(selected_to, end_of_day=True)
+    duration_ms = max(0, int((comparison_time - baseline_time).total_seconds() * 1000)) if baseline_time and comparison_time else 0
     return {
         "mode": normalized["changeMode"], "dateFrom": selected_from, "dateTo": selected_to,
         "baselineSnapshotId": baseline_id, "comparisonSnapshotId": comparison_id,
+        "baselineDate": baseline_date, "comparisonDate": comparison_date,
+        "durationMs": duration_ms, "durationSeconds": duration_ms // 1000,
         "snapshotOptions": options, "summary": summary, "changes": changes,
         "fieldChanges": len(changes),
+        "skippedInvalidDates": skipped_invalid_dates,
         "fieldCounts": [{"label": label, "value": value} for label, value in field_counts.most_common(12)],
     }
 
@@ -396,6 +428,29 @@ def _mac(device_or_value: Any) -> str:
 
 def _movement_value(record: dict[str, Any], camel: str, snake: str) -> str:
     return _text(record.get(camel) if record.get(camel) is not None else record.get(snake))
+
+
+def _movement_device_context(record: dict[str, Any]) -> dict[str, Any]:
+    aliases = {
+        "vendor": ("history_vendor", "vendor"),
+        "model": ("history_model", "model"),
+        "ip": ("history_ip", "ip"),
+        "address": ("history_address", "address"),
+        "room": ("history_room", "room"),
+        "smartroomId": ("history_smartroom_id", "smartroomId", "smartroom_id"),
+        "switchIp": ("history_switch_ip", "switchIp", "switch_ip"),
+        "switchPort": ("history_switch_port", "switchPort", "switch_port"),
+        "hostname": ("history_hostname", "hostname", "host_name"),
+        "serialNumber": ("history_serial_number", "serialNumber", "serial_number", "serial"),
+        "deviceId": ("history_device_id", "deviceId", "device_id"),
+        "deviceName": ("history_device_name", "deviceName", "device_name"),
+    }
+    result = {"mac": _mac(record)}
+    for field, keys in aliases.items():
+        value = next((_text(record.get(key)) for key in keys if _text(record.get(key))), "")
+        if value:
+            result[field] = value
+    return result if len(result) > 1 else {}
 
 
 def _latest_history_devices(
@@ -525,6 +580,8 @@ def build_dashboard_payload(
             "after": item.get("after"),
             "changedAt": item.get("date"),
             "source": item.get("source"),
+            "beforeDevice": item.get("beforeDevice"),
+            "afterDevice": item.get("afterDevice"),
         }
         for item in change_analysis.get("changes", [])
     ]
@@ -550,6 +607,43 @@ def build_dashboard_payload(
             device for mac, device in current_by_mac.items()
             if mac not in modified_macs and mac not in added_macs
         ]
+    elif normalized["changeMode"] == "period":
+        current_by_identity = {
+            _device_identity(device): device
+            for device in devices
+            if isinstance(device, dict) and _device_identity(device)
+        }
+        modified_identities = {
+            item.get("identity") for item in change_analysis.get("changes", [])
+            if item.get("type") == "modified" and item.get("identity")
+        }
+        added_identities = {
+            item.get("identity") for item in change_analysis.get("changes", [])
+            if item.get("type") == "added" and item.get("identity")
+        }
+        missing_by_identity: dict[str, dict[str, Any]] = {}
+        latest_history = _latest_history_devices(snapshots or [], history_devices or [])
+        for item in change_analysis.get("changes", []):
+            if item.get("type") != "removed" or not item.get("identity"):
+                continue
+            previous = dict(item.get("beforeDevice") or latest_history.get(item.get("mac")) or {"mac": item.get("mac")})
+            previous["dashboardStatus"] = "missing"
+            missing_by_identity.setdefault(item["identity"], previous)
+        classified = {
+            "all": [dict(device) for device in current_by_identity.values()],
+            "changed": [
+                {**current_by_identity[identity], "dashboardStatus": "changed"}
+                for identity in sorted(modified_identities)
+                if identity in current_by_identity
+            ],
+            "missing": list(missing_by_identity.values()),
+            "unchanged": [
+                {**device, "dashboardStatus": "unchanged"}
+                for identity, device in current_by_identity.items()
+                if identity not in modified_identities and identity not in added_identities
+            ],
+            "movements": comparison_movements,
+        }
     current_scope = filter_dashboard_devices(classified["all"], normalized)
     changed_scope = filter_dashboard_devices(classified["changed"], normalized)
     missing_scope = filter_dashboard_devices(classified["missing"], normalized)
@@ -563,6 +657,17 @@ def build_dashboard_payload(
     filtered = status_devices[normalized["status"]]
     chart_payload = build_chart_payload(filtered, snapshots or [])
     fleet = dashboard_upload_fleet(snapshots or [])
+    status_charts = _status_charts({**classified, "missing": missing_scope}, filtered, normalized["chartLimit"])
+    # The dashboard panel is explicitly the fleet-size timeline.  Movement
+    # events belong to the changes table/field chart and must not be displayed
+    # as if they were device totals.
+    status_charts["dynamics"] = [
+        {
+            "label": _text(item.get("name") or item.get("date") or item.get("id"))[:28],
+            "value": int(item.get("count") or 0),
+        }
+        for item in (fleet.get("series") or [])[-20:]
+    ]
     vendors = sorted({_text(device.get("vendor")) for device in devices if _text(device.get("vendor"))})
     rooms = sorted({_text(device.get("room")) for device in devices if _text(device.get("room"))})
     return {
@@ -592,7 +697,7 @@ def build_dashboard_payload(
         "statusCounts": {key: len(value) for key, value in status_devices.items()},
         "uploadFleet": fleet,
         "changeAnalysis": change_analysis,
-        "statusCharts": _status_charts({**classified, "missing": missing_scope}, filtered, normalized["chartLimit"]),
+        "statusCharts": status_charts,
         "charts": [
             {**chart, "items": (chart.get("items") or [])[:normalized["chartLimit"]]}
             for chart in chart_payload["charts"]
@@ -758,7 +863,7 @@ def export_dashboard_png(payload: dict[str, Any]) -> dict[str, Any]:
 
     charts = payload.get("statusCharts") or {}
     chart_specs = [
-        ("Динамика изменений по дням", charts.get("dynamics") or []),
+        ("Динамика общего числа устройств", charts.get("dynamics") or []),
         ("Топ производителей", charts.get("vendors") or []),
         ("Изменения по полям", charts.get("fields") or []),
         ("Отсутствовавшие устройства", charts.get("missing") or []),
