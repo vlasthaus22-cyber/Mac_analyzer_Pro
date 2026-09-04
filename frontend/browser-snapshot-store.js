@@ -639,7 +639,7 @@
     });
   }
 
-  async function readEnrichmentPage(jobId, afterKey = "", limit = snapshotChunkRows) {
+  async function readEnrichmentPage(jobId, afterKey = "", limit = snapshotChunkRows, includeRecords = false) {
     const id = String(jobId || "");
     const prefix = `${id}:`;
     const upper = `${prefix}\uffff`;
@@ -656,7 +656,7 @@
       request.onsuccess = () => {
         const cursor = request.result;
         if (!cursor || rows.length >= limit) return;
-        rows.push(cursor.value?.device || {});
+        rows.push(includeRecords ? cursor.value : cursor.value?.device || {});
         lastKey = String(cursor.key);
         if (rows.length < limit) cursor.continue();
       };
@@ -1458,7 +1458,7 @@
     return identity ? `${String(jobId || "")}:${identity}` : "";
   }
 
-  async function indexComparisonBaselineChunk(jobId, rows) {
+  async function indexComparisonBaselineChunk(jobId, rows, rowOffset = null) {
     const database = await openDatabase();
     return new Promise((resolve, reject) => {
       const current = database.transaction(enrichmentRowStore, "readwrite");
@@ -1466,8 +1466,9 @@
       let indexed = 0;
       for (const source of rows) {
         const device = compactComparisonDevice(source);
-        const key = comparisonStorageKey(jobId, device);
+        let key = comparisonStorageKey(jobId, device);
         if (!key) continue;
+        if (rowOffset !== null) key += `:row-${rowOffset++}`;
         const aliases = comparisonAliases(device).map((alias) => `${jobId}:${alias}`);
         store.put({ key, jobId, mac: device.mac, aliases, device, matched: false, updatedAt: Date.now() });
         indexed += 1;
@@ -1476,6 +1477,103 @@
       current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Snapshot comparison baseline failed")); };
       current.onabort = current.onerror;
     });
+  }
+
+  function comparisonHistoryIds(snapshots, baselineId, comparisonId) {
+    // The caller supplies Final metadata in commit order, not workbook date order.
+    const rows = Array.isArray(snapshots) ? snapshots.filter((item) => item && typeof item === "object") : [];
+    const baselineIndex = rows.findIndex((item) => String(item.id) === String(baselineId));
+    if (baselineIndex < 0) return [];
+    return Array.from(new Set(rows.slice(0, baselineIndex).reverse().filter((item) => {
+      const name = String(item.name || "").toLowerCase();
+      const source = String(item.source || "").toLowerCase();
+      return (item.kind === "analysis" || /^(анализ:|analysis:)/.test(name)) &&
+        !["ip-mapping-apply", "local-ip-mapping", "local-vendor-model-rules"].includes(source);
+    }).map((item) => String(item.id || "")).filter((id) => id && id !== String(comparisonId))));
+  }
+
+  async function restoreComparisonChunk(jobId, historyJobId, rows, snapshotId) {
+    const database = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const current = database.transaction(enrichmentRowStore, "readwrite");
+      const store = current.objectStore(enrichmentRowStore);
+      const aliases = store.index("aliases");
+      let position = 0;
+      const next = () => {
+        if (position >= rows.length) return;
+        const baselineRecord = rows[position++];
+        const device = baselineRecord.device;
+        const keys = comparisonAliases(device);
+        const matches = new Map();
+        let aliasPosition = 0;
+        const readNext = () => {
+          if (aliasPosition < keys.length) {
+            // Two hits are sufficient to reject ambiguity; never load an unbounded alias group.
+            const request = aliases.getAll(IDBKeyRange.only(`${historyJobId}:${keys[aliasPosition++]}`), 2);
+            request.onsuccess = () => {
+              for (const record of request.result || []) matches.set(record.key, record);
+              readNext();
+            };
+            request.onerror = () => current.abort();
+            return;
+          }
+          if (matches.size !== 1) { next(); return; }
+          const previous = matches.values().next().value.device;
+          // A shared MAC must not silently override contradictory stable identifiers.
+          if (["internalDeviceId", "serialNumber", "deviceId"].some((field) => {
+            const left = String(device[field] || "").trim().toLowerCase();
+            const right = String(previous[field] || "").trim().toLowerCase();
+            return left && right && left !== right;
+          })) { next(); return; }
+          const request = store.get(baselineRecord.key);
+          request.onsuccess = () => {
+            const record = request.result;
+            if (record) {
+              for (const [field, value] of Object.entries(previous)) {
+                if (field === "internalDeviceId" || typeof value !== "string" || !value.trim()) continue;
+                if (!String(record.device[field] || "").trim()) {
+                  record.device[field] = value;
+                  (record.recoveredFields ||= {})[field] = snapshotId;
+                }
+              }
+              store.put(record);
+            }
+            next();
+          };
+          request.onerror = () => current.abort();
+        };
+        readNext();
+      };
+      next();
+      current.oncomplete = () => { database.close(); resolve(); };
+      current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Не удалось восстановить значения предыдущего Final")); };
+      current.onabort = current.onerror;
+    });
+  }
+
+  async function restoreComparisonHistory(jobId, snapshotIds) {
+    const historyJobId = `${jobId}-history`;
+    try {
+      for (const snapshotId of snapshotIds) {
+        let offset = 0;
+        await streamSnapshot(snapshotId, async (kind, rows) => {
+          if (kind !== "device") return;
+          await indexComparisonBaselineChunk(historyJobId, rows, offset);
+          offset += rows.length;
+        });
+        let afterKey = "";
+        while (true) {
+          const page = await readEnrichmentPage(jobId, afterKey, snapshotChunkRows, true);
+          if (!page.rows.length) break;
+          await restoreComparisonChunk(jobId, historyJobId, page.rows, snapshotId);
+          afterKey = page.lastKey;
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        await clearEnrichment(historyJobId);
+      }
+    } finally {
+      await clearEnrichment(historyJobId);
+    }
   }
 
   async function compareCurrentChunk(jobId, rows, result, limit) {
@@ -1534,6 +1632,7 @@
             if (result.changes.length < limit) result.changes.push({
               mac: device.mac, type: "modified", field, before, after,
               beforeDevice: { ...previous }, afterDevice: { ...device },
+              beforeSnapshotId: matchedRecord.recoveredFields?.[field] || result.baselineSnapshotId,
             });
           }
           if (device.hasConflict) {
@@ -1617,6 +1716,7 @@
     const jobId = `snapshot-compare-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const limit = Math.max(100, Math.min(20000, Number(options.limit || 5000)));
     const result = {
+      baselineSnapshotId: String(baselineId || ""),
       fields: ["mac", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName"],
       added: 0, removed: 0, modifiedDevices: 0, modifiedFields: 0, changedDevices: 0, unchanged: 0, critical: 0,
       changes: [], fieldCounts: new Map(), changedVendors: new Map(), unchangedVendors: new Map(), missingVendors: new Map(),
@@ -1628,6 +1728,7 @@
         await indexComparisonBaselineChunk(jobId, rows);
       });
       if (!baseline) return null;
+      await restoreComparisonHistory(jobId, comparisonHistoryIds(options.historySnapshots, baselineId, comparisonId));
       const comparison = await streamSnapshot(comparisonId, async (kind, rows) => {
         if (kind === "device") await compareCurrentChunk(jobId, rows, result, limit);
       });
@@ -1788,6 +1889,7 @@
     matchesDashboardFilter,
     comparisonIdentity,
     comparisonAliases,
+    comparisonHistoryIds,
     comparisonStorageKey,
     compareSnapshots,
     createPageCollector,

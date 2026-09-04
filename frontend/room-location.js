@@ -23,8 +23,9 @@
     ]
       .map(text)
       .filter(Boolean);
-    const path = candidates.find((candidate) => candidate.split(",").map(text).filter(Boolean).length >= 5) || "";
-    const parts = path.split(",").map(text).filter(Boolean);
+    const path = candidates.find((candidate) => candidate.split(",").length >= 5) || "";
+    // Empty segments still occupy their level (e.g. an unknown floor).
+    const parts = path.split(",").map(text);
     if (parts.length >= 5) {
       result.tb = result.tb || parts[0];
       result.city = result.city || parts[1];

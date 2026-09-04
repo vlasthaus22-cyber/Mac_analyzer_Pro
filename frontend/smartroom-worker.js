@@ -17,8 +17,8 @@
         room: text(row.room || row.room_name || row.Room || row['Помещение'])
       };
       const locationCandidates = [row.locationPath, row.location_path, row.location_hierarchy, row.hierarchy, row.address, row.physicalAddress, row.room, row.room_name, row.Room, row['Помещение']].map(text).filter(Boolean);
-      const path = locationCandidates.find(value => value.split(',').filter(part => text(part)).length >= 5) || text(row.locationPath || row.location_path || row.location_hierarchy || row.hierarchy || row.address || row.physicalAddress);
-      const parts = path.split(',').map(text).filter(Boolean);
+      const path = locationCandidates.find(value => value.split(',').length >= 5) || text(row.locationPath || row.location_path || row.location_hierarchy || row.hierarchy || row.address || row.physicalAddress);
+      const parts = path.split(',').map(text);
       if (parts.length >= 5) {
         result.tb = result.tb || parts[0];
         result.city = result.city || parts[1];

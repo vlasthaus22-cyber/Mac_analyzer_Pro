@@ -154,6 +154,16 @@ require("../frontend/smartroom-worker.js");
   assert.strictEqual(serialReport.snapshots[0].total, 2, "serial numbers must keep distinct room devices without MAC");
   assert.strictEqual(serialReport.rooms[0].history[0].devices.length, 2);
 
+  const incompleteLocation = await global.MacAnalyzerSmartroomWorker.build([
+    { id: "no-floor", createdAt: "2026-08-03T00:00:00Z", devices: [
+      { mac: "001122334455", smartroomId: "NO-FLOOR", room: "ЦА, Москва, Кутузовский проспект, , Переговорная 1" },
+    ] },
+  ]);
+  assert.equal(incompleteLocation.rooms[0].city, "Москва");
+  assert.equal(incompleteLocation.rooms[0].site, "Кутузовский проспект");
+  assert.equal(incompleteLocation.rooms[0].floor, "");
+  assert.equal(incompleteLocation.rooms[0].room, "Переговорная 1");
+
   const large = Array.from({ length: 10000 }, (_value, index) => ({
     mac: `AABBCC${index.toString(16).padStart(6, "0")}`,
     smartroomId: `ROOM-${index}`,

@@ -1,5 +1,11 @@
 # MAC Analyzer Pro
 
+Полный комплект v1.0.57: `MAC-Analyzer-v1.0.57-Full.zip` в GitHub Releases.
+Он включает исходники, автономный HTML, Windows-приложение и сохранённые
+данные v1.0.27. Исправлены пустые уровни адреса и восстановление известных
+значений предыдущего Final в автономной аналитике. Подробности:
+[`RELEASE_NOTES_v1.0.57.md`](RELEASE_NOTES_v1.0.57.md).
+
 MAC Analyzer Pro is a web application for MAC inventory analysis, multi-file
 enrichment, OUI/vendor/model detection, history, comparisons, analytics,
 dashboards, topology, and export.
@@ -16,7 +22,9 @@ device IP in the results table. The hint never overwrites devices, history,
 snapshots, or exports. A `❗` warning beside the MAC in change history preserves
 the display-only DDIO candidate IP and explains that it appeared after a switch
 IP change; no device field is replaced. Legacy DDIO mappings with one shared IP
-column remain compatible.
+column remain compatible. Separately, during enrichment a confirmed DDIO
+MAC/IP match may fill an empty device IP; an existing IP is never overwritten
+by this fallback, and its DDIO source is retained.
 
 Analytics change tabs open the journal with an explicit active category for
 all, critical, added, missing, or modified devices. Reopening the journal

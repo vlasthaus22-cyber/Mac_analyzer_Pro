@@ -1,6 +1,6 @@
 {
   "name": "mac-analyzer-pro",
-  "version": "1.0.56",
+  "version": "1.0.57",
   "private": true,
   "packageManager": "pnpm@11.16.0",
   "scripts": {
@@ -12,6 +12,7 @@
   },
   "devDependencies": {
     "eslint": "9.39.5",
+    "fake-indexeddb": "6.2.5",
     "prettier": "3.6.2"
   }
 }

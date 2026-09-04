@@ -47,4 +47,19 @@ assert.equal(Location.matches(rooms[0], {}, "codec-one"), true);
 assert.equal(Location.matches(rooms[0], {}, "00:11:22:33:44:55"), true);
 assert.equal(Location.matches(rooms[0], {}, "Невский"), false);
 
+for (let missing = 0; missing < 5; missing++) {
+  const parts = ["ЦА", "Москва", "Кутузовский проспект", "3 этаж", "Переговорная 1"];
+  parts[missing] = "";
+  const parsed = Location.parse({ room: parts.join(", ") });
+  Location.fields.forEach((field, index) =>
+    assert.equal(parsed[field], parts[index], `missing level ${missing}: ${field}`),
+  );
+}
+const noFloor = { room: "ЦА, Москва, Кутузовский проспект, , Переговорная 1" };
+const otherSite = { room: "ЦА, Москва, Другая площадка, , Переговорная 2" };
+const incomplete = Location.cascade([noFloor, otherSite], { tb: "ЦА", city: "Москва", site: "Кутузовский проспект" });
+assert.deepEqual(incomplete.options.floor, []);
+assert.deepEqual(incomplete.options.room, ["Переговорная 1"]);
+assert.equal(Location.matches(noFloor, incomplete.filters, "Переговорная 1"), true);
+assert.equal(Location.matches(otherSite, incomplete.filters), false);
 console.log("frontend room location test passed");
