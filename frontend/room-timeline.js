@@ -50,7 +50,80 @@
     return result;
   }
 
+  function deviceAliases(device) {
+    const mac = normalizeMac(device?.mac || device?.macFormatted || device?.mac_formatted);
+    const deviceId = value(device, "deviceId", "device_id").toLowerCase();
+    const serial = value(device, "serialNumber", "serial_number", "serial").toUpperCase();
+    const hostname = value(device, "hostname", "host_name").toLowerCase();
+    const internalId = value(device, "internalDeviceId", "internal_device_id").toLowerCase();
+    return [
+      internalId && `internal:${internalId}`,
+      mac && `mac:${mac}`,
+      serial && `serial:${serial}`,
+      deviceId && `device:${deviceId}`,
+      hostname && serial && `host-serial:${hostname}|${serial}`,
+    ].filter(Boolean);
+  }
+
+  function pairDevices(previousDevices, currentDevices) {
+    const previous = Array.from(deviceMap(previousDevices).values());
+    const current = Array.from(deviceMap(currentDevices).values());
+    const aliases = new Map();
+    const ambiguous = new Set();
+    for (const device of previous) {
+      for (const alias of deviceAliases(device)) {
+        if (ambiguous.has(alias)) continue;
+        if (aliases.has(alias) && aliases.get(alias) !== device) {
+          aliases.delete(alias);
+          ambiguous.add(alias);
+        } else aliases.set(alias, device);
+      }
+    }
+    const used = new Set();
+    const pairs = [];
+    const added = [];
+    for (const device of current) {
+      const matches = new Set(
+        deviceAliases(device)
+          .filter((alias) => !ambiguous.has(alias))
+          .map((alias) => aliases.get(alias))
+          .filter(Boolean),
+      );
+      const match = matches.size === 1 ? matches.values().next().value : null;
+      if (!match || used.has(match)) added.push(device);
+      else {
+        used.add(match);
+        pairs.push([match, device]);
+      }
+    }
+    return { pairs, added, removed: previous.filter((device) => !used.has(device)) };
+  }
+
+  function mergeKnownDevice(previous, current) {
+    const merged = { ...(previous || {}) };
+    for (const [field, fieldValue] of Object.entries(current || {})) {
+      if (Array.isArray(fieldValue)) merged[field] = Array.from(new Set([...(merged[field] || []), ...fieldValue]));
+      else if (text(fieldValue) || !Object.prototype.hasOwnProperty.call(merged, field)) merged[field] = fieldValue;
+    }
+    return merged;
+  }
+
+  function hydrateKnownHistory(history) {
+    const hydrated = [];
+    let known = [];
+    for (const observation of history || []) {
+      const current = Array.from(deviceMap(observation?.devices || []).values());
+      const paired = pairDevices(known, current);
+      const devices = paired.pairs.map(([previous, device]) => mergeKnownDevice(previous, device));
+      devices.push(...paired.added);
+      known = devices;
+      hydrated.push({ ...observation, devices });
+    }
+    return hydrated;
+  }
+
   const trackedFields = Object.freeze([
+    ["mac", ["mac", "macFormatted", "mac_formatted"], "MAC / физический адрес"],
     ["switchIp", ["switchIp", "switch_ip", "ip_switch"], "IP коммутатора"],
     ["switchPort", ["switchPort", "switch_port", "port"], "Порт"],
     ["ip", ["ip", "deviceIp", "device_ip"], "IP устройства"],
@@ -67,8 +140,8 @@
   function changedValues(before, after) {
     const changes = [];
     for (const [field, keys, label] of trackedFields) {
-      const oldValue = value(before, ...keys);
-      const newValue = value(after, ...keys);
+      const oldValue = field === "mac" ? normalizeMac(value(before, ...keys)) : value(before, ...keys);
+      const newValue = field === "mac" ? normalizeMac(value(after, ...keys)) : value(after, ...keys);
       if (!newValue || oldValue === newValue) continue;
       changes.push({ field, label, before: oldValue, after: newValue });
     }
@@ -76,33 +149,49 @@
   }
 
   function compareLatest(room) {
-    const history = Array.from(room?.history || []).filter((item) => item && typeof item === "object");
+    const history = hydrateKnownHistory(
+      Array.from(room?.history || []).filter((item) => item && typeof item === "object"),
+    );
     const previousObservation = history.at(-2) || null;
     const currentObservation = history.at(-1) || null;
-    const previous = deviceMap(previousObservation?.devices || []);
-    const current = deviceMap(currentObservation?.devices || []);
-    const identities = new Set([...previous.keys(), ...current.keys()]);
     const entries = [];
-    for (const identity of identities) {
-      const beforeDevice = previous.get(identity) || null;
-      const device = current.get(identity) || null;
-      const changes = beforeDevice && device ? changedValues(beforeDevice, device) : [];
+    const paired = pairDevices(previousObservation?.devices || [], currentObservation?.devices || []);
+    for (const [beforeDevice, device] of paired.pairs) {
+      const changes = changedValues(beforeDevice, device);
       const moved = changes.some((change) => change.field === "switchIp" || change.field === "switchPort");
       let status = "Без изменений";
-      if (!beforeDevice) status = "Добавлен";
-      else if (!device) status = "Удален";
-      else if (moved) status = "Перемещен";
+      if (moved) status = "Перемещен";
       else if (changes.length) status = "Изменен";
       entries.push({
-        identity,
+        identity: deviceIdentity(device),
         mac: normalizeMac(device?.mac || beforeDevice?.mac),
         model: text(device?.model || beforeDevice?.model) || "Unknown",
         status,
         changes,
         beforeDevice,
-        device: device || beforeDevice || {},
+        device,
       });
     }
+    for (const device of paired.added)
+      entries.push({
+        identity: deviceIdentity(device),
+        mac: normalizeMac(device.mac),
+        model: text(device.model) || "Unknown",
+        status: "Добавлен",
+        changes: [],
+        beforeDevice: null,
+        device,
+      });
+    for (const beforeDevice of paired.removed)
+      entries.push({
+        identity: deviceIdentity(beforeDevice),
+        mac: normalizeMac(beforeDevice.mac),
+        model: text(beforeDevice.model) || "Unknown",
+        status: "Удален",
+        changes: [],
+        beforeDevice,
+        device: beforeDevice,
+      });
     const changed = entries.filter((item) => item.status !== "Без изменений");
     return {
       previousDate: Time.toUtcIso(previousObservation?.date),
@@ -117,33 +206,29 @@
 
   function events(room) {
     const result = [];
-    let previous = new Map();
-    for (const observation of room?.history || []) {
-      const current = deviceMap(observation.devices || []);
-      for (const [identity, device] of previous) {
-        if (!current.has(identity))
-          result.push({
-            date: observation.date,
-            mac: normalizeMac(device.mac),
-            model: text(device.model) || "Unknown",
-            vendor: text(device.vendor) || "Unknown",
-            status: "Удален",
-            device,
-          });
-      }
-      for (const [identity, device] of current) {
-        if (!previous.has(identity)) {
-          result.push({
-            date: observation.date,
-            mac: normalizeMac(device.mac),
-            model: text(device.model) || "Unknown",
-            vendor: text(device.vendor) || "Unknown",
-            status: "Добавлен",
-            device,
-          });
-          continue;
-        }
-        const beforeDevice = previous.get(identity);
+    let previous = [];
+    for (const observation of hydrateKnownHistory(room?.history || [])) {
+      const current = Array.from(deviceMap(observation.devices || []).values());
+      const paired = pairDevices(previous, current);
+      for (const device of paired.removed)
+        result.push({
+          date: observation.date,
+          mac: normalizeMac(device.mac),
+          model: text(device.model) || "Unknown",
+          vendor: text(device.vendor) || "Unknown",
+          status: "Удален",
+          device,
+        });
+      for (const device of paired.added)
+        result.push({
+          date: observation.date,
+          mac: normalizeMac(device.mac),
+          model: text(device.model) || "Unknown",
+          vendor: text(device.vendor) || "Unknown",
+          status: "Добавлен",
+          device,
+        });
+      for (const [beforeDevice, device] of paired.pairs) {
         const changes = changedValues(beforeDevice, device);
         if (!changes.length) continue;
         const moved = changes.some((change) => change.field === "switchIp" || change.field === "switchPort");
@@ -221,5 +306,5 @@
     return { rows, tableHtml: rowHtml, timelineHtml };
   }
 
-  window.MacAnalyzerRoomTimeline = Object.freeze({ events, compareLatest, render });
+  window.MacAnalyzerRoomTimeline = Object.freeze({ events, compareLatest, hydrateKnownHistory, pairDevices, render });
 })();

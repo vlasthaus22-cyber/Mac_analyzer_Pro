@@ -200,11 +200,15 @@
           (Time.timestamp(left.createdAt) ?? Number.MAX_SAFE_INTEGER) -
           (Time.timestamp(right.createdAt) ?? Number.MAX_SAFE_INTEGER),
       );
-    const fields = ["vendor", "model", "ip", "address", "tb", "city", "site", "floor", "room", "smartroomId", "switchIp", "switchPort"];
+    const fields = ["mac", "vendor", "model", "ip", "address", "tb", "city", "site", "floor", "room", "smartroomId", "switchIp", "switchPort"];
     const events = [];
+    const lastKnown = {};
     for (let index = 1; index < ordered.length; index += 1) {
-      const previous = compactDevice(ordered[index - 1].device);
+      const previousRaw = compactDevice(ordered[index - 1].device);
       const current = compactDevice(ordered[index].device);
+      for (const field of fields) if (String(previousRaw[field] || "").trim()) lastKnown[field] = previousRaw[field];
+      const previous = { ...previousRaw };
+      for (const field of fields) if (!String(previous[field] || "").trim() && String(lastKnown[field] || "").trim()) previous[field] = lastKnown[field];
       for (const field of fields) {
         if (
           String(previous[field] || "") === String(current[field] || "") ||
@@ -225,6 +229,7 @@
           afterDevice: current,
         });
       }
+      for (const field of fields) if (String(current[field] || "").trim()) lastKnown[field] = current[field];
     }
     return events;
   }

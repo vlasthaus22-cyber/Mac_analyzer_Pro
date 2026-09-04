@@ -1422,8 +1422,27 @@
       hostname: String(device?.hostname || device?.host_name || ""),
       serialNumber: String(device?.serialNumber || device?.serial_number || device?.serial || ""),
       deviceId: String(device?.deviceId || device?.device_id || ""),
+      deviceName: String(device?.deviceName || device?.device_name || device?.name || ""),
+      ipSource: String(device?.ipSource || device?.fieldSources?.ip || ""),
+      possibleIps: Array.from(new Set((Array.isArray(device?.possibleIps || device?.Possible_IPs) ? (device.possibleIps || device.Possible_IPs) : String(device?.possibleIps || device?.Possible_IPs || "").split(/[,;\s]+/)).map((value) => String(value || "").trim()).filter(Boolean))),
       hasConflict: Boolean(device?.hasConflict || (device?.conflicts || []).length),
     };
+  }
+
+  function comparisonAliases(device) {
+    const compact = compactComparisonDevice(device);
+    const internalId = compact.internalDeviceId.trim().toLowerCase();
+    const mac = compact.mac;
+    const serial = compact.serialNumber.trim().toLowerCase();
+    const deviceId = compact.deviceId.trim().toLowerCase();
+    const hostname = compact.hostname.trim().toLowerCase();
+    return Array.from(new Set([
+      internalId && `internal-id:${internalId}`,
+      mac && `mac:${mac}`,
+      serial && `serial:${serial}`,
+      deviceId && `device:${deviceId}`,
+      hostname && serial && `host-serial:${hostname}|${serial}`,
+    ].filter(Boolean)));
   }
 
   function comparisonIdentity(device) {
@@ -1449,7 +1468,8 @@
         const device = compactComparisonDevice(source);
         const key = comparisonStorageKey(jobId, device);
         if (!key) continue;
-        store.put({ key, jobId, mac: device.mac, aliases: [], device, updatedAt: Date.now() });
+        const aliases = comparisonAliases(device).map((alias) => `${jobId}:${alias}`);
+        store.put({ key, jobId, mac: device.mac, aliases, device, matched: false, updatedAt: Date.now() });
         indexed += 1;
       }
       current.oncomplete = () => { database.close(); resolve(indexed); };
@@ -1463,15 +1483,29 @@
     return new Promise((resolve, reject) => {
       const current = database.transaction(enrichmentRowStore, "readwrite");
       const store = current.objectStore(enrichmentRowStore);
-      for (const source of rows) {
+      const aliasIndex = store.index("aliases");
+      const sources = Array.from(rows || []);
+      const recordChange = (source, records) => {
         const device = compactComparisonDevice(source);
         const identity = comparisonIdentity(device);
-        if (!identity) continue;
-        const key = comparisonStorageKey(jobId, device);
-        const request = store.get(key);
-        request.onsuccess = () => {
-          const previous = request.result?.device;
-          if (!previous) {
+        if (!identity) return;
+        const candidates = Array.from(new Map(records.filter((record) => record && !record.matched).map((record) => [record.key, record])).values());
+        if (candidates.length > 1) {
+          result.modifiedDevices += 1;
+          result.changedDevices += 1;
+          result.critical += 1;
+          result.modifiedFields += 1;
+          result.fieldCounts.set("identityConflict", (result.fieldCounts.get("identityConflict") || 0) + 1);
+          tallyRows(result.changedVendors, device.vendor);
+          if (result.changes.length < limit) result.changes.push({
+            mac: device.mac, type: "modified", field: "identityConflict", before: "Несколько устройств предыдущего Final", after: "Требуется проверка идентификаторов",
+            beforeDevice: null, afterDevice: { ...device },
+          });
+          return;
+        }
+        const matchedRecord = candidates[0];
+        const previous = matchedRecord?.device;
+        if (!previous) {
             result.added += 1;
             result.changedDevices += 1;
             tallyRows(result.changedVendors, device.vendor);
@@ -1480,9 +1514,11 @@
               beforeDevice: null, afterDevice: { ...device },
             });
             return;
-          }
+        }
+          matchedRecord.matched = true;
+          store.put(matchedRecord);
           let modified = false;
-          const criticalMove = ["switchIp", "ip"].some((field) => {
+          const criticalMove = ["mac", "switchIp", "ip"].some((field) => {
             const before = String(previous[field] || "").trim();
             const after = String(device[field] || "").trim();
             return Boolean(before && after && before !== after);
@@ -1518,10 +1554,32 @@
             result.unchanged += 1;
             tallyRows(result.unchangedVendors, device.vendor);
           }
-          store.delete(key);
+      };
+      const processRow = (rowIndex) => {
+        if (rowIndex >= sources.length) return;
+        const source = sources[rowIndex];
+        const aliases = comparisonAliases(source).map((alias) => `${jobId}:${alias}`);
+        if (!aliases.length) {
+          processRow(rowIndex + 1);
+          return;
+        }
+        const records = [];
+        const readAlias = (aliasIndexNumber) => {
+          if (aliasIndexNumber >= aliases.length) {
+            recordChange(source, records);
+            processRow(rowIndex + 1);
+            return;
+          }
+          const request = aliasIndex.getAll(IDBKeyRange.only(aliases[aliasIndexNumber]));
+          request.onsuccess = () => {
+            records.push(...(request.result || []));
+            readAlias(aliasIndexNumber + 1);
+          };
+          request.onerror = () => current.abort();
         };
-        request.onerror = () => current.abort();
-      }
+        readAlias(0);
+      };
+      processRow(0);
       current.oncomplete = () => { database.close(); resolve(true); };
       current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Snapshot comparison failed")); };
       current.onabort = current.onerror;
@@ -1536,6 +1594,10 @@
       request.onsuccess = () => {
         const cursor = request.result;
         if (!cursor) return;
+        if (cursor.value?.matched) {
+          cursor.continue();
+          return;
+        }
         const previous = cursor.value?.device || {};
         result.removed += 1;
         tallyRows(result.missingVendors, previous.vendor);
@@ -1555,7 +1617,7 @@
     const jobId = `snapshot-compare-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const limit = Math.max(100, Math.min(20000, Number(options.limit || 5000)));
     const result = {
-      fields: ["vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId"],
+      fields: ["mac", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName"],
       added: 0, removed: 0, modifiedDevices: 0, modifiedFields: 0, changedDevices: 0, unchanged: 0, critical: 0,
       changes: [], fieldCounts: new Map(), changedVendors: new Map(), unchangedVendors: new Map(), missingVendors: new Map(),
     };
@@ -1725,6 +1787,7 @@
     aggregateSeries,
     matchesDashboardFilter,
     comparisonIdentity,
+    comparisonAliases,
     comparisonStorageKey,
     compareSnapshots,
     createPageCollector,

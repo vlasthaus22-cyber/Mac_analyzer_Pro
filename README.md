@@ -4,6 +4,10 @@ MAC Analyzer Pro is a web application for MAC inventory analysis, multi-file
 enrichment, OUI/vendor/model detection, history, comparisons, analytics,
 dashboards, topology, and export.
 
+Подробная русскоязычная инструкция по подключению, переносу, восстановлению и
+резервному копированию локальной базы находится в
+[`docs/LOCAL_DATABASE_GUIDE.md`](docs/LOCAL_DATABASE_GUIDE.md).
+
 An optional third DDIO export is kept outside normal enrichment. Reservation
 and lease MAC/IP pairs are mapped independently, including columns after H;
 the DDIO selectors always display Excel letters such as I, J, and AA. When a
@@ -231,6 +235,17 @@ the visible change table is limited, dates without a valid timestamp are
 ignored safely, and the displayed interval is calculated from the actual
 boundaries. The fleet chart now shows the numeric device count for every final
 upload instead of the number of field-change events.
+
+Version v1.0.56 makes the room hierarchy a strict cascade: selecting a bank,
+city, site, or floor immediately limits every downstream selector. It also
+recognizes a complete comma-separated hierarchy stored directly in the room
+column and normalizes formatted MAC queries. Final-to-Final matching now uses
+multiple strong aliases, carries forward trustworthy non-empty historical
+values, and treats a confirmed MAC replacement as one device change rather
+than an artificial removal/addition pair. DDIO fills only a missing device IP
+matched by MAC and exposes every valid possible IP in the switch-change
+warning. See [Local database guide](docs/LOCAL_DATABASE_GUIDE.md) for the
+portable MADB and SQLite workflows.
 
 Version v1.0.55 extends room and MAC chronology without changing the stored
 database contract. Room chronology now parses the comma-separated hierarchy

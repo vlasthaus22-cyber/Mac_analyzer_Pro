@@ -74,8 +74,54 @@ require("../frontend/smartroom-worker.js");
   assert.strictEqual(report.rooms.find((room) => room.smartroomId === "ROOM-1").floor, "5");
   assert.strictEqual(report.rooms.find((room) => room.smartroomId === "ROOM-1").history[0].devices.length, 1);
   assert.strictEqual(report.charts.at(-1).changes, 1, "a confirmed switch change must be visible in charts");
-  assert.deepStrictEqual(Array.from(report.charts.at(-1).changedRooms), ["ROOM-1"]);
-  assert.deepStrictEqual(Array.from(report.charts.at(-1).changedMacs), [first[0].mac]);
+  assert.ok(report.charts.at(-1).changedRooms.includes("ROOM-1"));
+  assert.ok(report.charts.at(-1).changedRooms.includes("ROOM-BULK"), "a removed room must be counted as changed");
+  assert.ok(report.charts.at(-1).changedMacs.includes(first[0].mac));
+  assert.ok(
+    report.charts.at(-1).changedMacs.includes(first[1].mac),
+    "removed MACs must be represented in chart details",
+  );
+
+  const roomPathReport = await global.MacAnalyzerSmartroomWorker.build([
+    {
+      id: "room-path",
+      createdAt: "2026-08-02T00:30:00Z",
+      devices: [
+        {
+          mac: "102030405060",
+          smartroomId: "ROOM-PATH",
+          room: "ЦА, Москва, Кутузовский проспект, 3 этаж, Переговорная 5",
+        },
+      ],
+    },
+  ]);
+  assert.strictEqual(roomPathReport.rooms[0].tb, "ЦА");
+  assert.strictEqual(roomPathReport.rooms[0].city, "Москва");
+  assert.strictEqual(roomPathReport.rooms[0].site, "Кутузовский проспект");
+  assert.strictEqual(roomPathReport.rooms[0].floor, "3 этаж");
+  assert.strictEqual(roomPathReport.rooms[0].room, "Переговорная 5");
+
+  const switchWithoutDeviceId = await global.MacAnalyzerSmartroomWorker.build(
+    [
+      {
+        id: "switch-before",
+        createdAt: "2026-08-02T00:40:00Z",
+        devices: [{ mac: "ABCDEF123456", smartroomId: "ROOM-NO-ID", switchIp: "10.0.0.1" }],
+      },
+      {
+        id: "switch-after",
+        createdAt: "2026-08-02T00:50:00Z",
+        devices: [{ mac: "ABCDEF123456", smartroomId: "ROOM-NO-ID", switchIp: "10.0.0.2" }],
+      },
+    ],
+    { ddioOverlay: { ABCDEF123456: { possibleIps: ["192.0.2.44"] } } },
+  );
+  assert.strictEqual(
+    switchWithoutDeviceId.criticalSwitchChanges.length,
+    1,
+    "a missing Device ID must not break room chronology when switch IP changes",
+  );
+  assert.deepStrictEqual(Array.from(switchWithoutDeviceId.criticalSwitchChanges[0].possibleIps), ["192.0.2.44"]);
 
   const invalidReport = await global.MacAnalyzerSmartroomWorker.build([
     {

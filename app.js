@@ -753,15 +753,25 @@
     catch(error){setBackendStatus(false,"Автономный HTML-режим готов · XLSX и история сохраняются в браузере");throw error;}
     finally{if(button)button.disabled=false;}
   }
+  function mergeSnapshotMetadata(current=[],incoming=[],limit=100){
+    const existingById=new Map((current||[]).map((item)=>[String(item?.id||""),item]));
+    const merged=[],seen=new Set();
+    for(const item of incoming||[]){
+      const id=String(item?.id||"");if(!id||seen.has(id))continue;
+      const existing=existingById.get(id)||{};
+      merged.push({...existing,...item,devices:Array.isArray(existing.devices)&&existing.devices.length?existing.devices:Array.isArray(item.devices)?item.devices:[]});
+      seen.add(id);
+    }
+    for(const item of current||[]){const id=String(item?.id||"");if(id&&!seen.has(id)){merged.push(item);seen.add(id);}}
+    return merged.sort((left,right)=>(Number(right.snapshotOrder||0)-Number(left.snapshotOrder||0))||((Date.parse(right.savedAt||right.createdAt||"")||0)-(Date.parse(left.savedAt||left.createdAt||"")||0))).slice(0,limit);
+  }
   async function syncFromBackend() {
     try {
       const data = await api("/bootstrap");
       const restoredFromAutosave=restoreBootstrapAutosave(data.autosave);
       if (data.snapshots?.length) {
-        const restoredSnapshots=Array.isArray(state.snapshots)?state.snapshots:[];
-        const snapshotMap=new Map(restoredSnapshots.map((item)=>[item.id,item]));
-        data.snapshots.forEach((item)=>snapshotMap.set(item.id,item));
-        state.snapshots=[...snapshotMap.values()];
+        const retained=(state.snapshots||[]).filter((item)=>item?.browserStored||!item?.backendStored);
+        state.snapshots=mergeSnapshotMetadata(retained,data.snapshots);
       }
       const finalSnapshotsByRecency=(items=state.snapshots||[])=>items.filter((item)=>String(item.kind||"").toLowerCase()==="analysis"||String(item.name||"").toLowerCase().startsWith("анализ:")).sort((a,b)=>String(b.savedAt||b.createdAt||"").localeCompare(String(a.savedAt||a.createdAt||""))||Number(b.snapshotOrder||0)-Number(a.snapshotOrder||0));
       const backendFinals=finalSnapshotsByRecency((state.snapshots||[]).filter((item)=>item.backendStored));
@@ -805,6 +815,15 @@
       if (!networkUnavailable(error)) UiFeedback?.showError(error);
       setBackendStatus(false,"Автономный HTML-режим готов · XLSX и история сохраняются в браузере");return false;
     }
+  }
+  async function refreshSmartroomSnapshots(){
+    if(browserOnlyMode||!backendAvailable)return finalDashboardSnapshots();
+    const data=await api("/snapshots");
+    if(!Array.isArray(data.snapshots))return finalDashboardSnapshots();
+    const retained=(state.snapshots||[]).filter((item)=>item?.browserStored||!item?.backendStored);
+    state.snapshots=mergeSnapshotMetadata(retained,data.snapshots.map((item)=>({...item,backendStored:true})));
+    save();
+    return finalDashboardSnapshots();
   }
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
   let toastTimer;
@@ -1201,9 +1220,9 @@
     return{...result,updated:true,snapshot:metadata};
   }
   function createLocalComparisonIndex(devices=[]){const fields=["vendor","model","ip","address","room","smartroomId","switchIp","switchPort"],index=new Map();for(const device of devices||[]){const mac=normalize(device.mac||device.macFormatted);if(!mac)continue;const values=[];for(const field of fields)values.push(String(device[field]??""));index.set(mac,JSON.stringify(values));}return{fields,index};}
-  function ddioHistoryHint(item={}){const field=String(item.field||item.field_name||"");if(field!=="switchIp"&&field!=="switch_ip"&&field!==String(labels.switchIp||""))return null;const mac=normalize(item.mac||item.macFormatted),device=item.afterDevice||item.beforeDevice||{},deviceId=String(device.deviceId||device.device_id||item.deviceId||"").trim().toLowerCase(),overlayKey=mac||(deviceId?`device-id:${deviceId}`:""),storedIp=String(item.ddioCandidateIp||item.ddio_candidate_ip||"").trim(),overlay=overlayKey?(state.ddioOverlay||{})[overlayKey]:null,ip=storedIp||String(overlay?.ip||"").trim();if(!ip)return null;return{ip,possibleIps:Array.from(new Set([...(overlay?.possibleIps||[]),ip].filter(Boolean))),match:String(item.ddioMatch||item.ddio_match||overlay?.match||""),previousSwitchIp:String(item.before??item.from_value??overlay?.previousSwitchIp??""),currentSwitchIp:String(item.after??item.to_value??overlay?.currentSwitchIp??"")};}
+  function ddioHistoryHint(item={}){const field=String(item.field||item.field_name||"");if(field!=="switchIp"&&field!=="switch_ip"&&field!==String(labels.switchIp||""))return null;const mac=normalize(item.mac||item.macFormatted),device=item.afterDevice||item.beforeDevice||{},deviceId=String(device.deviceId||device.device_id||item.deviceId||"").trim().toLowerCase(),overlayKey=mac||(deviceId?`device-id:${deviceId}`:""),overlay=overlayKey?(state.ddioOverlay||{})[overlayKey]:null,possibleIps=Array.from(new Set([...(Array.isArray(item.possibleDdioIps)?item.possibleDdioIps:[]),...(Array.isArray(item.possible_ips)?item.possible_ips:[]),...(Array.isArray(device.possibleIps)?device.possibleIps:[]),...(Array.isArray(device.Possible_IPs)?device.Possible_IPs:[]),...(overlay?.possibleIps||[]),item.ddioCandidateIp,item.ddio_candidate_ip,overlay?.ip].map((value)=>String(value||"").trim()).filter((value)=>DdioOverlay?.ipVersion?.(value))));const ip=String(item.ddioCandidateIp||item.ddio_candidate_ip||overlay?.ip||possibleIps[0]||"").trim();if(!ip&&!possibleIps.length)return null;return{ip:ip||possibleIps[0],possibleIps,match:String(item.ddioMatch||item.ddio_match||overlay?.match||device.ipSource||"DDIO"),previousSwitchIp:String(item.before??item.from_value??overlay?.previousSwitchIp??""),currentSwitchIp:String(item.after??item.to_value??overlay?.currentSwitchIp??"")};}
   function attachDdioHistoryHint(item){const hint=ddioHistoryHint(item);if(hint){item.ddioCandidateIp=hint.ip;item.ddioMatch=hint.match;}return item;}
-  function ddioHistoryBadge(item){const hint=ddioHistoryHint(item);if(!hint)return"";const match=hint.match==="reservation"?"резервация":"аренда",possibleIps=Array.from(new Set((hint.possibleIps||[hint.ip]).filter(Boolean))),title=`DDIO: IP устройства ${possibleIps.join(", ")} (${match}). IP коммутатора: ${hint.previousSwitchIp||"?"} → ${hint.currentSwitchIp||"?"}.`;const badges=possibleIps.map((ip)=>`<span class="ip-badge ip-v${esc(DdioOverlay?.ipVersion?.(ip)||0)}">${esc(ip)}</span>`).join("");return` <details class="possible-ip-dropdown ddio-history-warning"><summary title="${esc(title)}" aria-label="${esc(title)}">❗</summary><div role="note"><strong>IP устройства из DDIO:</strong><span class="ip-badge-list">${badges||"не найден"}</span><small>Источник: DDIO (${esc(match)}). IP коммутатора: ${esc(hint.previousSwitchIp||"?")} → ${esc(hint.currentSwitchIp||"?")}.</small></div></details>`;}
+  function ddioHistoryBadge(item){const hint=ddioHistoryHint(item);if(!hint)return"";const matchLabels={reservation:"резервация",lease:"аренда","device-id":"Device ID","device-id/reservation":"Device ID + резервация","device-id/lease":"Device ID + аренда",ddio:"DDIO"},match=matchLabels[String(hint.match||"").toLowerCase()]||hint.match||"DDIO",possibleIps=Array.from(new Set((hint.possibleIps||[hint.ip]).filter(Boolean))),title=`DDIO: IP устройства ${possibleIps.join(", ")} (${match}). IP коммутатора: ${hint.previousSwitchIp||"?"} → ${hint.currentSwitchIp||"?"}.`;const badges=possibleIps.map((ip)=>`<span class="ip-badge ip-v${esc(DdioOverlay?.ipVersion?.(ip)||0)}">${esc(ip)}</span>`).join("");return` <details class="possible-ip-dropdown ddio-history-warning"><summary title="${esc(title)}" aria-label="${esc(title)}">❗</summary><div role="note"><strong>Все IP этого MAC из DDIO:</strong><span class="ip-badge-list">${badges||"не найден"}</span><small>Источник: DDIO (${esc(match)}). IP коммутатора: ${esc(hint.previousSwitchIp||"?")} → ${esc(hint.currentSwitchIp||"?")}.</small></div></details>`;}
   function mergeDdioOverlayMovements(entries=[],limit=MemoryGuard.limits.movementRows){
     const rows=Array.isArray(entries)?entries:[],switchLabel=String(labels.switchIp||"switchIp");
     for(const [mac,hint] of Object.entries(state.ddioOverlay||{})){
@@ -2337,7 +2356,7 @@
   }
   function browserSnapshotChangeAnalysis(comparison,options=[],settings=dashboardSettings()){
     if(!comparison)return{mode:"snapshots",baselineSnapshotId:"",comparisonSnapshotId:"",snapshotOptions:options,summary:{added:0,removed:0,modified:0,critical:0,total:0},changes:[]};
-    const fieldLabels={vendor:"Производитель",model:"Модель",ip:"IP-адрес",address:"Адрес помещения",room:"Помещение",smartroomId:"Smartroom ID",switchIp:"IP коммутатора",switchPort:"Порт",device:"Устройство"},typeLabels={added:"Добавлено",removed:"Отсутствует",modified:"Изменено"};
+    const fieldLabels={mac:"MAC / физический адрес",vendor:"Производитель",model:"Модель",ip:"IP-адрес",address:"Адрес помещения",room:"Помещение",smartroomId:"Smartroom ID",switchIp:"IP коммутатора",switchPort:"Порт",hostname:"Hostname",serialNumber:"Серийный номер",deviceId:"ID устройства",deviceName:"Название устройства",identityConflict:"Конфликт идентификации",device:"Устройство"},typeLabels={added:"Добавлено",removed:"Отсутствует",modified:"Изменено"};
     const inScope=(item)=>{const devices=[item.afterDevice,item.beforeDevice].filter(Boolean),query=String(settings.query||"").trim().toLowerCase(),queryMac=normalize(query);return(!settings.vendor||devices.some((device)=>String(device.vendor||"")===settings.vendor))&&(!settings.room||devices.some((device)=>String(device.room||"")===settings.room))&&(!query||devices.some((device)=>Object.values(device).join(" ").toLowerCase().includes(query)||(queryMac&&normalize(device.mac||device.macFormatted).includes(queryMac))));};
     const baselineLabel=options.find((item)=>item.id===comparison.baselineSnapshotId)?.name||comparison.baselineSnapshotId||"Предыдущая выгрузка",comparisonLabel=options.find((item)=>item.id===comparison.comparisonSnapshotId)?.name||comparison.comparisonSnapshotId||"Новая выгрузка",finalSource=`Final «${baselineLabel}» → Final «${comparisonLabel}»`;
     const changes=(comparison.changes||[]).filter(inScope).map((item)=>{const field=item.field||"device",type=item.type||"modified",change={...item,date:item.changedAt||comparison.changedAt||"",macFormatted:formatMac(item.mac),typeLabel:typeLabels[type]||"Изменено",fieldLabel:fieldLabels[field]||field,before:String(item.before??"-"),after:String(item.after??"-"),source:!item.source||item.source==="snapshot"?finalSource:item.source,severity:dashboardChangeSeverity(type,field,item.beforeDevice,item.afterDevice)};return attachDdioHistoryHint(change);});
@@ -3850,6 +3869,7 @@
   }
   SmartroomUI?.initialize({
     getSnapshots:()=>finalDashboardSnapshots(),
+    refreshSnapshots:()=>refreshSmartroomSnapshots(),
     getCurrentDevices:()=>state.devices||[],
     getLastAnalysis:()=>state.lastAnalysis||"",
     getDdioOverlay:()=>state.ddioOverlay||{},

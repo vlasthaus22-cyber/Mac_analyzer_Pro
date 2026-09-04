@@ -16,11 +16,22 @@ assert.equal(typeof snapshots.copySnapshotWithTransform, "function");
 assert.equal(typeof snapshots.updateSnapshotWithTransform, "function");
 assert.equal(typeof snapshots.transformChunkRows, "function");
 assert.equal(typeof snapshots.comparisonIdentity, "function");
+assert.equal(typeof snapshots.comparisonAliases, "function");
 assert.equal(typeof snapshots.comparisonStorageKey, "function");
 assert.equal(
   snapshots.comparisonStorageKey("comparison-job", { internalDeviceId: "DEVICE-42", mac: "AA:BB:CC:00:00:42" }),
   "comparison-job:internal-id:device-42",
   "baseline and current snapshots must use the same prefixed key when a stable internal id exists",
+);
+assert.deepEqual(
+  snapshots.comparisonAliases({
+    internalDeviceId: "DEVICE-42",
+    mac: "AA:BB:CC:00:00:42",
+    serialNumber: " SERIAL-42 ",
+    deviceId: "ROOM-CODEC-42",
+  }),
+  ["internal-id:device-42", "mac:AABBCC000042", "serial:serial-42", "device:room-codec-42"],
+  "snapshot comparison must retain every strong alias instead of relying on one changing identifier",
 );
 assert.equal(typeof snapshots.matchesDashboardFilter, "function");
 assert.equal(snapshots.matchesDashboardFilter({ vendor: "Cisco", room: "101" }, { room: "101" }), true);
@@ -30,6 +41,9 @@ assert.equal(snapshots.matchesDashboardFilter({ vendor: "Unknown", room: "101" }
 assert.equal(snapshots.matchesDashboardFilter({ mac: "AA:BB:CC:00:00:01", smartroomId: "SR-101", address: "Building A" }, { query: "sr-101" }), true);
 assert.equal(snapshots.matchesDashboardFilter({ mac: "AA:BB:CC:00:00:01", smartroomId: "SR-101" }, { query: "aabbcc000001" }), true);
 assert.equal(snapshots.matchesDashboardFilter({ mac: "AA:BB:CC:00:00:01", smartroomId: "SR-101" }, { query: "SR-999" }), false);
+
+assert.doesNotThrow(() => snapshots.comparisonAliases({ mac: "001122334455", Possible_IPs: "192.0.2.1, 192.0.2.2" }));
+assert.doesNotThrow(() => snapshots.comparisonAliases({ mac: "001122334455", possibleIps: null }));
 
 const devices = Array.from({ length: 120_000 }, (_, index) => ({
   mac: `A1B2C3${index.toString(16).padStart(6, "0").toUpperCase()}`,

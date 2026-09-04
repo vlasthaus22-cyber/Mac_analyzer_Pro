@@ -42,9 +42,18 @@ def test_worker_uses_chunked_ingestion_and_full_timeline_fields():
 
 def test_smartroom_history_filters_and_monthly_chart_are_wired():
     ui = read("frontend/smartroom-ui.js")
+    app = read("app.js")
+    location = read("frontend/room-location.js")
     timeline = read("frontend/room-timeline.js")
     charts = read("frontend/smartroom-charts.js")
     assert "function chronologyRooms" in ui
+    assert "clearDownstreamFilters" in ui
+    assert "await options.refreshSnapshots(force)" in ui
+    assert "refreshSnapshots:()=>refreshSmartroomSnapshots()" in app
+    assert "function mergeSnapshotMetadata" in app
+    assert "item?.browserStored||!item?.backendStored" in app
+    assert "function cascade" in location
+    assert "function matches" in location
     assert "function renderRoomCoverage" in ui
     assert "function compareLatest" in timeline
     assert "function monthlyRows" in charts
@@ -86,6 +95,7 @@ def test_portable_build_embeds_new_runtime_modules():
         "frontend/smartroom-worker.js",
         "frontend/smartroom-store.js",
         "frontend/room-timeline.js",
+        "frontend/room-location.js",
         "frontend/ui-feedback.js",
         "frontend/smartroom-ui.js",
     ):

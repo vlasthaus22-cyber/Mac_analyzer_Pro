@@ -778,9 +778,9 @@ def test_bootstrap_sync_uses_backend_payload():
 
     assert 'const data = await api("/bootstrap");' in app
     assert 'const restoredFromAutosave=restoreBootstrapAutosave(data.autosave);' in app
-    assert 'const snapshotMap=new Map(restoredSnapshots.map((item)=>[item.id,item]));' in app
-    assert 'data.snapshots.forEach((item)=>snapshotMap.set(item.id,item));' in app
-    assert 'state.snapshots=[...snapshotMap.values()];' in app
+    assert 'function mergeSnapshotMetadata(current=[],incoming=[],limit=100)' in app
+    assert 'const retained=(state.snapshots||[]).filter((item)=>item?.browserStored||!item?.backendStored);' in app
+    assert 'state.snapshots=mergeSnapshotMetadata(retained,data.snapshots);' in app
     assert 'state.customColumns = data.customColumns || [];' in app
     assert 'state.customColumnMappings = data.customColumnMappings || {};' in app
     assert 'Object.assign(labels, data.customLabels || {});' in app
@@ -1023,7 +1023,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=20260814.2"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=1056"></script>' in html
     assert '<script src="frontend/xlsx-exporter.js?v=20260727.5"></script>' in html
     assert '<script src="frontend/full-xlsx-report.js?v=20260729.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
@@ -1045,7 +1045,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert '["by_switch", "ip_switch"]' in smartroom_store
     assert '["by_timestamp", "timestamp"]' in smartroom_store
     assert 'class="possible-ip-dropdown ddio-history-warning"' in app
-    assert "IP устройства из DDIO" in app
+    assert "Все IP этого MAC из DDIO" in app
     assert 'const enrichmentRowStore = "enrichmentRows";' in snapshot_store
     assert 'const deviceHistoryStore = "deviceHistory";' in snapshot_store
     assert 'async function enrichDevicesFromHistory(rows)' in snapshot_store
@@ -1071,7 +1071,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert 'async function aggregate(id, options = {})' in snapshot_store
     assert 'async function aggregateSeries(snapshots, options = {})' in snapshot_store
     assert 'async function compareSnapshots(baselineId, comparisonId, options = {})' in snapshot_store
-    assert 'const criticalMove = ["switchIp", "ip"].some((field) => {' in snapshot_store
+    assert 'const criticalMove = ["mac", "switchIp", "ip"].some((field) => {' in snapshot_store
     assert 'return Boolean(before && after && before !== after);' in snapshot_store
     assert 'if (criticalMove || device.hasConflict) result.critical += 1;' in snapshot_store
     assert 'critical: result.critical,' in snapshot_store

@@ -16,14 +16,15 @@
         floor: text(row.floor || row.floorName || row.floor_name || row['Этаж']),
         room: text(row.room || row.room_name || row.Room || row['Помещение'])
       };
-      const path = text(row.locationPath || row.location_path || row.location_hierarchy || row.hierarchy || row.address || row.physicalAddress);
+      const locationCandidates = [row.locationPath, row.location_path, row.location_hierarchy, row.hierarchy, row.address, row.physicalAddress, row.room, row.room_name, row.Room, row['Помещение']].map(text).filter(Boolean);
+      const path = locationCandidates.find(value => value.split(',').filter(part => text(part)).length >= 5) || text(row.locationPath || row.location_path || row.location_hierarchy || row.hierarchy || row.address || row.physicalAddress);
       const parts = path.split(',').map(text).filter(Boolean);
       if (parts.length >= 5) {
-        if (!result.tb) result.tb = parts[0];
-        if (!result.city) result.city = parts[1];
-        if (!result.site) result.site = parts[2];
-        if (!result.floor) result.floor = parts[3];
-        if (!result.room) result.room = parts.slice(4).join(', ');
+        result.tb = result.tb || parts[0];
+        result.city = result.city || parts[1];
+        result.site = result.site || parts[2];
+        result.floor = result.floor || parts[3];
+        if (!result.room || result.room === path) result.room = parts.slice(4).join(', ');
       } else if (!result.city && parts.length) result.city = text(parts[0].replace(/^г\\.?\\s*/i, ''));
       return { ...result, path };
     };
@@ -64,15 +65,16 @@
       for (const row of next.values()) if (row.mac) { if (!s.macs.has(row.mac)) s.macs.set(row.mac, []); s.macs.get(row.mac).push({ date, ...row }); }
       let added = 0, removed = 0, changed = 0; const changedRooms = new Set(), changedMacs = new Set();
       for (const [identity, row] of next) {
-        const before = s.current.get(identity); if (!before) { added += 1; continue; }
+        const before = s.current.get(identity); if (!before) { added += 1; if (row.smartroomId) changedRooms.add(row.smartroomId); if (row.mac) changedMacs.add(row.mac); continue; }
         const changedFields = ['vendor', 'model', 'ip', 'address', 'tb', 'city', 'site', 'floor', 'room', 'smartroomId', 'switchIp', 'switchPort', 'deviceId'];
         if (changedFields.some(field => before[field] && row[field] && before[field] !== row[field])) { changed += 1; if (row.smartroomId || before.smartroomId) changedRooms.add(row.smartroomId || before.smartroomId); if (row.mac || before.mac) changedMacs.add(row.mac || before.mac); }
         if (before.switchIp && row.switchIp && before.switchIp !== row.switchIp) {
-          const overlay = s.options.ddioOverlay?.[row.mac] || s.options.ddioOverlay?.['device-id:' + row.deviceId.toLowerCase()] || {};
+          const deviceIdKey = text(row.deviceId).toLowerCase();
+          const overlay = s.options.ddioOverlay?.[row.mac] || (deviceIdKey ? s.options.ddioOverlay?.['device-id:' + deviceIdKey] : null) || {};
           s.criticalSwitchChanges.push({ date, smartroomId: row.smartroomId, room: row.room, mac: row.mac, previousIp: before.switchIp, currentIp: row.switchIp, possibleIps: Array.from(new Set([...row.possibleIps, ...ips(overlay.possibleIps), text(overlay.ip)].filter(Boolean))), source: 'DDIO' });
         }
       }
-      for (const identity of s.current.keys()) if (!next.has(identity)) removed += 1;
+      for (const [identity, row] of s.current) if (!next.has(identity)) { removed += 1; if (row.smartroomId) changedRooms.add(row.smartroomId); if (row.mac) changedMacs.add(row.mac); }
       const day = date.slice(0, 10) || 'Без даты'; const bucket = s.daily.get(day) || { date: day, changes: 0, added: 0, removed: 0, total: 0, changedRooms: [], changedMacs: [] };
       bucket.changes += changed; bucket.added += added; bucket.removed += removed; bucket.total = next.size; bucket.changedRooms = Array.from(new Set([...bucket.changedRooms, ...changedRooms])); bucket.changedMacs = Array.from(new Set([...bucket.changedMacs, ...changedMacs])); s.daily.set(day, bucket);
       s.previous = s.current; s.current = next; s.snapshots.push({ date, name: meta.name || '', total: next.size });

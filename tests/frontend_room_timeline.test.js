@@ -91,4 +91,30 @@ const allChanged = timeline.compareLatest({
   ],
 });
 assert.equal(allChanged.allChanged, true, "replacement means every room device changed between adjacent finals");
+
+const changedMac = timeline.compareLatest({
+  history: [
+    {
+      date: "2026-04-01T00:00:00Z",
+      devices: [{ deviceId: "ROOM-CODEC-1", mac: "001122334455", model: "Codec", room: "101" }],
+    },
+    {
+      date: "2026-05-01T00:00:00Z",
+      devices: [{ deviceId: "room-codec-1", mac: "AABBCCDDEEFF", model: "Codec", room: "101" }],
+    },
+  ],
+});
+assert.equal(changedMac.total, 1, "stable Device ID must pair a device whose MAC changed");
+assert.equal(changedMac.changed, 1);
+assert.equal(changedMac.entries[0].status, "Изменен");
+assert.equal(changedMac.entries[0].changes[0].label, "MAC / физический адрес");
+
+const sparseLegacy = timeline.compareLatest({
+  history: [
+    { date: "2026-03-01T00:00:00Z", devices: [{ mac: "001122334455", model: "Known model" }] },
+    { date: "2026-04-01T00:00:00Z", devices: [{ mac: "001122334455", model: "" }] },
+    { date: "2026-05-01T00:00:00Z", devices: [{ mac: "001122334455", model: "Known model" }] },
+  ],
+});
+assert.equal(sparseLegacy.changed, 0, "an empty legacy value must not create a false empty-to-known change");
 console.log("frontend room timeline test passed");

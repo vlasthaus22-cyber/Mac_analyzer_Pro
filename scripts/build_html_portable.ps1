@@ -51,6 +51,7 @@ $scripts = @(
     "frontend/smartroom-store.js",
     "frontend/smartroom-charts.js",
     "frontend/room-timeline.js",
+    "frontend/room-location.js",
     "frontend/smartroom-ui.js",
     "frontend/table-sorter.js",
     "app.js"
@@ -102,6 +103,7 @@ foreach ($marker in @(
     "window.MacAnalyzerSmartroomWorker",
     "window.MacAnalyzerSmartroomStore",
     "window.MacAnalyzerRoomTimeline",
+    "window.MacAnalyzerRoomLocation",
     "window.MacAnalyzerSmartroomUI",
     "window.MacAnalyzerUiFeedback",
     "xlsxWorksheetRows",

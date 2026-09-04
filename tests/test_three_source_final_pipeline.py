@@ -90,6 +90,34 @@ def test_possible_ddio_ips_are_diagnostic_and_device_id_overlay_is_supported():
     assert overlay["device-id:dev-b"]["previousSwitchIp"] == "10.0.0.1"
 
 
+def test_main_mac_without_smartroom_ip_receives_confirmed_ddio_ip():
+    enriched = enrich_files([
+        {
+            "name": "main.csv",
+            "role": "primary",
+            "mapping": {"mac": 0, "model": 1},
+            "rows": [["MAC", "Model"], ["00:11:22:33:44:55", "Codec"]],
+        },
+        {
+            "name": "smartroom.csv",
+            "role": "smartroom",
+            "mapping": {"mac": 0, "ip": 1},
+            "rows": [["MAC", "IP"], ["AA:BB:CC:DD:EE:FF", "192.0.2.99"]],
+        },
+    ])
+    main = next(item for item in enriched["devices"] if item.get("mac") == "001122334455")
+    assert main.get("ip", "") == ""
+    index = build_ddio_device_index(
+        [["00:11:22:33:44:55", "192.0.2.55", "192.0.2.56"]],
+        {"reservationMac": 0, "reservationIp": 1, "leaseIp": 2},
+    )
+    assert apply_ddio_ip_fallback([main], index) == 1
+    assert main["ip"] == "192.0.2.55"
+    assert main["ipSource"] == "ddio"
+    assert main["fieldSources"]["ip"] == "DDIO"
+    assert main["possibleIps"] == ["192.0.2.55"]
+
+
 def test_previous_final_state_is_persistent_idempotent_and_does_not_lose_values():
     with isolated_server_database():
         previous = {
@@ -199,6 +227,7 @@ def test_user_search_covers_non_mac_identifiers_and_ip_page_is_absent():
 if __name__ == "__main__":
     test_primary_smartroom_union_and_ddio_overlay_have_correct_boundaries()
     test_possible_ddio_ips_are_diagnostic_and_device_id_overlay_is_supported()
+    test_main_mac_without_smartroom_ip_receives_confirmed_ddio_ip()
     test_previous_final_state_is_persistent_idempotent_and_does_not_lose_values()
     test_final_state_transaction_rolls_back_inventory_when_snapshot_fails()
     test_previous_final_stays_in_inventory_but_does_not_repopulate_current_final()

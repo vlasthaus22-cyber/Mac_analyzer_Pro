@@ -240,6 +240,38 @@ def test_dashboard_change_analysis_compares_selected_snapshots():
     assert next(item for item in result["changes"] if item["type"] == "removed")["severity"] == "high"
 
 
+def test_dashboard_pairs_changed_mac_by_stable_device_id_and_keeps_full_final_context():
+    snapshots = [
+        {
+            "id": "old-mac", "name": "Old Final", "createdAt": "2026-07-01T08:00:00Z",
+            "devices": [{
+                "deviceId": "ROOM-CODEC-1", "mac": "001122334455", "vendor": "Cisco",
+                "model": "Room Kit", "room": "101", "switchIp": "10.0.0.1",
+            }],
+        },
+        {
+            "id": "new-mac", "name": "New Final", "createdAt": "2026-07-02T08:00:00Z",
+            "devices": [{
+                "deviceId": "room-codec-1", "mac": "AABBCCDDEEFF", "vendor": "Cisco",
+                "model": "Room Kit", "room": "101", "switchIp": "10.0.0.1",
+            }],
+        },
+    ]
+    result = analyze_dashboard_changes(
+        snapshots, [], {"changeMode": "snapshots", "baselineSnapshotId": "old-mac", "comparisonSnapshotId": "new-mac"}
+    )
+
+    assert result["summary"]["added"] == 0
+    assert result["summary"]["removed"] == 0
+    assert result["summary"]["modified"] == 1
+    change = next(item for item in result["changes"] if item["field"] == "mac")
+    assert change["before"] == "001122334455"
+    assert change["after"] == "AABBCCDDEEFF"
+    assert change["beforeDevice"]["model"] == "Room Kit"
+    assert change["afterDevice"]["model"] == "Room Kit"
+    assert change["source"] == "Final «Old Final» → Final «New Final»"
+
+
 def test_dashboard_period_compares_the_final_snapshots_at_its_boundaries():
     snapshots = [
         {"id": "period-before", "createdAt": "2026-07-01T08:00:00Z", "devices": [

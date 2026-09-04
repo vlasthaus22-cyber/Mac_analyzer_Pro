@@ -109,6 +109,18 @@ const chronology = global.MacAnalyzerMacChronology;
   });
   assert.ok(!sparseEvents.some((item) => item.field === "model"), "a missing new value must not create a false change");
 
+  const restoredEvents = chronology.buildEvents({
+    appearances: [
+      appearances[0],
+      { ...appearances[1], snapshotId: "middle", createdAt: "2026-07-01T12:00:00Z", device: { ...appearances[1].device, model: "" } },
+      { ...appearances[1], snapshotId: "latest", createdAt: "2026-07-03T08:00:00Z", device: { ...appearances[1].device, model: "C2960" } },
+    ],
+  });
+  assert.ok(
+    !restoredEvents.some((item) => item.field === "model" && !item.before),
+    "a known older Final value must prevent a false empty-to-known change",
+  );
+
   const fullChain = await chronology.getMacHistory({
     mac: requested,
     snapshots,

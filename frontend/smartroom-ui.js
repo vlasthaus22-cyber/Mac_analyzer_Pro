@@ -5,6 +5,7 @@
   const Store = window.MacAnalyzerSmartroomStore;
   const Charts = window.MacAnalyzerSmartroomCharts;
   const RoomTimeline = window.MacAnalyzerRoomTimeline;
+  const RoomLocation = window.MacAnalyzerRoomLocation;
   const VirtualTable = window.MacAnalyzerVirtualTable;
   const LazyTabs = window.MacAnalyzerLazyTabs;
   const Feedback = window.MacAnalyzerUiFeedback;
@@ -61,15 +62,25 @@
     return rows;
   }
 
-  function cacheKey() {
+  function cacheKey(snapshotRows = snapshots()) {
     return JSON.stringify({
-      snapshots: snapshots().map((item) => [item.id, item.createdAt, item.deviceCount]),
+      snapshots: snapshotRows.map((item) => [item.id, item.createdAt, item.deviceCount]),
       ddio: Object.keys(options?.getDdioOverlay?.() || {}).length,
     });
   }
 
   async function build(force = false) {
-    const key = cacheKey();
+    let snapshotRows = null;
+    if (typeof options?.refreshSnapshots === "function") {
+      try {
+        const refreshed = await options.refreshSnapshots(force);
+        if (Array.isArray(refreshed)) snapshotRows = refreshed;
+      } catch (error) {
+        if (!snapshots().length) throw error;
+      }
+    }
+    snapshotRows = snapshotRows || snapshots();
+    const key = cacheKey(snapshotRows);
     if (!force && cache.has(key)) return cache.get(key);
     if (!force && inflight.has(key)) return inflight.get(key);
     if (!WorkerApi) throw new Error("Модуль вычислений Smartroom не загружен");
@@ -78,7 +89,7 @@
       inflight.clear();
     }
     const currentGeneration = ++generation;
-    const promise = WorkerApi.build(snapshots(), {
+    const promise = WorkerApi.build(snapshotRows, {
       ddioOverlay: options?.getDdioOverlay?.() || {},
       streamSnapshot: options?.streamSnapshot,
       loadSnapshot: options?.loadSnapshot,
@@ -114,6 +125,7 @@
   }
 
   function roomLocation(room) {
+    if (RoomLocation?.parse) return RoomLocation.parse(room);
     const result = {
       tb: text(room?.tb),
       city: text(room?.city),
@@ -149,38 +161,55 @@
     if (values.includes(selected)) select.value = selected;
   }
 
+  const chronologyFilterIds = Object.freeze({
+    tb: "roomChronologyTbFilter",
+    city: "roomChronologyCityFilter",
+    site: "roomChronologySiteFilter",
+    floor: "roomChronologyFloorFilter",
+    room: "roomChronologyRoomFilter",
+  });
+
+  function readChronologyFilters() {
+    return Object.fromEntries(
+      Object.entries(chronologyFilterIds).map(([field, id]) => [field, text($("#" + id)?.value)]),
+    );
+  }
+
   function fillLocationFilters(value) {
-    const locations = (value.rooms || []).map(roomLocation);
+    const rooms = value.rooms || [];
+    const cascade = RoomLocation?.cascade?.(rooms, readChronologyFilters());
+    const locations = rooms.map(roomLocation);
     const unique = (field) =>
       Array.from(new Set(locations.map((location) => location[field]).filter(Boolean))).sort((a, b) =>
         a.localeCompare(b, "ru", { numeric: true }),
       );
-    const cities = unique("city");
-    for (const id of ["roomsCityFilter", "roomChronologyCityFilter"]) {
+    const options =
+      cascade?.options || Object.fromEntries(Object.keys(chronologyFilterIds).map((field) => [field, unique(field)]));
+    const normalized = cascade?.filters || readChronologyFilters();
+    const labels = {
+      tb: "Все ТБ",
+      city: "Все города",
+      site: "Все площадки",
+      floor: "Все этажи",
+      room: "Все помещения",
+    };
+    for (const [field, id] of Object.entries(chronologyFilterIds)) {
       const select = $("#" + id);
       if (!select) continue;
-      const selected = text(select.value);
-      select.innerHTML =
-        '<option value="">Все города</option>' +
-        cities.map((city) => `<option value="${escapeHtml(city)}">${escapeHtml(city)}</option>`).join("");
-      if (cities.includes(selected)) select.value = selected;
+      select.value = normalized[field] || "";
+      fillSelect(id, labels[field], options[field] || []);
+      select.value = normalized[field] || "";
     }
-    fillSelect("roomChronologyTbFilter", "Все ТБ", unique("tb"));
-    fillSelect("roomChronologySiteFilter", "Все площадки", unique("site"));
-    fillSelect("roomChronologyFloorFilter", "Все этажи", unique("floor"));
-    fillSelect("roomChronologyRoomFilter", "Все помещения", unique("room"));
+    const cities = unique("city");
+    fillSelect("roomsCityFilter", "Все города", cities);
+    return normalized;
   }
 
   function chronologyRooms(value) {
-    const filters = {
-      tb: text($("#roomChronologyTbFilter")?.value),
-      city: text($("#roomChronologyCityFilter")?.value),
-      site: text($("#roomChronologySiteFilter")?.value),
-      floor: text($("#roomChronologyFloorFilter")?.value),
-      room: text($("#roomChronologyRoomFilter")?.value),
-    };
+    const filters = readChronologyFilters();
     const query = text($("#roomChronologySearchInput")?.value).toLowerCase();
     return (value.rooms || []).filter((room) => {
+      if (RoomLocation?.matches) return RoomLocation.matches(room, filters, query);
       const location = roomLocation(room);
       if (Object.entries(filters).some(([field, expected]) => expected && location[field] !== expected)) return false;
       if (!query) return true;
@@ -205,6 +234,18 @@
         .toLowerCase()
         .includes(query);
     });
+  }
+
+  function clearDownstreamFilters(changedField) {
+    const order = Object.keys(chronologyFilterIds);
+    const index = order.indexOf(changedField);
+    for (const field of order.slice(index + 1)) {
+      const select = $("#" + chronologyFilterIds[field]);
+      if (select) select.value = "";
+    }
+    const roomSelect = $("#roomChronologySelect");
+    if (roomSelect) roomSelect.value = "";
+    sessionStorage.removeItem(selectedRoomKey);
   }
 
   function fillRoomSelect(value) {
@@ -340,7 +381,9 @@
       if (summary)
         summary.textContent = room
           ? `${[room.smartroomId, roomLocation(room).tb, roomLocation(room).city, roomLocation(room).site, roomLocation(room).floor, roomLocation(room).room].filter(Boolean).join(" · ")} · событий: ${rendered.rows.length} · изменено устройств: ${comparison?.changed || 0}/${comparison?.total || 0}`
-          : "Выберите помещение, чтобы увидеть всю цепочку замен оборудования.";
+          : value.rooms.length
+            ? "Выберите помещение, чтобы увидеть всю цепочку замен оборудования."
+            : `Помещения со Smartroom ID не найдены. Обработано финальных выгрузок: ${value.snapshots?.length || 0}.`;
     } catch (error) {
       Feedback?.showError(error);
       throw error;
@@ -432,14 +475,10 @@
     );
     $("#roomsCityFilter")?.addEventListener("change", () => renderRooms(false));
     $("#roomChronologySelect")?.addEventListener("change", () => renderRoomChronology(false));
-    [
-      "roomChronologyTbFilter",
-      "roomChronologyCityFilter",
-      "roomChronologySiteFilter",
-      "roomChronologyFloorFilter",
-      "roomChronologyRoomFilter",
-    ].forEach((id) =>
+    Object.entries(chronologyFilterIds).forEach(([field, id]) =>
       $("#" + id)?.addEventListener("change", () => {
+        clearDownstreamFilters(field);
+        fillLocationFilters(report || { rooms: [] });
         fillRoomSelect(report || { rooms: [] });
         renderRoomChronology(false);
       }),
