@@ -3,6 +3,7 @@
 
   const text = (value) => String(value ?? "").trim();
   const fields = Object.freeze(["tb", "city", "site", "floor", "room"]);
+  const comparable = (value) => text(value).replace(/\s+/g, " ").toLocaleLowerCase("ru-RU");
 
   function parse(room = {}) {
     const result = {
@@ -38,7 +39,8 @@
 
   function matches(room, filters = {}, query = "") {
     const location = parse(room);
-    if (fields.some((field) => text(filters[field]) && location[field] !== text(filters[field]))) return false;
+    if (fields.some((field) => text(filters[field]) && comparable(location[field]) !== comparable(filters[field])))
+      return false;
     const needle = text(query).toLocaleLowerCase("ru-RU");
     if (!needle) return true;
     const haystack = [
@@ -81,14 +83,17 @@
       const values = (rooms || [])
         .filter((room) => {
           const location = parse(room);
-          return upstream.every((key) => !normalized[key] || location[key] === normalized[key]);
+          return upstream.every((key) => !normalized[key] || comparable(location[key]) === comparable(normalized[key]));
         })
         .map((room) => parse(room)[field])
         .filter(Boolean);
       result[field] = Array.from(new Set(values)).sort((left, right) =>
         left.localeCompare(right, "ru", { numeric: true, sensitivity: "base" }),
       );
-      if (normalized[field] && !result[field].includes(normalized[field])) normalized[field] = "";
+      if (normalized[field]) {
+        const canonical = result[field].find((value) => comparable(value) === comparable(normalized[field]));
+        normalized[field] = canonical || "";
+      }
     });
     return { filters: normalized, options: result };
   }

@@ -11,6 +11,91 @@
   const deviceHistoryStore = "deviceHistory";
   const resolvedDeviceStore = "DeviceInventory";
   const snapshotChunkRows = 1_000;
+  const storageArrayLimits = Object.freeze({
+    aliases: 32,
+    conflicts: 64,
+    evidence: 32,
+    possibleIps: 128,
+    Possible_IPs: 128,
+    sourceFiles: 64,
+    sourceRoles: 32,
+  });
+  const storageDefaultArrayLimit = 256;
+  const storageStringLimit = 65_536;
+
+  function storageSafeValue(value, context = null, field = "", depth = 0) {
+    const state = context || { seen: new WeakSet(), truncated: [] };
+    if (value === null || value === undefined || typeof value === "boolean" || typeof value === "number") return value;
+    if (typeof value === "string") {
+      if (value.length <= storageStringLimit) return value;
+      state.truncated.push(`${field || "value"}:string`);
+      return value.slice(0, storageStringLimit);
+    }
+    if (typeof value === "bigint") return String(value);
+    if (["function", "symbol"].includes(typeof value)) {
+      state.truncated.push(`${field || "value"}:unsupported`);
+      return undefined;
+    }
+    if (value instanceof Date) return Number.isFinite(value.valueOf()) ? value.toISOString() : "";
+    if (typeof Blob !== "undefined" && value instanceof Blob) return value;
+    if (depth >= 8) {
+      state.truncated.push(`${field || "value"}:depth`);
+      return undefined;
+    }
+    if (state.seen.has(value)) {
+      state.truncated.push(`${field || "value"}:cycle`);
+      return undefined;
+    }
+    state.seen.add(value);
+    if (Array.isArray(value)) {
+      const limit = storageArrayLimits[field] || storageDefaultArrayLimit;
+      if (value.length > limit) state.truncated.push(`${field || "array"}:${value.length - limit}`);
+      const result = [];
+      for (const item of value.slice(0, limit)) {
+        const safe = storageSafeValue(item, state, field, depth + 1);
+        if (safe !== undefined) result.push(safe);
+      }
+      return result;
+    }
+    if (value instanceof Map) return storageSafeValue(Array.from(value.entries()), state, field, depth + 1);
+    if (value instanceof Set) return storageSafeValue(Array.from(value), state, field, depth + 1);
+    const result = {};
+    const entries = Object.entries(value);
+    if (entries.length > 256) state.truncated.push(`${field || "object"}:keys:${entries.length - 256}`);
+    for (const [key, item] of entries.slice(0, 256)) {
+      const safe = storageSafeValue(item, state, key, depth + 1);
+      if (safe !== undefined) result[key] = safe;
+    }
+    return result;
+  }
+
+  function storageSafeDevice(device = {}) {
+    const context = { seen: new WeakSet(), truncated: [] };
+    const result = storageSafeValue(device, context, "device", 0) || {};
+    if (context.truncated.length) {
+      result.storageDiagnostics = {
+        truncated: true,
+        reasons: Array.from(new Set(context.truncated)).slice(0, 32),
+      };
+    }
+    return result;
+  }
+
+  function indexedDbWriteError(error, stage = "database-save") {
+    const message = String(error?.message || error || "неизвестная ошибка");
+    const cloneFailure = error?.name === "DataCloneError" || /cannot be cloned|out of memory/i.test(message);
+    const quotaExceeded = error?.name === "QuotaExceededError";
+    const failure = new Error(cloneFailure
+      ? "Браузер не смог сохранить слишком крупную или несериализуемую запись. Данные автоматически ограничены безопасным размером; последний успешный Final не изменён. Повторите обогащение после обновления страницы."
+      : quotaExceeded
+        ? "Недостаточно места в хранилище браузера для нового Final. Последний успешный Final сохранён без изменений. Освободите место или выгрузите базу и повторите обогащение."
+        : `Не удалось атомарно сохранить новый Final: ${message}`);
+    failure.name = cloneFailure ? "IndexedDbCloneError" : quotaExceeded ? "QuotaExceededError" : "EnrichmentSnapshotSaveError";
+    failure.code = cloneFailure ? "INDEXEDDB_DATA_CLONE_FAILED" : quotaExceeded ? "INDEXEDDB_QUOTA_EXCEEDED" : "FINAL_SNAPSHOT_SAVE_FAILED";
+    failure.stage = stage;
+    failure.cause = error;
+    return failure;
+  }
 
   function openDatabase() {
     return new Promise((resolve, reject) => {
@@ -173,12 +258,13 @@
       let completed = 0;
       const total = Math.max(1, deviceChunks + invalidChunks);
       for (const chunk of chunkRows(devices)) {
+        const safeRows = chunk.rows.map(storageSafeDevice);
         await transaction(snapshotChunkStore, "readwrite", (store) => store.put({
           key: `${snapshotId}:device:${String(chunk.index).padStart(8, "0")}`,
           snapshotId,
           kind: "device",
           index: chunk.index,
-          rows: chunk.rows,
+          rows: safeRows,
         }));
         completed += 1;
         onProgress(Math.round(completed / total * 100), completed, total);
@@ -202,15 +288,7 @@
       return metadata;
     } catch (error) {
       await removeSnapshot(snapshotId).catch(() => false);
-      const quotaExceeded = error?.name === "QuotaExceededError";
-      const failure = new Error(quotaExceeded
-        ? "Недостаточно места в хранилище браузера для нового Final. Последний успешный Final сохранён без изменений. Освободите место или выгрузите базу и повторите обогащение."
-        : `Не удалось атомарно сохранить новый Final: ${error?.message || error || "неизвестная ошибка"}`);
-      failure.name = quotaExceeded ? "QuotaExceededError" : "EnrichmentSnapshotSaveError";
-      failure.code = quotaExceeded ? "INDEXEDDB_QUOTA_EXCEEDED" : "FINAL_SNAPSHOT_SAVE_FAILED";
-      failure.stage = "database-save";
-      failure.cause = error;
-      throw failure;
+      throw indexedDbWriteError(error);
     }
   }
 
@@ -563,7 +641,7 @@
       const store = current.objectStore(enrichmentRowStore);
       const identityApi = window.MacAnalyzerDeviceIdentity;
       const aliasesFor = (device) => (identityApi?.candidates?.(device) || []).map((alias) => `${id}:${alias}`);
-      let written = 0, position = 0;
+      let written = 0, position = 0, operationError = null;
       const processNext = () => {
         if (position >= rows.length) return;
         const device = rows[position++], mac = String(device?.mac || ""), aliases = aliasesFor(device);
@@ -599,11 +677,11 @@
           merged.fieldSources = fieldSources;
           merged.sourceFiles = sourceFiles;
           merged.sourceRoles = sourceRoles;
-          merged.conflicts = conflicts;
+          merged.conflicts = conflicts.slice(-storageArrayLimits.conflicts);
           merged.hasConflict = conflicts.length > 0;
           if (resolution.status === "conflict") {
             conflicts.push({ field: "identity", selected: device.internalDeviceId || fallbackIdentity, selectedSource: device.source || "", alternative: "Неоднозначное сопоставление потоковых записей", alternativeSource: "identity-resolver", confidence: "Conflict", evidence: resolution.evidence || [] });
-            merged.conflicts = conflicts;
+            merged.conflicts = conflicts.slice(-storageArrayLimits.conflicts);
             merged.hasConflict = true;
             merged.matchConfidence = "Conflict";
           }
@@ -620,21 +698,28 @@
             merged.internalDeviceId = finalIdentity;
           }
           const storageIdentity = String(record?.key || `${id}:${finalIdentity}`);
-          store.put({ key: storageIdentity, jobId: id, mac: String(merged.mac || mac), aliases: aliasesFor(merged), device: merged, updatedAt: Date.now() });
+          const safeDevice = storageSafeDevice(merged);
+          try {
+            store.put({ key: storageIdentity, jobId: id, mac: String(safeDevice.mac || mac), aliases: aliasesFor(safeDevice).slice(0, storageArrayLimits.aliases), device: safeDevice, updatedAt: Date.now() });
+          } catch (error) {
+            operationError = indexedDbWriteError(error, "enrichment-row-save");
+            current.abort();
+            return;
+          }
           if (stats) stats[previous ? "matched" : "created"] = (stats[previous ? "matched" : "created"] || 0) + 1;
           written += 1;
           processNext();
         };
         if (!pending) { finishLookup(); return; }
         for (const alias of aliases) {
-          const request = aliasIndex.getAll(IDBKeyRange.only(alias));
+          const request = aliasIndex.getAll(IDBKeyRange.only(alias), 2);
           request.onsuccess = () => { for (const item of request.result || []) matches.set(item.key, item); pending -= 1; finishLookup(); };
           request.onerror = () => current.abort();
         }
       };
       processNext();
       current.oncomplete = () => { database.close(); resolve(written); };
-      current.onerror = () => { const error = current.error; database.close(); reject(error || new Error("Temporary enrichment merge failed")); };
+      current.onerror = () => { const error = operationError || current.error; database.close(); reject(error || new Error("Temporary enrichment merge failed")); };
       current.onabort = current.onerror;
     });
   }
@@ -1070,7 +1155,7 @@
       request.onsuccess = () => {
         const cursor = request.result;
         if (!cursor || rows.length >= snapshotChunkRows) { finalize(); return; }
-        rows.push(cursor.value?.device || {});
+        rows.push(storageSafeDevice(cursor.value?.device || {}));
         cursor.delete();
         if (rows.length >= snapshotChunkRows) finalize();
         else cursor.continue();
@@ -1129,15 +1214,7 @@
       return metadata;
     } catch (error) {
       await removeSnapshot(snapshotId).catch(() => false);
-      const quotaExceeded = error?.name === "QuotaExceededError";
-      const failure = new Error(quotaExceeded
-        ? "Недостаточно места в хранилище браузера для нового Final. Последний успешный Final сохранён без изменений. Освободите место или выгрузите базу и повторите обогащение."
-        : `Не удалось атомарно сохранить новый Final: ${error?.message || error || "неизвестная ошибка"}`);
-      failure.name = quotaExceeded ? "QuotaExceededError" : "EnrichmentSnapshotSaveError";
-      failure.code = quotaExceeded ? "INDEXEDDB_QUOTA_EXCEEDED" : "FINAL_SNAPSHOT_SAVE_FAILED";
-      failure.stage = "database-save";
-      failure.cause = error;
-      throw failure;
+      throw indexedDbWriteError(error);
     }
   }
 
@@ -1914,6 +1991,7 @@
     loadSourceFile,
     removeSourceFile,
     pruneSourceFiles,
+    storageSafeDevice,
   });
   document.documentElement.dataset.browserSnapshotStore = "ready";
 })();

@@ -49,7 +49,10 @@ def test_smartroom_history_filters_and_monthly_chart_are_wired():
     assert "function chronologyRooms" in ui
     assert "clearDownstreamFilters" in ui
     assert "await options.refreshSnapshots(force)" in ui
+    assert "function invalidate()" in ui
+    assert "build, invalidate" in ui
     assert "refreshSnapshots:()=>refreshSmartroomSnapshots()" in app
+    assert "SmartroomUI?.invalidate?.();" in app
     assert "function mergeSnapshotMetadata" in app
     assert "item?.browserStored||!item?.backendStored" in app
     assert "function cascade" in location

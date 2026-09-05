@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
   <meta name="application-build" content="2026.08.12.2">
-  <meta name="application-version" content="1.0.57">
+  <meta name="application-version" content="1.0.58">
   <link rel="stylesheet" href="styles.css?v=1055">
 </head>
 <body>
@@ -429,7 +429,7 @@
             <select id="roomChronologyFloorFilter" aria-label="Этаж"><option value="">Все этажи</option></select>
             <select id="roomChronologyRoomFilter" aria-label="Помещение"><option value="">Все помещения</option></select>
             <select id="roomChronologySelect" aria-label="Smartroom ID"><option value="">Выберите Smartroom ID</option></select>
-            <button class="button secondary" id="roomChronologyAllChangedButton" type="button" aria-expanded="false" disabled>Нужно минимум две финальные выгрузки</button>
+            <button class="button secondary" id="roomChronologyAllChangedButton" type="button" aria-expanded="false" disabled title="Для сравнения нужны минимум две финальные выгрузки">Проверить изменения всех устройств</button>
           </div>
           <p class="muted" id="roomChronologySummary">Выберите помещение, чтобы увидеть всю цепочку замен оборудования.</p>
           <div id="roomChronologyCoverageDetails" class="room-coverage-details" hidden></div>
@@ -866,11 +866,11 @@
   <script src="frontend/ieee-vendor-registry.js?v=20260810.1"></script>
   <script src="frontend/memory-guard.js?v=20260722.9"></script>
   <script src="frontend/file-readers.js?v=20260722.8"></script>
-  <script src="frontend/state-persistence.js?v=20260722.7"></script>
+  <script src="frontend/state-persistence.js?v=1058"></script>
   <script src="frontend/record-validation.js?v=1053"></script>
   <script src="frontend/device-identity.js?v=1048"></script>
   <script src="frontend/enrichment-strategy.js?v=1050"></script>
-  <script src="frontend/browser-snapshot-store.js?v=1057"></script>
+  <script src="frontend/browser-snapshot-store.js?v=1058"></script>
   <script src="frontend/time-utils.js?v=1047"></script>
   <script src="frontend/mac-chronology.js?v=1056"></script>
   <script src="frontend/local-analytics.js?v=20260729.3"></script>
@@ -886,14 +886,14 @@
   <script src="frontend/ui-feedback.js?v=1055"></script>
   <script src="frontend/lazy-tabs.js?v=1055"></script>
   <script src="frontend/virtual-table.js?v=1055"></script>
-  <script src="frontend/smartroom-worker.js?v=1057"></script>
+  <script src="frontend/smartroom-worker.js?v=1058"></script>
   <script src="frontend/smartroom-store.js?v=1055"></script>
-  <script src="frontend/smartroom-charts.js?v=1055"></script>
-  <script src="frontend/room-timeline.js?v=1056"></script>
-  <script src="frontend/room-location.js?v=1057"></script>
-  <script src="frontend/smartroom-ui.js?v=1056"></script>
+  <script src="frontend/smartroom-charts.js?v=1058"></script>
+  <script src="frontend/room-timeline.js?v=1058"></script>
+  <script src="frontend/room-location.js?v=1058"></script>
+  <script src="frontend/smartroom-ui.js?v=1058.1"></script>
   <script src="frontend/table-sorter.js?v=1055"></script>
-  <script src="app.js?v=1057"></script>
+  <script src="app.js?v=1058.1"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;

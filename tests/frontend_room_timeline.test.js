@@ -117,4 +117,17 @@ const sparseLegacy = timeline.compareLatest({
   ],
 });
 assert.equal(sparseLegacy.changed, 0, "an empty legacy value must not create a false empty-to-known change");
+
+const absentThenSparse = timeline.events({
+  history: [
+    { date: "2026-06-01T00:00:00Z", devices: [{ mac: "001122334455", model: "Known model", switchIp: "10.0.0.1" }] },
+    { date: "2026-07-01T00:00:00Z", devices: [] },
+    { date: "2026-08-01T00:00:00Z", devices: [{ mac: "001122334455", model: "", switchIp: "10.0.0.1" }] },
+  ],
+});
+assert.equal(
+  absentThenSparse.some((item) => item.changes?.some((change) => change.label === "Модель")),
+  false,
+  "a temporary absence must not erase a previously known value and create a false empty-to-known change",
+);
 console.log("frontend room timeline test passed");

@@ -44,6 +44,13 @@ assert.equal(snapshots.matchesDashboardFilter({ mac: "AA:BB:CC:00:00:01", smartr
 
 assert.doesNotThrow(() => snapshots.comparisonAliases({ mac: "001122334455", Possible_IPs: "192.0.2.1, 192.0.2.2" }));
 assert.doesNotThrow(() => snapshots.comparisonAliases({ mac: "001122334455", possibleIps: null }));
+const circular = { mac: "001122334455", conflicts: Array.from({ length: 5000 }, (_, index) => ({ index })) };
+circular.self = circular;
+const safeCircular = snapshots.storageSafeDevice(circular);
+assert.equal(safeCircular.mac, circular.mac);
+assert.equal(safeCircular.conflicts.length, 64, "unbounded conflict collections must not exhaust structured clone memory");
+assert.equal(Object.prototype.hasOwnProperty.call(safeCircular, "self"), false, "cyclic values must not reach IndexedDB");
+assert.equal(safeCircular.storageDiagnostics.truncated, true);
 
 const devices = Array.from({ length: 120_000 }, (_, index) => ({
   mac: `A1B2C3${index.toString(16).padStart(6, "0").toUpperCase()}`,

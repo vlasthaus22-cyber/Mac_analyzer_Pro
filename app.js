@@ -810,6 +810,7 @@
         state.customColumnMappings = data.customColumnMappings || {};
         Object.assign(labels, data.customLabels || {});
       }
+      SmartroomUI?.invalidate?.();
       save(); renderAll(); setBackendStatus(true,restoredFromAutosave?"SQLite подключена, autosave восстановлен":"Backend и SQLite подключены");return true;
     } catch (error) {
       if (!networkUnavailable(error)) UiFeedback?.showError(error);

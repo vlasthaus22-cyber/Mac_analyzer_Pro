@@ -5,6 +5,18 @@
   const workspacePreviewRows = 101;
   const maxInlineResultRows = 20_000;
 
+  function compactTransientState(source = {}) {
+    return {
+      ...source,
+      // The complete DDIO result is already stored in the Final device rows and the
+      // original DDIO file is kept in sourceFiles. Persisting this derived index in
+      // the workspace record duplicates it and can make a single structured clone
+      // hundreds of megabytes large.
+      ddioOverlay: {},
+      dashboardFleetCache: null,
+    };
+  }
+
   function compactFiles(files, preserveBrowserRows) {
     return list(files).map((file) => ({
       ...file,
@@ -20,7 +32,7 @@
 
   function compactLocalState(source = {}) {
     return {
-      ...source,
+      ...compactTransientState(source),
       browserStateInIndexedDb: true,
       files: compactFiles(source.files, false),
       ddioFile: source.ddioFile ? {...source.ddioFile, rows: []} : null,
@@ -41,7 +53,7 @@
     const inlineResult = !snapshotBackedResult
       && resultRows.length + invalidRows.length <= maxInlineResultRows;
     return {
-      ...source,
+      ...compactTransientState(source),
       browserStateInIndexedDb: true,
       files: compactFiles(source.files, true),
       ddioFile: source.ddioFile ? {...source.ddioFile, rows: list(source.ddioFile.rows).slice(0, workspacePreviewRows)} : null,

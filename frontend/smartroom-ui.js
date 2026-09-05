@@ -124,6 +124,13 @@
     return promise;
   }
 
+  function invalidate() {
+    generation += 1;
+    cache.clear();
+    inflight.clear();
+    report = null;
+  }
+
   function roomLocation(room) {
     if (RoomLocation?.parse) return RoomLocation.parse(room);
     const result = {
@@ -262,6 +269,7 @@
         )
         .join("");
     if (rooms.some((room) => room.smartroomId === saved)) select.value = saved;
+    else if (rooms.length === 1) select.value = rooms[0].smartroomId;
   }
 
   function roomRow(room) {
@@ -330,11 +338,12 @@
     const available = Boolean(room && room.history?.length >= 2);
     button.disabled = !available;
     button.classList.toggle("critical-change", comparison.allChanged);
-    button.textContent = comparison.allChanged
-      ? `Все устройства изменились (${comparison.changed}/${comparison.total})`
-      : available
-        ? `Изменения устройств (${comparison.changed}/${comparison.total})`
-        : "Нужно минимум две финальные выгрузки";
+    button.textContent = available
+      ? `Проверить изменения всех устройств (${comparison.changed}/${comparison.total})`
+      : "Проверить изменения всех устройств";
+    button.title = available
+      ? "Показать сравнение всех устройств выбранной комнаты между двумя последними Final"
+      : "Для сравнения нужны минимум две финальные выгрузки";
     if (!available) button.setAttribute("aria-expanded", "false");
     const expanded = available && button.getAttribute("aria-expanded") === "true";
     target.hidden = !expanded;
@@ -520,5 +529,5 @@
     if (name === "analytics") return renderCharts(force);
   }
 
-  window.MacAnalyzerSmartroomUI = Object.freeze({ initialize, render, autoLoad, build });
+  window.MacAnalyzerSmartroomUI = Object.freeze({ initialize, render, autoLoad, build, invalidate });
 })();

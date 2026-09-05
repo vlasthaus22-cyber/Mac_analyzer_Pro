@@ -116,7 +116,11 @@
       const paired = pairDevices(known, current);
       const devices = paired.pairs.map(([previous, device]) => mergeKnownDevice(previous, device));
       devices.push(...paired.added);
-      known = devices;
+      // Keep the last trustworthy values even while a device/room is absent in a
+      // snapshot. The active observation remains empty, but a later reappearance
+      // can still inherit non-empty fields from the previous Final.
+      const retained = known.filter((device) => !paired.pairs.some(([previous]) => previous === device));
+      known = retained.concat(devices);
       hydrated.push({ ...observation, devices });
     }
     return hydrated;

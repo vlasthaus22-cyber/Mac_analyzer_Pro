@@ -74,6 +74,8 @@ require("../frontend/smartroom-worker.js");
   assert.strictEqual(report.rooms.find((room) => room.smartroomId === "ROOM-1").floor, "5");
   assert.strictEqual(report.rooms.find((room) => room.smartroomId === "ROOM-1").history[0].devices.length, 1);
   assert.strictEqual(report.charts.at(-1).changes, 1, "a confirmed switch change must be visible in charts");
+  assert.strictEqual(report.snapshotChanges[0].added, 0, "the first Final is a baseline, not an addition event");
+  assert.strictEqual(report.snapshotChanges[1].removed, 1000);
   assert.ok(report.charts.at(-1).changedRooms.includes("ROOM-1"));
   assert.ok(report.charts.at(-1).changedRooms.includes("ROOM-BULK"), "a removed room must be counted as changed");
   assert.ok(report.charts.at(-1).changedMacs.includes(first[0].mac));
@@ -163,6 +165,15 @@ require("../frontend/smartroom-worker.js");
   assert.equal(incompleteLocation.rooms[0].site, "Кутузовский проспект");
   assert.equal(incompleteLocation.rooms[0].floor, "");
   assert.equal(incompleteLocation.rooms[0].room, "Переговорная 1");
+
+  const lateRoom = await global.MacAnalyzerSmartroomWorker.build([
+    { id: "late-1", createdAt: "2026-08-01T00:00:00Z", devices: [{ mac: "001122334455", smartroomId: "OTHER" }] },
+    { id: "late-2", createdAt: "2026-08-02T00:00:00Z", devices: [{ mac: "AABBCCDDEEFF", smartroomId: "LATE", room: "ЦА, Москва, Площадка, 3, Комната" }] },
+  ]);
+  const late = lateRoom.rooms.find((item) => item.smartroomId === "LATE");
+  assert.equal(late.history.length, 2, "a room first seen later must still contain every Final observation");
+  assert.equal(late.history[0].devices.length, 0);
+  assert.equal(late.history[1].devices.length, 1);
 
   const large = Array.from({ length: 10000 }, (_value, index) => ({
     mac: `AABBCC${index.toString(16).padStart(6, "0")}`,

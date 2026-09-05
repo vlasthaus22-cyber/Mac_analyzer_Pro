@@ -25,6 +25,8 @@ const source = {
     { id: "snapshot-2", browserStored: true, devices: [{ mac: "AABBCCDDEEFF" }] },
   ],
   movementHistory: Array.from({ length: 130 }, (_, index) => ({ index })),
+  ddioOverlay: Object.fromEntries(Array.from({ length: 1000 }, (_, index) => [`MAC-${index}`, { possibleIps: ["192.0.2.1"] }])),
+  dashboardFleetCache: { rows: Array.from({ length: 1000 }, (_, index) => index) },
 };
 
 const indexed = persistence.compactIndexedState(source);
@@ -36,6 +38,9 @@ assert.deepEqual(indexed.snapshots[0].devices, []);
 assert.deepEqual(indexed.snapshots[1].devices, [], "browser snapshot rows must live in the dedicated IndexedDB store");
 assert.equal(indexed.movementHistory.length, 100);
 assert.equal(source.files[0].rows.length, 3, "compaction must not mutate live workspace state");
+assert.deepEqual(indexed.ddioOverlay, {}, "derived DDIO index must not be cloned into the workspace record");
+assert.equal(indexed.dashboardFleetCache, null, "derived dashboard cache must be rebuilt instead of persisted");
+assert.equal(Object.keys(source.ddioOverlay).length, 1000, "workspace compaction must not mutate the live DDIO index");
 
 const standalone = persistence.compactIndexedState({ ...source, resultSnapshotId: "", files: [source.files[1]] });
 assert.deepEqual(standalone.files[0].rows, browserRows);

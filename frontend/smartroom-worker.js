@@ -61,7 +61,10 @@
       const s = sessions.get(id); if (!s?.pending) throw new Error('Worker snapshot not started');
       const meta = s.pending.meta, next = s.pending.next, date = utc(meta.createdAt || meta.date);
       for (const roomKey of s.rooms.keys()) if (!s.pending.byRoom.has(roomKey)) s.pending.byRoom.set(roomKey, []);
-      for (const [roomKey, devices] of s.pending.byRoom) { if (!s.rooms.has(roomKey)) s.rooms.set(roomKey, []); s.rooms.get(roomKey).push({ date, name: meta.name || '', devices: Array.from(devices.values()) }); }
+      for (const [roomKey, devices] of s.pending.byRoom) {
+        if (!s.rooms.has(roomKey)) s.rooms.set(roomKey, s.snapshots.map(item => ({ date: item.date, name: item.name || '', devices: [] })));
+        s.rooms.get(roomKey).push({ date, name: meta.name || '', devices: Array.from(devices.values()) });
+      }
       for (const row of next.values()) if (row.mac) { if (!s.macs.has(row.mac)) s.macs.set(row.mac, []); s.macs.get(row.mac).push({ date, ...row }); }
       let added = 0, removed = 0, changed = 0; const changedRooms = new Set(), changedMacs = new Set();
       for (const [identity, row] of next) {
@@ -75,9 +78,10 @@
         }
       }
       for (const [identity, row] of s.current) if (!next.has(identity)) { removed += 1; if (row.smartroomId) changedRooms.add(row.smartroomId); if (row.mac) changedMacs.add(row.mac); }
+      const isInitial = s.snapshots.length === 0;
       const day = date.slice(0, 10) || 'Без даты'; const bucket = s.daily.get(day) || { date: day, changes: 0, added: 0, removed: 0, total: 0, changedRooms: [], changedMacs: [] };
-      bucket.changes += changed; bucket.added += added; bucket.removed += removed; bucket.total = next.size; bucket.changedRooms = Array.from(new Set([...bucket.changedRooms, ...changedRooms])); bucket.changedMacs = Array.from(new Set([...bucket.changedMacs, ...changedMacs])); s.daily.set(day, bucket);
-      s.previous = s.current; s.current = next; s.snapshots.push({ date, name: meta.name || '', total: next.size });
+      bucket.changes += isInitial ? 0 : changed; bucket.added += isInitial ? 0 : added; bucket.removed += isInitial ? 0 : removed; bucket.total = next.size; bucket.changedRooms = Array.from(new Set([...bucket.changedRooms, ...(isInitial ? [] : changedRooms)])); bucket.changedMacs = Array.from(new Set([...bucket.changedMacs, ...(isInitial ? [] : changedMacs)])); s.daily.set(day, bucket);
+      s.previous = s.current; s.current = next; s.snapshots.push({ date, name: meta.name || '', total: next.size, changes: isInitial ? 0 : changed, added: isInitial ? 0 : added, removed: isInitial ? 0 : removed, changedRooms: Array.from(isInitial ? [] : changedRooms), changedMacs: Array.from(isInitial ? [] : changedMacs) });
       s.pending = null;
     }
     function finish(id) {
@@ -91,7 +95,7 @@
         rooms.push({ smartroomId: place.smartroomId || roomKey.replace(/^MAC:/, ''), room: place.room || '', tb: place.tb || '', city: place.city || '', site: place.site || '', floor: place.floor || '', locationPath: place.locationPath || '', address: place.address || '', devices: latest.devices, missing, history: events });
       }
       rooms.sort((a,b) => a.smartroomId.localeCompare(b.smartroomId, 'ru', { numeric: true }));
-      const result = { rooms, criticalSwitchChanges: s.criticalSwitchChanges, macTimelines: Object.fromEntries(s.macs), charts: Array.from(s.daily.values()).sort((a,b) => a.date.localeCompare(b.date)), snapshots: s.snapshots, skipped: s.skipped, invalidMacRows: s.invalidMacRows };
+       const result = { rooms, criticalSwitchChanges: s.criticalSwitchChanges, macTimelines: Object.fromEntries(s.macs), charts: Array.from(s.daily.values()).sort((a,b) => a.date.localeCompare(b.date)), snapshots: s.snapshots, snapshotChanges: s.snapshots, skipped: s.skipped, invalidMacRows: s.invalidMacRows };
       sessions.delete(id); return result;
     }
     self.onmessage = event => { const { requestId, action, sessionId, meta, rows, options } = event.data || {}; try { let value = true; if (action === 'begin') begin(sessionId, options); else if (action === 'beginSnapshot') beginSnapshot(sessionId, meta || {}); else if (action === 'ingest') ingest(sessionId, rows || []); else if (action === 'endSnapshot') endSnapshot(sessionId); else if (action === 'finish') value = finish(sessionId); self.postMessage({ requestId, value }); } catch (error) { self.postMessage({ requestId, error: error.message || String(error) }); } };

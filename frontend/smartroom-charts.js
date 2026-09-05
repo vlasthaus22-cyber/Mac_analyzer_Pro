@@ -103,6 +103,24 @@
       }));
   }
 
+  function snapshotRows(report) {
+    const source = Array.isArray(report?.snapshotChanges)
+      ? report.snapshotChanges
+      : Array.isArray(report?.snapshots)
+        ? report.snapshots
+        : [];
+    return source
+      .filter((row) => row && typeof row === "object")
+      .map((row, index) => ({
+        date: String(row.date || "Без даты"),
+        label: String(row.name || row.date || `Final ${index + 1}`),
+        changes: Math.max(0, Number(row.changes) || 0),
+        added: index === 0 ? 0 : Math.max(0, Number(row.added) || 0),
+        removed: index === 0 ? 0 : Math.max(0, Number(row.removed) || 0),
+        total: Math.max(0, Number(row.total) || 0),
+      }));
+  }
+
   function monthKey(value) {
     const direct = String(value || "").match(/^(\d{4})-(\d{2})/);
     if (direct) return `${direct[1]}-${direct[2]}`;
@@ -181,6 +199,7 @@
 
   async function render(report = {}) {
     const rows = monthlyRows(report);
+    const finals = snapshotRows(report);
     const ids = ["smartroomChangesChart", "smartroomAddedRemovedChart", "smartroomTotalChart"];
     if (!rows.length) {
       ids.forEach((id) => {
@@ -212,22 +231,40 @@
         options: changesOptions,
       }),
     );
-    rendered.push(
-      upsert("smartroomAddedRemovedChart", {
-        type: "line",
-        data: {
-          labels: rows.map((row) => row.label),
-          datasets: [
-            { label: "Добавлено", data: rows.map((row) => row.added), borderColor: c.green, backgroundColor: c.green },
-            { label: "Пропало", data: rows.map((row) => row.removed), borderColor: c.red, backgroundColor: c.red },
-          ],
-        },
-        options: options(c),
-      }),
-    );
+    const changesByFinal = finals.slice(1);
+    if (changesByFinal.length)
+      rendered.push(
+        upsert("smartroomAddedRemovedChart", {
+          type: "line",
+          data: {
+            labels: changesByFinal.map((row) => row.label),
+            datasets: [
+              {
+                label: "Добавлено",
+                data: changesByFinal.map((row) => row.added),
+                borderColor: c.green,
+                backgroundColor: c.green,
+              },
+              {
+                label: "Отсутствовало",
+                data: changesByFinal.map((row) => -row.removed),
+                borderColor: c.red,
+                backgroundColor: c.red,
+              },
+            ],
+          },
+          options: options(c),
+        }),
+      );
+    else {
+      destroy("smartroomAddedRemovedChart");
+      chartState("smartroomAddedRemovedChart", "Для сравнения нужны минимум два финальных обогащения.");
+      rendered.push(true);
+    }
 
-    const previous = Number(rows.at(-2)?.total || 0);
-    const current = Number(rows.at(-1)?.total || 0);
+    const totalRows = finals.length ? finals : rows;
+    const previous = Number(totalRows.at(-2)?.total || 0);
+    const current = Number(totalRows.at(-1)?.total || 0);
     const percent = previous ? ((current - previous) / previous) * 100 : current ? 100 : 0;
     const totalOptions = options(c);
     totalOptions.plugins.title = {
@@ -237,14 +274,15 @@
     };
     rendered.push(
       upsert("smartroomTotalChart", {
-        type: "bar",
+        type: "line",
         data: {
-          labels: ["Было", "Стало"],
+          labels: totalRows.map((row, index) => row.label || `Final ${index + 1}`),
           datasets: [
             {
               label: "Устройств",
-              data: [previous, current],
-              backgroundColor: [c.blue, current < previous ? c.red : c.green],
+              data: totalRows.map((row) => row.total),
+              borderColor: c.blue,
+              backgroundColor: c.blue,
             },
           ],
         },
@@ -254,5 +292,5 @@
     return rendered.every(Boolean);
   }
 
-  window.MacAnalyzerSmartroomCharts = Object.freeze({ destroy, normalizeRows, monthlyRows, render });
+  window.MacAnalyzerSmartroomCharts = Object.freeze({ destroy, normalizeRows, snapshotRows, monthlyRows, render });
 })();
