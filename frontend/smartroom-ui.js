@@ -335,20 +335,30 @@
       allChanged: false,
       entries: [],
     };
-    const available = Boolean(room && room.history?.length >= 2);
-    button.disabled = !available;
-    button.classList.toggle("critical-change", comparison.allChanged);
-    button.textContent = available
-      ? `Проверить изменения всех устройств (${comparison.changed}/${comparison.total})`
-      : "Проверить изменения всех устройств";
+    const selected = Boolean(room);
+    const available = Boolean(selected && room.history?.length >= 2);
+    button.disabled = !selected;
+    button.classList.toggle("critical-change", available && comparison.allChanged);
+    button.classList.toggle("coverage-partial", available && !comparison.allChanged);
+    button.dataset.allChanged = available ? String(comparison.allChanged) : "unavailable";
+    button.textContent = !selected
+      ? "Выберите помещение для проверки всех устройств"
+      : !available
+        ? "Все устройства изменились: недостаточно финальных выгрузок"
+        : comparison.allChanged
+          ? `Все устройства изменились: ДА (${comparison.changed}/${comparison.total})`
+          : `Все устройства изменились: НЕТ (${comparison.changed}/${comparison.total})`;
     button.title = available
-      ? "Показать сравнение всех устройств выбранной комнаты между двумя последними Final"
-      : "Для сравнения нужны минимум две финальные выгрузки";
-    if (!available) button.setAttribute("aria-expanded", "false");
-    const expanded = available && button.getAttribute("aria-expanded") === "true";
+      ? "Открыть сравнение каждого устройства выбранной комнаты между двумя последними Final"
+      : selected
+        ? "Для сравнения нужны минимум две финальные выгрузки"
+        : "Сначала выберите помещение";
+    const expanded = selected && button.getAttribute("aria-expanded") === "true";
     target.hidden = !expanded;
     if (!available) {
-      target.innerHTML = "";
+      target.innerHTML = selected
+        ? '<p class="muted">Для сравнения изменений всех устройств нужны как минимум два финальных обогащения.</p>'
+        : "";
       return comparison;
     }
     const verdict = comparison.allChanged

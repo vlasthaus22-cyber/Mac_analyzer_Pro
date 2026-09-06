@@ -141,12 +141,32 @@
     ["address", ["address", "physicalAddress"], "Адрес"],
   ]);
 
+  const unknownValues = new Set([
+    "",
+    "unknown",
+    "not found",
+    "n/a",
+    "none",
+    "null",
+    "не определено",
+    "неизвестно",
+    "не указано",
+  ]);
+
+  function trackedValue(field, device, keys) {
+    const result = field === "mac" ? normalizeMac(value(device, ...keys)) : value(device, ...keys);
+    return ["model", "vendor"].includes(field) && unknownValues.has(text(result).toLowerCase()) ? "" : result;
+  }
+
   function changedValues(before, after) {
     const changes = [];
     for (const [field, keys, label] of trackedFields) {
-      const oldValue = field === "mac" ? normalizeMac(value(before, ...keys)) : value(before, ...keys);
-      const newValue = field === "mac" ? normalizeMac(value(after, ...keys)) : value(after, ...keys);
-      if (!newValue || oldValue === newValue) continue;
+      const oldValue = trackedValue(field, before, keys);
+      const newValue = trackedValue(field, after, keys);
+      // A newly filled or temporarily absent attribute is enrichment quality,
+      // not a confirmed physical change in the room. Added/removed devices are
+      // handled separately by pairDevices().
+      if (!oldValue || !newValue || oldValue === newValue) continue;
       changes.push({ field, label, before: oldValue, after: newValue });
     }
     return changes;

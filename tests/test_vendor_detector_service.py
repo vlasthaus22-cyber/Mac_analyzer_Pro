@@ -82,6 +82,21 @@ def test_model_detector_uses_python_compatible_mac5_prefix():
     assert model["matchedPrefix"] == "AABBCC1200"
 
 
+def test_unknown_model_placeholder_does_not_block_automatic_detection():
+    from_history = detect_model("AA:BB:CC:00:00:01", "Unknown", "Known Room Kit", [])
+    from_prefix = detect_model(
+        "AA:BB:CC:12:34:01",
+        "Не определено",
+        "",
+        [{"prefix": "AABBCC1234", "model": "Codec Pro", "source": "learned"}],
+    )
+
+    assert from_history["value"] == "Known Room Kit"
+    assert from_history["source"] == "history"
+    assert from_prefix["value"] == "Codec Pro"
+    assert from_prefix["source"] == "prefix"
+
+
 def test_detector_settings_control_automatic_sources():
     disabled_vendor = detect_vendor(
         "AA:BB:CC:00:00:01",
@@ -118,5 +133,6 @@ if __name__ == "__main__":
     test_model_detector_uses_longest_prefix()
     test_vendor_detector_matches_python_text_keywords()
     test_model_detector_uses_python_compatible_mac5_prefix()
+    test_unknown_model_placeholder_does_not_block_automatic_detection()
     test_detector_settings_control_automatic_sources()
     print("vendor detector service test passed")

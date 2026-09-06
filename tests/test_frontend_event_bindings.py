@@ -1027,7 +1027,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=1058"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=1061"></script>' in html
     assert '<script src="frontend/xlsx-exporter.js?v=20260727.5"></script>' in html
     assert '<script src="frontend/full-xlsx-report.js?v=20260729.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
@@ -1077,7 +1077,9 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert 'async function compareSnapshots(baselineId, comparisonId, options = {})' in snapshot_store
     assert 'const criticalMove = ["mac", "switchIp", "ip"].some((field) => {' in snapshot_store
     assert 'return Boolean(before && after && before !== after);' in snapshot_store
-    assert 'if (criticalMove || device.hasConflict) result.critical += 1;' in snapshot_store
+    assert 'if (criticalMove) result.critical += 1;' in snapshot_store
+    assert 'diagnostics: { identityConflicts: result.identityConflicts }' in snapshot_store
+    assert 'field: "identityConflict", before: "", after: "Обнаружен конфликт источников"' not in snapshot_store
     assert 'critical: result.critical,' in snapshot_store
     assert 'async function localAnalyzeFilesToSnapshot(fields,strategy,source,createdAt,onProgress=()=>{})' in app
     assert 'local=await localAnalyzeFilesToSnapshot(enrich,strategy,source,sourceCreatedAt' in app
@@ -1823,7 +1825,7 @@ def test_analysis_tab_dashboard_and_mapping_learning_refresh_results():
         "function learnLocalVendorModelMappings(settings=vendorModelLearnSettings())",
         'body:JSON.stringify(settings)',
         "learned=learnLocalRulesFromDevices(rows,settings.minCount)",
-        'if(model)count(modelCounts,mac.slice(0,10),model);',
+        'if(isKnownModelValue(model))count(modelCounts,mac.slice(0,10),model);',
         "function renderAnalysisDashboard()",
         "function analysisDashboardLocalPayload(devices=state.devices,summary=state.resultSummary)",
         "function analysisDashboardAggregatePayload(aggregate={})",
@@ -2378,7 +2380,7 @@ def test_oui_reference_import_and_safe_autodetection_are_wired_end_to_end():
         'api("/reference/oui/import"',
         '$("#importOuiReferenceButton")?.addEventListener("click",importOuiReference);',
         "function learnLocalRulesFromDevices(rows=[],minCount=2)",
-        "if(model)count(modelCounts,mac.slice(0,10),model);",
+        "if(isKnownModelValue(model))count(modelCounts,mac.slice(0,10),model);",
     ):
         assert marker in app
     for marker in (

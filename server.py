@@ -874,6 +874,16 @@ def as_text(value: Any) -> str:
     return str(value).strip() if value is not None else ""
 
 
+UNKNOWN_ENRICHMENT_VALUES = {
+    "", "unknown", "not found", "n/a", "none", "null",
+    "не определено", "неизвестно", "не указано",
+}
+
+
+def is_known_enrichment_value(value: Any) -> bool:
+    return as_text(value).casefold() not in UNKNOWN_ENRICHMENT_VALUES
+
+
 def format_display_datetime(value: Any) -> str:
     text = as_text(value)
     if not text:
@@ -2294,7 +2304,7 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
     # rules. Feeding it into generic similarity changed source priority and
     # duplicated the same observations in memory.
     needs_similarity = detector_settings.get("enabled", True) and detector_settings.get("useInference", True) and any(
-        not as_text(item.get("vendor")) or not as_text(item.get("model"))
+        not is_known_enrichment_value(item.get("vendor")) or not is_known_enrichment_value(item.get("model"))
         for item in normalized_devices
     )
     history_observations = history_similarity_rows if history_settings.get("enabled", True) and needs_similarity else []
@@ -2333,12 +2343,17 @@ def build_enrichment_context(devices: list[dict[str, Any]]) -> dict[str, Any]:
 def enrich_device(device: dict[str, Any], context: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     mac = normalize_mac(device.get("mac") or device.get("macFormatted"))
     batch = context or build_enrichment_context([device])
+    device = dict(device)
+    # Spreadsheet placeholders must not override a trustworthy value from the
+    # previous Final or block automatic vendor/model detection.
+    for placeholder_field in ("vendor", "model"):
+        if not is_known_enrichment_value(device.get(placeholder_field)):
+            device[placeholder_field] = ""
     previous_resolution = resolve_identity(
         device, batch.get("previousFinalIndex") or {}, allow_identifier_changes=True
     )
     previous_final = previous_resolution.get("match")
     if previous_resolution.get("status") == "conflict" or previous_resolution.get("ambiguousEvidence"):
-        device = dict(device)
         device.setdefault("conflicts", []).append({
             "field": "identity",
             "selected": as_text(device.get("internalDeviceId")) or stable_device_id(device),
@@ -2361,25 +2376,42 @@ def enrich_device(device: dict[str, Any], context: Optional[dict[str, Any]] = No
     history_settings = batch.get("historySettings") or normalize_history_enrichment_settings({})
     vendor_model_suggestion = indexed_history_suggestion(mac, batch.get("vendorModelHistoryIndex"), history_settings) if mac else {}
     priority_history = history_settings.get("enabled") and history_settings.get("priorityHistory")
-    history_vendor = as_text(history.get("vendor")) or (as_text(vendor_model_suggestion.get("vendor")) if priority_history else "")
-    history_model = as_text(history.get("model")) or (as_text(vendor_model_suggestion.get("model")) if priority_history else "")
+    history_vendor = as_text(history.get("vendor")) if is_known_enrichment_value(history.get("vendor")) else ""
+    history_model = as_text(history.get("model")) if is_known_enrichment_value(history.get("model")) else ""
+    if previous_final:
+        history_vendor = history_vendor or (as_text(previous_final.get("vendor")) if is_known_enrichment_value(previous_final.get("vendor")) else "")
+        history_model = history_model or (as_text(previous_final.get("model")) if is_known_enrichment_value(previous_final.get("model")) else "")
+    if priority_history:
+        history_vendor = history_vendor or as_text(vendor_model_suggestion.get("vendor"))
+        history_model = history_model or as_text(vendor_model_suggestion.get("model"))
     text_values = [device.get(field) for field in ("model", "description", "name", "hostname", "device_name")]
     detector_settings = batch.get("detectorSettings") or normalize_detector_settings({})
     similar_result = similarity_detection(mac, batch.get("similarityIndex")) if mac else {}
+    restored_fields = device.get("fieldSources") if isinstance(device.get("fieldSources"), dict) else {}
+    explicit_vendor = "" if restored_fields.get("vendor") == "previous-final" else device.get("vendor")
+    explicit_model = "" if restored_fields.get("model") == "previous-final" else device.get("model")
     if mac:
-        vendor_detection = detect_vendor(mac, device.get("vendor"), history_vendor, vendor_rules, [], text_values, detector_settings, batch.get("vendorRuleIndex"), similar_result)
-        model_detection = detect_model(mac, device.get("model"), history_model, model_rules, detector_settings, batch.get("modelRuleIndex"), similar_result)
+        vendor_detection = detect_vendor(mac, explicit_vendor, history_vendor, vendor_rules, [], text_values, detector_settings, batch.get("vendorRuleIndex"), similar_result)
+        model_detection = detect_model(mac, explicit_model, history_model, model_rules, detector_settings, batch.get("modelRuleIndex"), similar_result)
     else:
         vendor_detection = {"value": as_text(device.get("vendor")) or "Unknown", "source": "file" if as_text(device.get("vendor")) else "unknown", "confidence": 1.0 if as_text(device.get("vendor")) else 0.0, "matchedPrefix": ""}
         model_detection = {"value": as_text(device.get("model")), "source": "file" if as_text(device.get("model")) else "unknown", "confidence": 1.0 if as_text(device.get("model")) else 0.0, "matchedPrefix": ""}
-    if vendor_detection.get("source") == "history" and not as_text(history.get("vendor")) and history_vendor:
-        vendor_detection["source"] = vendor_model_suggestion.get("source", "vendor_model_history")
-        vendor_detection["confidence"] = vendor_model_suggestion.get("confidence", vendor_detection.get("confidence", 0.0))
-        vendor_detection["matchedPrefix"] = vendor_model_suggestion.get("matchedPrefix", "")
-    if model_detection.get("source") == "history" and not as_text(history.get("model")) and history_model:
-        model_detection["source"] = vendor_model_suggestion.get("source", "vendor_model_history")
-        model_detection["confidence"] = vendor_model_suggestion.get("confidence", model_detection.get("confidence", 0.0))
-        model_detection["matchedPrefix"] = vendor_model_suggestion.get("matchedPrefix", "")
+    if vendor_detection.get("source") == "history" and not is_known_enrichment_value(history.get("vendor")) and history_vendor:
+        previous_vendor = as_text((previous_final or {}).get("vendor"))
+        if previous_vendor and previous_vendor == history_vendor:
+            vendor_detection["source"] = "previous-final"
+        else:
+            vendor_detection["source"] = vendor_model_suggestion.get("source", "vendor_model_history")
+            vendor_detection["confidence"] = vendor_model_suggestion.get("confidence", vendor_detection.get("confidence", 0.0))
+            vendor_detection["matchedPrefix"] = vendor_model_suggestion.get("matchedPrefix", "")
+    if model_detection.get("source") == "history" and not is_known_enrichment_value(history.get("model")) and history_model:
+        previous_model = as_text((previous_final or {}).get("model"))
+        if previous_model and previous_model == history_model:
+            model_detection["source"] = "previous-final"
+        else:
+            model_detection["source"] = vendor_model_suggestion.get("source", "vendor_model_history")
+            model_detection["confidence"] = vendor_model_suggestion.get("confidence", model_detection.get("confidence", 0.0))
+            model_detection["matchedPrefix"] = vendor_model_suggestion.get("matchedPrefix", "")
     if history_settings.get("enabled") and not priority_history and vendor_model_suggestion:
         if vendor_detection.get("source") in {"unknown", "disabled"} and as_text(vendor_model_suggestion.get("vendor")):
             vendor_detection = {
@@ -2921,49 +2953,76 @@ def vendor_model_history_suggestion(mac: str, settings: dict[str, Any] | None = 
     if normalized_settings["useOuiMatch"]:
         prefix_plan.append((6, 0.68))
     with db_connection() as conn:
-        exact = conn.execute(
-            """
-            SELECT vendor, model, mac AS matched_prefix, 1 AS matches
-            FROM vendor_model_history
-            WHERE mac = ? AND (vendor IS NOT NULL OR model IS NOT NULL)
-            ORDER BY observed_at DESC, id DESC
-            LIMIT 1
-            """,
+        exact_vendor = conn.execute(
+            "SELECT vendor FROM vendor_model_history WHERE mac = ? AND TRIM(COALESCE(vendor, '')) != '' "
+            "AND LOWER(TRIM(vendor)) NOT IN ('unknown', 'not found', 'n/a', 'none', 'null', 'не определено', 'неизвестно', 'не указано') "
+            "ORDER BY observed_at DESC, id DESC LIMIT 1",
             (normalized,),
         ).fetchone()
-        if exact:
-            result = dict(exact)
+        exact_model = conn.execute(
+            "SELECT model FROM vendor_model_history WHERE mac = ? AND TRIM(COALESCE(model, '')) != '' "
+            "AND LOWER(TRIM(model)) NOT IN ('unknown', 'not found', 'n/a', 'none', 'null', 'не определено', 'неизвестно', 'не указано') "
+            "ORDER BY observed_at DESC, id DESC LIMIT 1",
+            (normalized,),
+        ).fetchone()
+        result = {
+            "vendor": as_text(exact_vendor["vendor"]) if exact_vendor else "",
+            "model": as_text(exact_model["model"]) if exact_model else "",
+        }
+        if result["vendor"] and result["model"]:
             return {
-                "vendor": as_text(result.get("vendor")),
-                "model": as_text(result.get("model")),
+                **result,
                 "source": "vendor_model_history_exact",
                 "confidence": 0.93,
-                "matchedPrefix": result["matched_prefix"],
-                "matches": result["matches"],
+                "matchedPrefix": normalized,
+                "matches": 1,
             }
         for prefix_length, confidence in prefix_plan:
             prefix = normalized[:prefix_length]
-            rows = conn.execute(
+            vendor_row = None if result["vendor"] else conn.execute(
                 """
-                SELECT vendor, model, COUNT(*) AS matches
+                SELECT vendor, COUNT(*) AS matches
                 FROM vendor_model_history
-                WHERE mac LIKE ? AND (vendor IS NOT NULL OR model IS NOT NULL)
-                GROUP BY vendor, model
-                ORDER BY matches DESC, vendor, model
+                WHERE mac LIKE ? AND TRIM(COALESCE(vendor, '')) != ''
+                  AND LOWER(TRIM(vendor)) NOT IN ('unknown', 'not found', 'n/a', 'none', 'null', 'не определено', 'неизвестно', 'не указано')
+                GROUP BY vendor
+                ORDER BY matches DESC, vendor
                 LIMIT 1
                 """,
                 (prefix + "%",),
             ).fetchone()
-            if rows:
-                result = dict(rows)
+            model_row = None if result["model"] else conn.execute(
+                """
+                SELECT model, COUNT(*) AS matches
+                FROM vendor_model_history
+                WHERE mac LIKE ? AND TRIM(COALESCE(model, '')) != ''
+                  AND LOWER(TRIM(model)) NOT IN ('unknown', 'not found', 'n/a', 'none', 'null', 'не определено', 'неизвестно', 'не указано')
+                GROUP BY model
+                ORDER BY matches DESC, model
+                LIMIT 1
+                """,
+                (prefix + "%",),
+            ).fetchone()
+            if vendor_row:
+                result["vendor"] = as_text(vendor_row["vendor"])
+            if model_row:
+                result["model"] = as_text(model_row["model"])
+            if result["vendor"] and result["model"]:
                 return {
-                    "vendor": as_text(result.get("vendor")),
-                    "model": as_text(result.get("model")),
+                    **result,
                     "source": "vendor_model_history_prefix",
                     "confidence": confidence,
                     "matchedPrefix": prefix,
-                    "matches": result["matches"],
+                    "matches": max(int(vendor_row["matches"] if vendor_row else 1), int(model_row["matches"] if model_row else 1)),
                 }
+        if result["vendor"] or result["model"]:
+            return {
+                **result,
+                "source": "vendor_model_history_exact" if (exact_vendor or exact_model) else "vendor_model_history_prefix",
+                "confidence": 0.93 if (exact_vendor or exact_model) else 0.68,
+                "matchedPrefix": normalized if (exact_vendor or exact_model) else normalized[:6],
+                "matches": 1,
+            }
     return {}
 
 

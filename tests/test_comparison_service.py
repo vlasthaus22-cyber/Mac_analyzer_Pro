@@ -121,10 +121,38 @@ def test_compare_many_snapshots_resolves_selected_ids_and_mapping():
     assert result["sets"][1]["mapping"] == {"ip": 3}
 
 
+def test_source_conflict_metadata_does_not_inflate_comparison():
+    baseline = [{"mac": "001122334455", "model": "Room Kit", "hasConflict": True}]
+    current = [{"mac": "001122334455", "model": "Room Kit", "hasConflict": True,
+                "conflicts": [{"field": "source", "alternative": "DDIO"}]}]
+    result = compare_devices(baseline, current)
+
+    assert result["summary"] == {"added": 0, "removed": 0, "modified": 0, "total": 0}
+    assert result["changes"] == []
+
+
+def test_comparison_prefers_persistent_id_over_conflicting_source_alias():
+    baseline = [
+        {"internalDeviceId": "device-a", "mac": "001122334455", "model": "Room Kit"},
+        {"internalDeviceId": "device-b", "mac": "AABBCCDDEEFF", "model": "Board"},
+    ]
+    current = [
+        {"internalDeviceId": "device-a", "mac": "AABBCCDDEEFF", "model": "Room Kit", "hasConflict": True},
+        {"internalDeviceId": "device-b", "mac": "AABBCCDDEEFF", "model": "Board"},
+    ]
+
+    result = compare_devices(baseline, current, ["mac", "model"])
+
+    assert result["summary"] == {"added": 0, "removed": 0, "modified": 1, "total": 1}
+    assert result["changes"][0]["field"] == "mac"
+
+
 if __name__ == "__main__":
     test_compare_devices_added_removed_modified()
     test_export_comparison_formats()
     test_compare_many_devices_keeps_per_file_mapping_and_limit()
     test_compare_snapshots_resolves_devices_and_export_by_ids()
     test_compare_many_snapshots_resolves_selected_ids_and_mapping()
+    test_source_conflict_metadata_does_not_inflate_comparison()
+    test_comparison_prefers_persistent_id_over_conflicting_source_alias()
     print("comparison service test passed")

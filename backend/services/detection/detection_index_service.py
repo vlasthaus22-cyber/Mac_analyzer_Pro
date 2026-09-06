@@ -154,8 +154,16 @@ def indexed_history_suggestion(mac: str, index: dict[str, Any] | None, settings:
     if not normalized or not settings.get("enabled", True) or not index:
         return {}
     exact = (index.get("exact") or {}).get(normalized)
-    if exact:
-        return {**exact, "source": "vendor_model_history_exact", "confidence": 0.93, "matchedPrefix": normalized, "matches": 1}
+    result = {
+        "vendor": _text((exact or {}).get("vendor")) if _known((exact or {}).get("vendor")) else "",
+        "model": _text((exact or {}).get("model")) if _known((exact or {}).get("model")) else "",
+    }
+    selected_source = "vendor_model_history_exact" if exact else ""
+    selected_confidence = 0.93 if exact else 0.0
+    selected_prefix = normalized if exact else ""
+    selected_matches = 1 if exact else 0
+    if result["vendor"] and result["model"]:
+        return {**result, "source": "vendor_model_history_exact", "confidence": 0.93, "matchedPrefix": normalized, "matches": 1}
     plan: list[tuple[int, float]] = []
     if settings.get("useMac5Match", True):
         plan.extend(((10, 0.82), (8, 0.76)))
@@ -164,7 +172,43 @@ def indexed_history_suggestion(mac: str, index: dict[str, Any] | None, settings:
     for length, confidence in plan:
         prefix = normalized[:length]
         counts = (index.get("prefixCounts") or {}).get(length, {}).get(prefix)
-        if counts:
-            (vendor, model), matches = sorted(counts.items(), key=lambda item: (-item[1], item[0][0], item[0][1]))[0]
-            return {"vendor": vendor, "model": model, "source": "vendor_model_history_prefix", "confidence": confidence, "matchedPrefix": prefix, "matches": matches}
+        if not counts:
+            continue
+        ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0][0], item[0][1]))
+        had_vendor, had_model = bool(result["vendor"]), bool(result["model"])
+        if not result["vendor"]:
+            vendor_match = next(((vendor, total) for (vendor, _), total in ranked if _known(vendor)), None)
+            if vendor_match:
+                result["vendor"] = vendor_match[0]
+                selected_matches = max(selected_matches, vendor_match[1])
+        if not result["model"]:
+            model_match = next(((model, total) for (_, model), total in ranked if _known(model)), None)
+            if model_match:
+                result["model"] = model_match[0]
+                selected_matches = max(selected_matches, model_match[1])
+        filled_from_prefix = (not had_vendor and bool(result["vendor"])) or (not had_model and bool(result["model"]))
+        if not selected_source and filled_from_prefix:
+            selected_source = "vendor_model_history_prefix"
+            selected_confidence = confidence
+            selected_prefix = prefix
+        elif exact and filled_from_prefix:
+            selected_source = "vendor_model_history_mixed"
+            selected_confidence = min(0.93, confidence)
+            selected_prefix = prefix
+        if result["vendor"] and result["model"]:
+            return {
+                **result,
+                "source": selected_source,
+                "confidence": selected_confidence,
+                "matchedPrefix": selected_prefix,
+                "matches": selected_matches or max((total for _, total in ranked), default=1),
+            }
+    if result["vendor"] or result["model"]:
+        return {
+            **result,
+            "source": selected_source or "vendor_model_history_prefix",
+            "confidence": selected_confidence or 0.68,
+            "matchedPrefix": selected_prefix,
+            "matches": selected_matches or 1,
+        }
     return {}

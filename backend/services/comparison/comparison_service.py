@@ -164,16 +164,6 @@ def compare_devices(
                     "before": before or "-",
                     "after": after or "-",
                 })
-        if current_device.get("hasConflict"):
-            conflicts = current_device.get("conflicts") if isinstance(current_device.get("conflicts"), list) else []
-            changes.append({
-                "mac": mac,
-                "macFormatted": _device_label(current_device, mac),
-                "status": "modified", "statusTitle": STATUS_TITLES["modified"],
-                "field": "identityConflict", "fieldTitle": FIELD_TITLES["identityConflict"],
-                "before": "-", "after": "; ".join(_text(item.get("field")) for item in conflicts if isinstance(item, dict)) or "Обнаружен конфликт",
-            })
-
     for baseline_device in removed_devices:
         mac = _device_mac(baseline_device)
         changes.append({

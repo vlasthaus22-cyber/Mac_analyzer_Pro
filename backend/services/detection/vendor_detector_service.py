@@ -6,6 +6,10 @@ from .detection_index_service import indexed_compatible_model, indexed_prefix_ru
 
 
 UNKNOWN_VENDOR_VALUES = {"", "unknown", "not found", "n/a", "не определено", "неизвестно"}
+UNKNOWN_MODEL_VALUES = {
+    "", "unknown", "not found", "n/a", "none", "null",
+    "не определено", "неизвестно", "не указано",
+}
 VENDOR_KEYWORDS = {
     "Apple": ["apple", "iphone", "ipad", "macbook", "imac", "mac", "ios", "ipod", "airport"],
     "Samsung": ["samsung", "galaxy", "note", "s series", "gear", "odyssey", "ssd"],
@@ -40,6 +44,10 @@ def _text(value: Any) -> str:
 
 def _known_vendor(value: Any) -> bool:
     return _text(value).lower() not in UNKNOWN_VENDOR_VALUES
+
+
+def _known_model(value: Any) -> bool:
+    return _text(value).casefold() not in UNKNOWN_MODEL_VALUES
 
 
 def _source_for_vendor_rule(prefix: str, rule_source: str) -> str:
@@ -187,9 +195,12 @@ def detect_vendor(
 def detect_model(mac: str, explicit_model: Any, history_model: Any, model_rules: list[dict[str, Any]], settings: dict[str, Any] | None = None, rule_index: dict[str, Any] | None = None, similar_result: dict[str, Any] | None = None) -> dict[str, Any]:
     normalized_settings = normalize_detector_settings(settings)
     normalized = normalize_mac(mac)
-    if _text(explicit_model):
+    # Placeholder values from CSV/XLSX are missing data, not authoritative
+    # models. Treating ``Unknown`` as explicit used to stop both the exact
+    # history lookup and MAC-prefix detection.
+    if _known_model(explicit_model):
         return {"value": _text(explicit_model), "source": "file", "confidence": 1.0, "matchedPrefix": ""}
-    if _text(history_model):
+    if _known_model(history_model):
         return {"value": _text(history_model), "source": "history", "confidence": 0.96, "matchedPrefix": normalized}
     threshold = normalized_settings["confidenceThreshold"]
     if normalized_settings["enabled"] and normalized_settings["useMac5"]:
@@ -205,7 +216,7 @@ def detect_model(mac: str, explicit_model: Any, history_model: Any, model_rules:
             confidence = 0.75
             if confidence >= threshold:
                 return {"value": compatible_rule["model"], "source": "prefix_compatible", "confidence": confidence, "matchedPrefix": prefix}
-    if normalized_settings["enabled"] and normalized_settings["useInference"] and similar_result and _text(similar_result.get("model")):
+    if normalized_settings["enabled"] and normalized_settings["useInference"] and similar_result and _known_model(similar_result.get("model")):
         confidence = float(similar_result.get("confidence") or 0.0) * 0.9
         if confidence >= threshold:
             return {"value": _text(similar_result.get("model")), "source": "similar", "confidence": confidence, "matchedPrefix": _text(similar_result.get("matchedPrefix"))}

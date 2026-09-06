@@ -185,10 +185,14 @@ def find_identity_match(
 def pair_device_sets(
     previous_devices: Iterable[dict[str, Any]], current_devices: Iterable[dict[str, Any]]
 ) -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], list[dict[str, Any]], list[dict[str, Any]]]:
-    """Pair two fleets by unambiguous strong identifiers.
+    """Pair two fleets by the strongest available deterministic identifier.
 
-    A changed MAC can still be matched by serial number or device ID. Ambiguous
-    aliases are deliberately ignored so a weak collision never merges devices.
+    Snapshot analytics must not turn one contradictory record into a synthetic
+    ``added + removed`` burst.  Candidates are already ordered from strongest
+    to weakest (persistent internal ID, MAC, serial, device ID, host+serial), so
+    the first available unused match wins.  Ambiguous aliases remain excluded
+    by :func:`build_identity_index` and are still exposed by the enrichment
+    conflict diagnostics; they simply do not inflate change counters here.
     """
     previous = [item for item in previous_devices if isinstance(item, dict)]
     current = [item for item in current_devices if isinstance(item, dict)]
@@ -197,8 +201,13 @@ def pair_device_sets(
     pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
     added: list[dict[str, Any]] = []
     for device in current:
-        match = find_identity_match(device, previous_index, allow_identifier_changes=True)
-        if match is None or id(match) in used_previous:
+        match = None
+        for candidate in identity_candidates(device):
+            candidate_match = previous_index.get(candidate)
+            if candidate_match is not None and id(candidate_match) not in used_previous:
+                match = candidate_match
+                break
+        if match is None:
             added.append(device)
             continue
         used_previous.add(id(match))

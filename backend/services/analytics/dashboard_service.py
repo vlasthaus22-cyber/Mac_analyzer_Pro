@@ -297,13 +297,6 @@ def analyze_dashboard_changes(
                         before=before, after=after, source=comparison_source,
                         before_device=before_device, after_device=after_device,
                     ))
-            if after_device.get("hasConflict"):
-                conflicts = after_device.get("conflicts") if isinstance(after_device.get("conflicts"), list) else []
-                changes.append(_change_row(
-                    mac=mac, changed_at=changed_at, change_type="modified", field="identityConflict",
-                    before="-", after="; ".join(_text(item.get("field")) for item in conflicts if isinstance(item, dict)) or "Обнаружен конфликт",
-                    source=comparison_source, before_device=before_device, after_device=after_device,
-                ))
     else:
         movement_dates = [
             _parse_date(_movement_value(item, "changedAt", "changed_at") or _text(item.get("date_str")))
@@ -332,6 +325,11 @@ def analyze_dashboard_changes(
             if not date_from <= parsed <= date_to:
                 continue
             field = _movement_value(movement, "field", "field_name") or "device"
+            if _normalize_change_field(field) == "identityConflict":
+                # Identity/source conflicts are diagnostics. They are not a
+                # confirmed change of the physical device and must not inflate
+                # the "Изменения устройств" counters.
+                continue
             before = movement.get("before", movement.get("from_value", movement.get("old_value", "")))
             after = movement.get("after", movement.get("to_value", movement.get("new_value", "")))
             change_type = CHANGE_TYPE_ALIASES.get(

@@ -811,7 +811,7 @@
 
   function normalizedHistoryValue(field, value) {
     const text = String(value ?? "").trim();
-    if (field === "vendor" && ["unknown", "не определено"].includes(text.toLowerCase())) return "";
+    if (["vendor", "model"].includes(field) && ["unknown", "not found", "n/a", "none", "null", "не определено", "неизвестно", "не указано"].includes(text.toLowerCase())) return "";
     return text;
   }
 
@@ -1660,25 +1660,38 @@
       const store = current.objectStore(enrichmentRowStore);
       const aliasIndex = store.index("aliases");
       const sources = Array.from(rows || []);
+      const matchValue = (field, device) => {
+        const value = String(device?.[field] || "").trim();
+        if (field === "mac") return value.toUpperCase().replace(/[^0-9A-F]/g, "");
+        return value.toLowerCase();
+      };
+      const preferredRecord = (device, records) => {
+        const candidates = Array.from(new Map(records.filter((record) => record && !record.matched).map((record) => [record.key, record])).values());
+        for (const field of ["internalDeviceId", "mac", "serialNumber", "deviceId"]) {
+          const expected = matchValue(field, device);
+          if (!expected) continue;
+          const matched = candidates.filter((record) => matchValue(field, record.device) === expected);
+          if (matched.length === 1) return { record: matched[0], candidates, ambiguous: false };
+          if (matched.length > 1) return { record: null, candidates: matched, ambiguous: true };
+        }
+        return { record: candidates.length === 1 ? candidates[0] : null, candidates, ambiguous: candidates.length > 1 };
+      };
       const recordChange = (source, records) => {
         const device = compactComparisonDevice(source);
         const identity = comparisonIdentity(device);
         if (!identity) return;
-        const candidates = Array.from(new Map(records.filter((record) => record && !record.matched).map((record) => [record.key, record])).values());
-        if (candidates.length > 1) {
-          result.modifiedDevices += 1;
-          result.changedDevices += 1;
-          result.critical += 1;
-          result.modifiedFields += 1;
-          result.fieldCounts.set("identityConflict", (result.fieldCounts.get("identityConflict") || 0) + 1);
-          tallyRows(result.changedVendors, device.vendor);
-          if (result.changes.length < limit) result.changes.push({
-            mac: device.mac, type: "modified", field: "identityConflict", before: "Несколько устройств предыдущего Final", after: "Требуется проверка идентификаторов",
-            beforeDevice: null, afterDevice: { ...device },
-          });
+        const resolution = preferredRecord(device, records);
+        if (resolution.ambiguous && !resolution.record) {
+          result.identityConflicts += 1;
+          // No physical change can be proven. Reserve the ambiguous baseline
+          // records so they are not also reported as false removals.
+          for (const candidate of resolution.candidates) {
+            candidate.matched = true;
+            store.put(candidate);
+          }
           return;
         }
-        const matchedRecord = candidates[0];
+        const matchedRecord = resolution.record;
         const previous = matchedRecord?.device;
         if (!previous) {
             result.added += 1;
@@ -1712,19 +1725,10 @@
               beforeSnapshotId: matchedRecord.recoveredFields?.[field] || result.baselineSnapshotId,
             });
           }
-          if (device.hasConflict) {
-            modified = true;
-            result.modifiedFields += 1;
-            result.fieldCounts.set("identityConflict", (result.fieldCounts.get("identityConflict") || 0) + 1);
-            if (result.changes.length < limit) result.changes.push({
-              mac: device.mac, type: "modified", field: "identityConflict", before: "", after: "Обнаружен конфликт источников",
-              beforeDevice: { ...previous }, afterDevice: { ...device },
-            });
-          }
           if (modified) {
             result.modifiedDevices += 1;
             result.changedDevices += 1;
-            if (criticalMove || device.hasConflict) result.critical += 1;
+            if (criticalMove) result.critical += 1;
             tallyRows(result.changedVendors, device.vendor);
           } else {
             result.unchanged += 1;
@@ -1795,7 +1799,7 @@
     const result = {
       baselineSnapshotId: String(baselineId || ""),
       fields: ["mac", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName"],
-      added: 0, removed: 0, modifiedDevices: 0, modifiedFields: 0, changedDevices: 0, unchanged: 0, critical: 0,
+      added: 0, removed: 0, modifiedDevices: 0, modifiedFields: 0, changedDevices: 0, unchanged: 0, critical: 0, identityConflicts: 0,
       changes: [], fieldCounts: new Map(), changedVendors: new Map(), unchangedVendors: new Map(), missingVendors: new Map(),
     };
     await clearEnrichment(jobId).catch(() => false);
@@ -1829,6 +1833,7 @@
           total: result.added + result.removed + result.modifiedDevices,
         },
         changes: result.changes.map((item) => ({ ...item })),
+        diagnostics: { identityConflicts: result.identityConflicts },
         fieldCounts: rankedRows(result.fieldCounts, 20),
         changedVendors: rankedRows(result.changedVendors, 20),
         unchangedVendors: rankedRows(result.unchangedVendors, 20),

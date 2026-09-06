@@ -123,6 +123,15 @@ assert.deepEqual(store.comparisonHistoryIds(null, "baseline", "current"), []);
     0,
     "a successful comparison remains possible after an interrupted restoration",
   );
+  await store.save({ id: "conflict-base", kind: "analysis", devices: [device("Known", { hasConflict: true })] });
+  await store.save({
+    id: "conflict-current",
+    kind: "analysis",
+    devices: [device("Known", { hasConflict: true, conflicts: [{ field: "source", alternative: "DDIO" }] })],
+  });
+  const sourceConflict = await store.compareSnapshots("conflict-base", "conflict-current");
+  assert.equal(sourceConflict.summary.modified, 0, "source metadata conflicts are diagnostics, not physical changes");
+  assert.equal(sourceConflict.summary.total, 0);
   console.log("frontend IndexedDB snapshot history tests passed");
 })().catch((error) => {
   console.error(error);

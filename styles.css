@@ -499,6 +499,7 @@ tr.critical-change > td {
 .room-chronology-filters #roomChronologySelect { grid-column:span 2; }
 .room-chronology-filters #roomChronologyAllChangedButton { grid-column:span 2; white-space:normal; }
 .room-chronology-filters #roomChronologyAllChangedButton.critical-change { border-color:var(--danger); color:var(--danger); background:color-mix(in srgb,var(--danger) 10%,var(--surface)); }
+.room-chronology-filters #roomChronologyAllChangedButton.coverage-partial { border-color:var(--positive); color:var(--positive); background:color-mix(in srgb,var(--positive) 10%,var(--surface)); }
 .room-coverage-details { margin:0 14px 14px; padding:12px; border:1px solid var(--line); border-radius:var(--radius-small); background:var(--surface-soft); }
 .room-coverage-details > p { margin:0 0 10px; }
 .room-coverage-details > p.critical-change { color:var(--danger); font-weight:700; }

@@ -93,6 +93,11 @@
   function text(value) {
     return String(value ?? "").trim();
   }
+  function knownModel(value) {
+    return !["", "unknown", "not found", "n/a", "none", "null", "не определено", "неизвестно", "не указано"].includes(
+      text(value).toLowerCase(),
+    );
+  }
   let legacyMigration = null;
 
   async function migrateLegacyKnownEquipment() {
@@ -368,8 +373,8 @@
       const saved = known[row.mac] || {};
       if (!row.vendor || /^(unknown|не определено)$/i.test(row.vendor))
         row.vendor = text(saved.vendor || registry?.lookup?.(row.mac)?.vendor || "Unknown");
-      if (!row.model) row.model = text(saved.model || "Unknown");
-      if (row.mac && row.model && !/^unknown$/i.test(row.model))
+      if (!knownModel(row.model)) row.model = knownModel(saved.model) ? text(saved.model) : "Unknown";
+      if (row.mac && knownModel(row.model))
         known[row.mac] = {
           vendor: row.vendor || saved.vendor || "",
           model: row.model,

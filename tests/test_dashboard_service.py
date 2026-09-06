@@ -383,6 +383,64 @@ def test_dashboard_tracks_smartroom_change_without_false_device_replacement():
     assert {item["identity"] for item in result["changes"]} == {"mac:001122334455"}
 
 
+def test_persistent_source_conflict_is_not_reported_as_device_change():
+    snapshots = [
+        {
+            "id": "old-conflict", "name": "Old Final", "createdAt": "2026-07-01T08:00:00Z",
+            "devices": [{"mac": "001122334455", "model": "Room Kit", "hasConflict": True,
+                         "conflicts": [{"field": "source", "alternative": "SmartRoom"}]}],
+        },
+        {
+            "id": "new-conflict", "name": "New Final", "createdAt": "2026-07-02T08:00:00Z",
+            "devices": [{"mac": "001122334455", "model": "Room Kit", "hasConflict": True,
+                         "conflicts": [{"field": "source", "alternative": "SmartRoom"}]}],
+        },
+    ]
+    result = analyze_dashboard_changes(
+        snapshots, [], {"changeMode": "snapshots", "baselineSnapshotId": "old-conflict", "comparisonSnapshotId": "new-conflict"}
+    )
+    period = analyze_dashboard_changes(
+        [], [{"mac": "001122334455", "field": "identityConflict", "before": "", "after": "source", "changedAt": "2026-07-02T08:00:00Z"}],
+        {"changeMode": "period", "changeDateFrom": "2026-07-01", "changeDateTo": "2026-07-03"},
+    )
+
+    assert result["summary"]["total"] == 0
+    assert result["summary"]["modified"] == 0
+    assert result["changes"] == []
+    assert period["summary"]["total"] == 0
+
+
+def test_contradictory_lower_priority_identity_does_not_inflate_change_count():
+    snapshots = [
+        {
+            "id": "old-identities", "name": "Old Final", "createdAt": "2026-07-01T08:00:00Z",
+            "devices": [
+                {"internalDeviceId": "device-a", "mac": "001122334455", "model": "Room Kit"},
+                {"internalDeviceId": "device-b", "mac": "AABBCCDDEEFF", "model": "Board"},
+            ],
+        },
+        {
+            "id": "new-identities", "name": "New Final", "createdAt": "2026-07-02T08:00:00Z",
+            "devices": [
+                # The persistent ID identifies device A. A conflicting MAC is
+                # diagnostic metadata, not three physical device changes.
+                {"internalDeviceId": "device-a", "mac": "AABBCCDDEEFF", "model": "Room Kit", "hasConflict": True},
+                {"internalDeviceId": "device-b", "mac": "AABBCCDDEEFF", "model": "Board"},
+            ],
+        },
+    ]
+
+    result = analyze_dashboard_changes(
+        snapshots, [], {"changeMode": "snapshots", "baselineSnapshotId": "old-identities", "comparisonSnapshotId": "new-identities"}
+    )
+
+    assert result["summary"]["added"] == 0
+    assert result["summary"]["removed"] == 0
+    assert result["summary"]["modified"] == 1
+    assert result["summary"]["total"] == 1
+    assert result["changes"][0]["field"] == "mac"
+
+
 if __name__ == "__main__":
     test_dashboard_filters_metrics_and_export()
     test_dashboard_metrics_payload_counts_known_and_invalid_records()
@@ -397,4 +455,6 @@ if __name__ == "__main__":
     test_dashboard_uses_previous_and_current_final_snapshots_for_all_status_metrics()
     test_dashboard_reports_unique_macs_across_uploads_and_latest_count()
     test_dashboard_tracks_smartroom_change_without_false_device_replacement()
+    test_persistent_source_conflict_is_not_reported_as_device_change()
+    test_contradictory_lower_priority_identity_does_not_inflate_change_count()
     print("dashboard service test passed")

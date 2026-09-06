@@ -12,7 +12,10 @@ const room = {
       date: "2026-01-01T00:00:00Z",
       devices: [{ mac: "001122334455", model: "Unknown", vendor: "Cisco", switchIp: "10.0.0.1", switchPort: "Gi1" }],
     },
-    { date: "2026-01-10T00:00:00Z", devices: [{ mac: "AABBCCDDEEFF", model: "Room Kit", vendor: "Cisco" }] },
+    {
+      date: "2026-01-10T00:00:00Z",
+      devices: [{ mac: "AABBCCDDEEFF", model: "Room Kit", vendor: "Cisco", switchIp: "10.0.0.1", switchPort: "Gi1" }],
+    },
     {
       date: "2026-01-20T00:00:00Z",
       devices: [{ mac: "AABBCCDDEEFF", model: "Room Kit", vendor: "Cisco", switchIp: "10.0.0.2", switchPort: "Gi9" }],
@@ -130,4 +133,17 @@ assert.equal(
   false,
   "a temporary absence must not erase a previously known value and create a false empty-to-known change",
 );
+
+const placeholderModel = timeline.compareLatest({
+  history: [
+    { date: "2026-08-01T00:00:00Z", devices: [{ mac: "001122334455", model: "Unknown" }] },
+    { date: "2026-09-01T00:00:00Z", devices: [{ mac: "001122334455", model: "Known model" }] },
+  ],
+});
+assert.equal(
+  placeholderModel.changed,
+  0,
+  "automatic replacement of Unknown must not be shown as a physical room change",
+);
+assert.equal(placeholderModel.allChanged, false);
 console.log("frontend room timeline test passed");

@@ -58,6 +58,9 @@ def test_smartroom_history_filters_and_monthly_chart_are_wired():
     assert "function cascade" in location
     assert "function matches" in location
     assert "function renderRoomCoverage" in ui
+    assert "Все устройства изменились: ДА" in ui
+    assert "Все устройства изменились: НЕТ" in ui
+    assert 'button.dataset.allChanged' in ui
     assert "function compareLatest" in timeline
     assert "function monthlyRows" in charts
     assert "Переговорных:" in charts

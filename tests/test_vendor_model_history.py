@@ -121,6 +121,29 @@ def test_history_enricher_uses_vendor_model_history_without_mac_history():
     cleanup(mac_source, mac_similar)
 
 
+def test_unknown_latest_model_does_not_hide_known_historical_model():
+    init_database()
+    mac = "E1E2E5AABB01"
+    cleanup(mac)
+    with db_connection() as conn:
+        conn.execute(
+            "INSERT INTO vendor_model_history (mac, oui, prefix, vendor, model, source, observed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (mac, mac[:6], mac[:10], "History Vendor", "Room Kit Pro", "older-final", "2026-01-01T00:00:00Z"),
+        )
+        conn.execute(
+            "INSERT INTO vendor_model_history (mac, oui, prefix, vendor, model, source, observed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (mac, mac[:6], mac[:10], "History Vendor", "Unknown", "newer-final", "2026-02-01T00:00:00Z"),
+        )
+
+    enriched = enrich_device({"mac": mac, "model": "Unknown"})
+    suggestion = vendor_model_history_suggestion(mac)
+
+    assert enriched["model"] == "Room Kit Pro"
+    assert enriched["modelSource"].startswith("vendor_model_history")
+    assert suggestion["model"] == "Room Kit Pro"
+    cleanup(mac)
+
+
 def test_history_enrichment_settings_control_exact_and_prefix_matching():
     init_database()
     mac_source = "E1E2E4AABB01"
@@ -386,6 +409,7 @@ def test_explicit_ddio_switch_change_uses_export_pair_instead_of_stale_database_
 if __name__ == "__main__":
     test_vendor_model_history_and_learning()
     test_history_enricher_uses_vendor_model_history_without_mac_history()
+    test_unknown_latest_model_does_not_hide_known_historical_model()
     test_history_enrichment_settings_control_exact_and_prefix_matching()
     test_save_history_records_enrichment_before_after_even_when_value_is_cleared()
     test_save_history_uses_file_date_for_records_movements_and_vendor_model_history()
