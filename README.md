@@ -1,10 +1,10 @@
 # MAC Analyzer Pro
 
-Полный комплект v1.0.58: `MAC-Analyzer-v1.0.58-Full.zip` в GitHub Releases.
+Полный комплект v1.0.59: `MAC-Analyzer-v1.0.59-Full.zip` в GitHub Releases.
 Он включает исходники, автономный HTML, Windows-приложение и сохранённые
-данные v1.0.27. Устранено переполнение памяти IndexedDB, восстановлена
-хронология помещений и исправлены графики последовательных Final. Подробности:
-[`RELEASE_NOTES_v1.0.58.md`](RELEASE_NOTES_v1.0.58.md).
+данные v1.0.27. Исходные файлы теперь сохраняются независимо от режима запуска,
+ошибки обогащения показывают точный этап, а повторные переходы между вкладками
+используют готовое представление. Подробности: [`RELEASE_NOTES_v1.0.59.md`](RELEASE_NOTES_v1.0.59.md).
 
 MAC Analyzer Pro is a web application for MAC inventory analysis, multi-file
 enrichment, OUI/vendor/model detection, history, comparisons, analytics,

@@ -174,7 +174,8 @@ def test_cross_browser_restore_prefers_compact_sqlite_workspace():
     app = read_app_js()
     server = Path("server.py").read_text(encoding="utf-8")
 
-    assert 'if(fileRecord.fileToken&&!fileRecord.clientImported)return true;' in app
+    assert 'if(fileRecord.fileToken&&!fileRecord.clientImported)return true;' not in app
+    assert 'await Promise.all(records.map((fileRecord)=>restoreSourceFile(fileRecord)));' in app
     assert 'const data=await api("/autosave?slot=main&compact=1")' in app
     assert 'state.backendAutosaveUpdatedAt=result.updatedAt||state.backendAutosaveUpdatedAt||"";' in app
     assert 'function shouldRestoreBootstrapAutosave(autosave)' in app
@@ -194,6 +195,7 @@ def test_cross_browser_restore_prefers_compact_sqlite_workspace():
     assert 'state = load_autosave_state(query.get("slot", ["main"])[0], hydrate=not compact)' in server
     assert 'state["devices"] = []' in server
     assert '{**item, "rows": []}' in server
+    assert '"stage": "source-file-recovery"' in server
 
 
 def test_migrated_controls_have_single_backend_binding():
@@ -987,8 +989,10 @@ def test_browser_mode_enrichment_keeps_basic_workflow_alive():
     assert "return totalRows<=(MemoryGuard.limits.browserEnrichmentRows||220000)&&totalBytes<=(MemoryGuard.limits.browserInputBatchBytes||96*1024*1024);" in app
     assert "if(!browserEnrichmentFallbackAllowed())" in app
     assert app.index("if(!browserEnrichmentFallbackAllowed())") < app.index("local=await localAnalyzeFiles(enrich,strategy,")
-    assert 'if(fileRecord.clientImported)await rememberSourceFile(fileRecord,file);' in app
-    assert 'else{sourceFilesById.delete(fileRecord.id);fileRecord.sourceStorageId="";}' in app
+    assert app.count('await rememberSourceFile(fileRecord,file);') >= 2
+    assert 'else{sourceFilesById.delete(fileRecord.id);fileRecord.sourceStorageId="";}' not in app
+    assert 'error.stage="source-file-recovery"' in app
+    assert 'failProcess(processId,error,{stage:error.stage||enrichmentStage,source});' in app
     assert "async function hydrateWorkspaceFilesForBrowser(onProgress=()=>{})" not in app
     assert "await hydrateWorkspaceFilesForBrowser(" not in app
     assert "const items=filtered.slice((resultPage-1)*resultPageSize,resultPage*resultPageSize);" in app
@@ -1089,6 +1093,9 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert 'saveSourceFile,' in snapshot_store
     assert 'loadSourceFile,' in snapshot_store
     assert 'await BrowserSnapshots?.saveSourceFile?.(fileRecord.sourceStorageId,file)' in app
+    assert 'LocalFolderStore.loadImport(localFolderStructure,storageId,fileRecord.name)' in app
+    assert 'const renderedViewSignatures=new Map();' in app
+    assert 'if(renderedViewSignatures.get(name)===signature)return;' in app
     assert 'BrowserSnapshots.page?.(state.resultBrowserSnapshotId,{offset:0,limit:resultPageSize})' in app
     assert 'if(state.resultBrowserSnapshotId&&BrowserSnapshots)' in app
     assert 'if(state.resultBrowserSnapshotId&&!state.devices.length&&BrowserSnapshots)' not in app
@@ -2450,7 +2457,7 @@ def test_browser_only_mode_uses_a_structured_local_folder():
         'id="chooseLocalFolderButton"',
         'id="importPortableFolderButton"',
         'id="localFolderStatus"',
-        '<script src="frontend/local-folder-store.js?v=20260728.1"></script>',
+        '<script src="frontend/local-folder-store.js?v=1059"></script>',
         "Подключить папку данных",
     ):
         assert marker in html

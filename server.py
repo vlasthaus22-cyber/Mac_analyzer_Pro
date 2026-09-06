@@ -6670,13 +6670,14 @@ class AppHandler(BaseHTTPRequestHandler):
                     ddio_file = prepare_workspace_files([ddio_file_payload], WORKSPACE_FILE_CACHE)[0] if ddio_file_payload else None
                 except WorkspaceCacheMiss:
                     update_enrichment_job(job["id"], {
-                        "stage": "parsing", "status": "failed", "percent": 5,
+                        "stage": "source-file-recovery", "status": "failed", "percent": 5,
                         "error": "Imported file cache expired",
                     }, "failed")
                     self.json_response(
                         {
                             "error": "Imported file cache expired; retry with file rows",
                             "code": "WORKSPACE_CACHE_MISS",
+                            "stage": "source-file-recovery",
                         },
                         HTTPStatus.CONFLICT,
                     )

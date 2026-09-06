@@ -175,6 +175,18 @@
     return targetName;
   }
 
+  async function loadImport(structure, storageId = "", originalName = "source-file") {
+    if (!structure?.directories?.imports || !storageId) return null;
+    const targetName = `${stableFingerprint(storageId)}__${safeFileName(originalName || "source-file")}`;
+    try {
+      const target = await structure.directories.imports.getFileHandle(targetName);
+      return await target.getFile();
+    } catch (error) {
+      if (error?.name === "NotFoundError") return null;
+      throw error;
+    }
+  }
+
   async function writeExport(structure, name, content) {
     if (!structure?.directories?.exports) return null;
     const targetName = safeFileName(name || `export-${Date.now()}.dat`);
@@ -206,6 +218,7 @@
     inspectFolderFiles,
     writeManifest,
     copyImport,
+    loadImport,
     writeExport,
     writeLog,
   });

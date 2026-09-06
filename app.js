@@ -536,7 +536,6 @@
   async function rememberSourceFile(fileRecord,file){
     if(!fileRecord||!file)return false;
     sourceFilesById.set(fileRecord.id,file);
-    if(fileRecord.fileToken&&!fileRecord.clientImported)return true;
     fileRecord.sourceStorageId=sourceFileStorageId(file);
     let stored=false;
     try{await BrowserSnapshots?.saveSourceFile?.(fileRecord.sourceStorageId,file);stored=true;}catch{}
@@ -548,12 +547,14 @@
     const current=sourceFilesById.get(fileRecord.id);
     if(current)return current;
     const storageId=fileRecord.sourceStorageId;
-    if(!storageId||!BrowserSnapshots?.loadSourceFile)return null;
-    try{const restored=await BrowserSnapshots.loadSourceFile(storageId);if(restored)sourceFilesById.set(fileRecord.id,restored);return restored||null;}catch{return null;}
+    if(!storageId)return null;
+    if(BrowserSnapshots?.loadSourceFile)try{const restored=await BrowserSnapshots.loadSourceFile(storageId);if(restored){sourceFilesById.set(fileRecord.id,restored);return restored;}}catch{}
+    if(localFolderStructure&&LocalFolderStore?.loadImport)try{const restored=await LocalFolderStore.loadImport(localFolderStructure,storageId,fileRecord.name);if(restored){sourceFilesById.set(fileRecord.id,restored);return restored;}}catch{}
+    return null;
   }
   async function restoreWorkspaceSourceFiles(){
-    for(const fileRecord of state.files||[])await restoreSourceFile(fileRecord);
-    if(state.ddioFile)await restoreSourceFile(state.ddioFile);
+    const records=[...(state.files||[]),...(state.ddioFile?[state.ddioFile]:[])];
+    await Promise.all(records.map((fileRecord)=>restoreSourceFile(fileRecord)));
     return sourceFilesById.size;
   }
   function compactWorkspaceFileRows(fileRecord){
@@ -1067,7 +1068,7 @@
     if(!BrowserSnapshots?.mergeEnrichmentRows||!BrowserSnapshots?.saveEnrichmentSnapshot)return null;
     strategy=EnrichmentStrategy.normalize(strategy);
     MemoryGuard.assertStreamingEnrichmentCapacity(state.files,strategy);
-    const jobId="enrichment-"+(currentEnrichmentJobId||crypto.randomUUID()),batchSize=750,invalid=[],deviceBatch=new Map(),vendorCounts=new Map(),modelCounts=new Map(),switchTracker=DdioOverlay.createSwitchTracker(),diagnosticCounts={mainRawRows:0,mainNormalizedRows:0,mainUniqueDevices:0,smartroomRawRows:0,smartroomMatched:0,smartroomUnmatched:0,smartroomCreated:0,smartroomConflicts:0,ddioRawRows:Number(state.ddioFile?.rowCount||0),ddioMatched:0,ddioUnmatched:0,ddioCreated:0,previousFinalMatched:0,finalUniqueDevices:0,inventoryTotal:0,emptyRowsSkipped:0};
+    const jobId="enrichment-"+(currentEnrichmentJobId||crypto.randomUUID()),batchSize=1000,invalid=[],deviceBatch=new Map(),vendorCounts=new Map(),modelCounts=new Map(),switchTracker=DdioOverlay.createSwitchTracker(),diagnosticCounts={mainRawRows:0,mainNormalizedRows:0,mainUniqueDevices:0,smartroomRawRows:0,smartroomMatched:0,smartroomUnmatched:0,smartroomCreated:0,smartroomConflicts:0,ddioRawRows:Number(state.ddioFile?.rowCount||0),ddioMatched:0,ddioUnmatched:0,ddioCreated:0,previousFinalMatched:0,finalUniqueDevices:0,inventoryTotal:0,emptyRowsSkipped:0};
     const totalRows=state.files.reduce((total,file)=>total+Math.max(0,Number(file.rowCount??Math.max(0,(file.rows?.length||1)-1))||0),0);
     const automaticMappingSources=new Set(["analysis","current-file","inferred","automatic"]),switchAddresses=new Map(localIpMappingRows().filter((item)=>!automaticMappingSources.has(String(item.source||"").toLowerCase())).map((item)=>[normalizeIp(item.switchIp),item.address])),switchAddressCounts=new Map(),smartroomRooms=new Map(Object.entries(state.smartroomMappings||{}));
     let processed=0,invalidCount=0,storedRows=0,previousContext=activeLocalDetectionContext;
@@ -1367,7 +1368,7 @@
       if(revision!==ddioLoadRevision)return;
       fileRecord.role="ddio";
       fileRecord.mapping=DdioOverlay.detectMapping(fileRecord.headers||[]);
-      if(fileRecord.clientImported)await rememberSourceFile(fileRecord,file);else{sourceFilesById.delete(fileRecord.id);fileRecord.sourceStorageId="";}
+      await rememberSourceFile(fileRecord,file);
       state.ddioFile=fileRecord;state.ddioOverlay={};state.ddioSummary=null;
       save({immediate:true});renderDdioPanel();
       finishProcess(processId,`DDIO загружен: ${Number(fileRecord.rowCount||0).toLocaleString("ru-RU")} строк`);
@@ -1411,8 +1412,7 @@
         fileProgress(1,"начало чтения");
         if(backendAvailable)try{fileRecord=await backendFileRecord(file,fileCreatedAt,fileProgress);}catch(error){backendError=error;if(networkUnavailable(error))setBackendStatus(false,"Автономный HTML-режим · файлы обрабатываются в браузере");}
         if(!fileRecord)fileRecord=await clientFileRecord(file,fileCreatedAt,fileProgress);
-        if(fileRecord.clientImported)await rememberSourceFile(fileRecord,file);
-        else{sourceFilesById.delete(fileRecord.id);fileRecord.sourceStorageId="";}
+        await rememberSourceFile(fileRecord,file);
         insertImportedFile(fileRecord,requestedRole,fileIndex);
         imported++;
         ensureMappingSelection();
@@ -1690,7 +1690,7 @@
     const records=Array.isArray(fileRecords)?fileRecords:[];
     for(const [index,fileRecord] of records.entries()){
       const sourceFile=await restoreSourceFile(fileRecord);
-      if(!sourceFile)throw new Error(`Кэш файла «${fileRecord.name}» недоступен. Выберите этот файл снова.`);
+      if(!sourceFile){const error=new Error(`Исходный файл «${fileRecord.name}» не найден в постоянном хранилище. Повторно выберите только этот файл; последний успешный Final и история не повреждены.`);error.name="SourceFileUnavailableError";error.code="SOURCE_FILE_UNAVAILABLE";error.stage="source-file-recovery";error.fileName=fileRecord.name||"";throw error;}
       onProgress(Math.round((index/Math.max(1,records.length))*100),`Повторная загрузка ${fileRecord.name}`);
       const data=await api("/files/import-binary",{method:"POST",headers:{"Content-Type":"application/octet-stream","X-File-Name":encodeURIComponent(sourceFile.name),"X-Sheet-Name":encodeURIComponent(fileRecord.sheet||""),"X-Preview-Rows":"100"},body:sourceFile});
       fileRecord.fileToken=data.fileToken||"";
@@ -1721,7 +1721,7 @@
     return strategy;
   }
   async function pollEnrichmentProgress(jobId,processId,control){
-    const stageLabels={validation:"Проверка входных данных","parsing-normalization":"Разбор и нормализация","main-device-creation":"Формирование основного набора","smartroom-matching":"Сопоставление SmartRoom",ddio:"Обработка DDIO","previous-final-history":"Сопоставление с предыдущим Final","identity-conflicts-finalization":"Идентификация и конфликты","database-save":"Транзакционное сохранение","history-analytics":"История и аналитика",completed:"Завершено"};
+    const stageLabels={validation:"Проверка входных данных","source-file-recovery":"Восстановление исходных файлов","parsing-normalization":"Разбор и нормализация","main-device-creation":"Формирование основного набора","smartroom-matching":"Сопоставление SmartRoom",ddio:"Обработка DDIO","previous-final-history":"Сопоставление с предыдущим Final","identity-conflicts-finalization":"Идентификация и конфликты","database-save":"Транзакционное сохранение","history-analytics":"История и аналитика",completed:"Завершено"};
     while(!control.stopped&&currentEnrichmentJobId===jobId){
       try{const job=await api("/enrichment/jobs/"+encodeURIComponent(jobId));const item=job.progress||{},stage=String(item.stage||""),detail=stageLabels[stage]||stage||"Обогащение";updateProcess(processId,Number(item.percent||0),`${detail}: ${Number(item.rows||0).toLocaleString("ru-RU")} / ${Number(item.totalRows||0).toLocaleString("ru-RU")}`);if(["completed","failed","cancelled"].includes(String(job.status||item.status)))break;}catch(error){if(!networkUnavailable(error))break;}
       await new Promise((resolve)=>setTimeout(resolve,300));
@@ -1740,8 +1740,10 @@
     save({immediate:true});
     let previousDevices=state.devices||[];
     const processId=beginProcess("Обогащение MAC-адресов","Подготовка основного файла и файлов обогащения",5);
+    let enrichmentStage="validation";
+    const setEnrichmentStage=(stage,value,detail)=>{enrichmentStage=stage;updateProcess(processId,value,detail);};
     try{
-      updateProcess(processId,10,"Запуск сервиса обогащения");
+      setEnrichmentStage("validation",10,"Запуск сервиса обогащения");
       const startProgress=await api("/enrichment/progress",{method:"POST",body:JSON.stringify({status:"starting"})});
       progress.innerHTML=startProgress.progressHtml||'<p class="muted">Обогащение запускается...</p>';
     }catch{
@@ -1757,23 +1759,25 @@
     state.ddioOverlay={};state.ddioSummary=null;
     await preserveCurrentBeforeAnalysis(source);
     try {
-      updateProcess(processId,30,"Сопоставление файлов и обработка MAC-адресов");
+      setEnrichmentStage("parsing-normalization",30,"Сопоставление файлов и обработка MAC-адресов");
       if(analysisFileRecords().some((file)=>!file.fileToken)){
-        updateProcess(processId,32,"Потоковая подготовка браузерных файлов для backend");
+        setEnrichmentStage("source-file-recovery",32,"Потоковая подготовка браузерных файлов для backend");
         await ensureWorkspaceFileCache((value,detail)=>updateProcess(processId,32+Math.round(value*0.08),detail));
       }
+      enrichmentStage="parsing-normalization";
       const requestPayload={jobId:currentEnrichmentJobId,files:sourceFilesPayload(true),ddioFile:ddioFilePayload(true),strategy,fields:enrich,source,createdAt:sourceCreatedAt,saveHistory:enrich.history,saveSnapshot:true,snapshotName:"Анализ: "+source,compactResult:true,resultPageSize:resultPageSize};
       let serverResult;
       try{
         serverResult=await api("/enrichment/run",{method:"POST",signal:enrichmentController.signal,body:JSON.stringify(requestPayload)});
       }catch(cacheError){
         if(cacheError.status!==409)throw cacheError;
-        updateProcess(processId,38,"Обновление кэша импортированных файлов после перезапуска backend");
+        setEnrichmentStage("source-file-recovery",38,"Обновление кэша импортированных файлов после перезапуска backend");
         await refreshWorkspaceFileCache((value,detail)=>updateProcess(processId,38+Math.round(value*0.12),detail));
+        enrichmentStage="parsing-normalization";
         serverResult=await api("/enrichment/run",{method:"POST",signal:enrichmentController.signal,body:JSON.stringify({...requestPayload,files:sourceFilesPayload(true),ddioFile:ddioFilePayload(true)})});
       }
       applyRefreshedFileTokens(serverResult.fileTokens);
-      updateProcess(processId,75,"Определение производителей, моделей и адресов");
+      setEnrichmentStage("identity-conflicts-finalization",75,"Определение производителей, моделей и адресов");
       const resultReference=serverResult.resultReference||{};
       state.resultSnapshotId=serverResult.compactResult?String(resultReference.snapshotId||serverResult.snapshot?.id||""):"";
       state.resultBrowserSnapshotId="";
@@ -1796,7 +1800,7 @@
       state.invalid = serverResult.invalid || [];
       if(!state.resultSnapshotId)recordLocalMovements(previousDevices,state.devices,source,state.lastAnalysis);
       progress.innerHTML=serverResult.progressHtml||'<p class="muted">Обогащение завершено.</p>';
-      updateProcess(processId,90,"Сохранение снимка и истории изменений");
+      setEnrichmentStage("database-save",90,"Сохранение снимка и истории изменений");
       const snapshotResult = serverResult.snapshot||await api("/snapshots", {method:"POST", body:JSON.stringify(currentDevicePayload({name:"Анализ: "+source,source,createdAt:sourceCreatedAt}))});
       state.snapshots.unshift({id:snapshotResult.id,name:snapshotResult.name||"Анализ: "+source,source,createdAt:snapshotResult.createdAt||sourceCreatedAt,savedAt:snapshotResult.savedAt||new Date().toISOString(),snapshotOrder:snapshotResult.snapshotOrder||0,deviceCount:snapshotResult.deviceCount??state.devices.length,devices:[],kind:"analysis",backendStored:true});
       $("#storageStatus").textContent = "SQLite подключена";
@@ -1811,7 +1815,7 @@
           failProcess(processId,message);
           return;
         }
-        updateProcess(processId,45,"Backend недоступен: локальное обогащение в браузере");
+        setEnrichmentStage("parsing-normalization",45,"Backend недоступен: локальное обогащение в браузере");
         let local,previousComparisonIndex=null;
         try{
           await releaseTransientAnalysisMemory();
@@ -1825,7 +1829,7 @@
           }
           local=await localAnalyzeFilesToSnapshot(enrich,strategy,source,sourceCreatedAt,(value,detail)=>updateProcess(processId,45+Math.round(value*0.45),detail));
           if(!local)local=await localAnalyzeFiles(enrich,strategy,(value,detail)=>updateProcess(processId,60+Math.round(value*0.25),detail));
-        }catch(localError){progress.innerHTML='<p class="muted">Автономный анализ остановлен безопасно: '+esc(localError.message)+'</p>';toast(localError.message);failProcess(processId,localError);return;}
+        }catch(localError){progress.innerHTML='<p class="muted">Автономный анализ остановлен безопасно: '+esc(localError.message)+'</p>';toast(localError.message);failProcess(processId,localError,{stage:localError.stage||enrichmentStage,source});return;}
         state.devices=SmartroomStore?await SmartroomStore.enrichData(local.devices,{registry:IeeeRegistry}):local.devices;
         state.invalid=local.invalid;
         state.resultInvalidCount=local.invalidCount;
@@ -1839,12 +1843,12 @@
           state.devices.length=0;state.invalid.length=0;state.devices=firstPage;state.invalid=invalidPreview;state.resultDeviceCount=fullDeviceCount;state.resultInvalidCount=local.invalidCount;state.resultSummary={devices:fullDeviceCount,invalid:local.invalidCount,vendors:vendors.size,knownPercent:fullDeviceCount?Math.round(knownCount/fullDeviceCount*100):0};
         }else{state.resultDeviceCount=fullDeviceCount;state.resultInvalidCount=local.invalidCount;state.resultSummary=local.summary||state.resultSummary;}
         progress.innerHTML='<div class="bar-item"><div class="bar-label"><span>Автономная локальная база</span><strong>'+fullDeviceCount+' устройств</strong></div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><p class="muted">Полный результат сохранён порциями в IndexedDB; в памяти оставлена только текущая страница.</p></div>';
-        updateProcess(processId,90,"Сохранение локального снимка и истории");
+        setEnrichmentStage("database-save",90,"Сохранение локального снимка и истории");
         $("#storageStatus").textContent="Автономная локальная база IndexedDB · результат хранится постранично";
       }else{
         progress.innerHTML='<p class="muted">Backend analysis error: '+esc(error.message)+'</p>';
         toast("Backend analysis error: "+error.message);
-        failProcess(processId,error);
+        failProcess(processId,error,{stage:error.stage||enrichmentStage,source});
         return;
       }
     } finally {
@@ -3480,11 +3484,13 @@
     return {order,visible,custom,widths};
   }
   const viewConfig={workspace:["Поиск устройств","Введите hostname, IP, IP коммутатора, MAC, физический адрес или серийный номер."],single:["Анализ одного файла","Загрузите файл и перейдите к основному анализу."],compare:["Сравнение снимков","Сопоставьте результаты двух загрузок."],analytics:["Аналитика","Сводка по текущему набору, критическим изменениям и истории."],history:["История","Снимки результатов и хронология изменений."],rooms:["Помещения","Smartroom ID — основной ключ помещения и оборудования."],roomhistory:["Хронология помещения","Полная цепочка замен оборудования по Smartroom ID."],data:["Данные","IP-маппинг, колонки результатов и SQLite-данные."],automation:["Автоматизация","Планировщик, уведомления и API-обогащение."],settings:["Настройки","Справочники и резервная копия приложения."],guide:["Руководство","Назначение программы и рабочие сценарии для пользователя и инженера."]};
+  const renderedViewSignatures=new Map();
+  function viewContentSignature(name){return[name,resultStateRevision,state.resultSnapshotId,state.resultBrowserSnapshotId,currentDeviceCount(),state.files?.length||0,state.snapshots?.length||0,state.lastAnalysis||""].join("|");}
   function normalizeViewName(name){if(name==="iphistory")return"analytics";return Object.prototype.hasOwnProperty.call(viewConfig,name)?name:"workspace";}
   function viewFromHash(){return normalizeViewName((location.hash||"").replace(/^#/,""));}
   function renderViewContent(name){if(name==="workspace"){renderFiles();renderMapping();renderMetrics();renderResults();return Promise.resolve();}if(name==="data"){renderServices();loadDatabaseHistoryManagement();}else if(name==="automation")renderServices();if(name==="settings")renderParityStatus();if(name==="analytics")renderAnalytics();if(name==="history")renderHistory();const smartroomTask=["analytics","rooms","roomhistory"].includes(name)?SmartroomUI?.render(name):null;if(name==="single")renderSingleMappingGrid();if(name==="compare")renderSnapshots();if(name==="guide"){Guide.syncMode(engineeringSessionActive(),state.engineeringExpiresAt,document);if(!$("#systemDiagnosticsSummary")?.dataset.loaded)runSystemDiagnostics();}return Promise.resolve(smartroomTask);}
   let viewRenderRevision=0;
-  function scheduleViewContent(name){const revision=++viewRenderRevision,token=UiFeedback?.start("Открытие вкладки…");(window.requestAnimationFrame||((callback)=>setTimeout(callback,0)))(()=>{if(revision!==viewRenderRevision||activeViewName()!==name){UiFeedback?.stop(token);return;}renderViewContent(name).catch((error)=>{UiFeedback?.showError(error);toast(error.message);}).finally(()=>UiFeedback?.stop(token));});}
+  function scheduleViewContent(name){const revision=++viewRenderRevision,signature=viewContentSignature(name);if(renderedViewSignatures.get(name)===signature)return;const token=UiFeedback?.start("Открытие вкладки…");(window.requestAnimationFrame||((callback)=>setTimeout(callback,0)))(()=>{if(revision!==viewRenderRevision||activeViewName()!==name){UiFeedback?.stop(token);return;}renderViewContent(name).then(()=>{if(revision===viewRenderRevision&&activeViewName()===name)renderedViewSignatures.set(name,viewContentSignature(name));}).catch((error)=>{UiFeedback?.showError(error);toast(error.message);}).finally(()=>UiFeedback?.stop(token));});}
   function activateView(name,{updateHash=true,render=true}={}){name=normalizeViewName(name);if(!engineeringSessionActive()&&engineeringOnlyViews.has(name))name="history";LazyTabs?.activate(name);$$(".nav-item").forEach((b)=>{const active=b.dataset.view===name;b.classList.toggle("active",active);b.setAttribute("aria-selected",active?"true":"false");});$$(".view").forEach((panel)=>{const active=panel.id===name+"View";panel.classList.toggle("active",active);panel.hidden=!active;});const title=viewConfig[name];$("#viewTitle").textContent=title[0];$("#viewSubtitle").textContent=title[1];if(updateHash&&location.hash!=="#"+name)history.pushState(null,"","#"+name);if(render)scheduleViewContent(name);return name;}
   function view(name,options={}){return activateView(name,options);}
   let lastComparisonResult=null;

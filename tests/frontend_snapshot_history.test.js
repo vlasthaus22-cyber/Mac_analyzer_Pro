@@ -13,6 +13,16 @@ assert.deepEqual(
 assert.deepEqual(store.comparisonHistoryIds(null, "baseline", "current"), []);
 
 (async () => {
+  const sourceFile = new File(["MAC,IP\n001122334455,10.0.0.1"], "primary.csv", {
+    type: "text/csv",
+    lastModified: 1234,
+  });
+  await store.saveSourceFile("primary.csv|32|1234", sourceFile);
+  const restoredSource = await store.loadSourceFile("primary.csv|32|1234");
+  assert.equal(restoredSource.name, "primary.csv");
+  assert.equal(restoredSource.lastModified, 1234);
+  assert.equal(await restoredSource.text(), await sourceFile.text());
+
   const snapshots = [
     {
       id: "first",

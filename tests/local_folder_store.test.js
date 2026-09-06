@@ -73,6 +73,9 @@ class MemoryDirectoryHandle {
   assert.ok(structure.directories.imports.files.has(`${importedName}.json`));
   assert.equal(await store.copyImport(structure, source, "source.csv|32|1234"), importedName);
   assert.equal(structure.directories.imports.files.size, 2, "repeated import must replace the same archive pair");
+  const restoredSource = await store.loadImport(structure, "source.csv|32|1234", "source.csv");
+  assert.ok(restoredSource instanceof Blob);
+  assert.equal(await restoredSource.text(), await source.text());
 
   const exportName = await store.writeExport(structure, "result.csv", new Blob(["MAC\n001122334455"]));
   assert.equal(exportName, "result.csv");
