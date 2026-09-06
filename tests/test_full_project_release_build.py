@@ -70,6 +70,7 @@ def test_full_project_release_contains_every_tracked_file_and_no_user_data():
 
             required = {
                 "START_MAC_ANALYZER.cmd",
+                "scripts/portable_launcher.py",
                 "STOP_MAC_ANALYZER.cmd",
                 "config/windows-as-invoker.manifest",
                 "mac_analyzer_standalone.html",

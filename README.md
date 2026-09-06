@@ -1,10 +1,10 @@
 # MAC Analyzer Pro
 
-Полный комплект v1.0.59: `MAC-Analyzer-v1.0.59-Full.zip` в GitHub Releases.
+Полный комплект v1.0.60: `MAC-Analyzer-v1.0.60-Full.zip` в GitHub Releases.
 Он включает исходники, автономный HTML, Windows-приложение и сохранённые
-данные v1.0.27. Исходные файлы теперь сохраняются независимо от режима запуска,
-ошибки обогащения показывают точный этап, а повторные переходы между вкладками
-используют готовое представление. Подробности: [`RELEASE_NOTES_v1.0.59.md`](RELEASE_NOTES_v1.0.59.md).
+данные v1.0.27. Основной `START_MAC_ANALYZER.cmd` автоматически запускает
+`server.py` в пользовательской Python-консоли, ждёт готовности backend и открывает
+браузер без запроса прав администратора. Подробности: [`RELEASE_NOTES_v1.0.60.md`](RELEASE_NOTES_v1.0.60.md).
 
 MAC Analyzer Pro is a web application for MAC inventory analysis, multi-file
 enrichment, OUI/vendor/model detection, history, comparisons, analytics,
@@ -59,7 +59,8 @@ IndexedDB. The **All devices XLSX** export streams the entire inventory instead
 of exporting only the newest upload. The portable MADB carries the inventory,
 learned vendor/model mappings, switch-IP/address mappings, Smartroom mappings,
 snapshots, and movements to another computer. When the project is launched by
-`START_MAC_ANALYZER.cmd`, the browser automatically connects to the database
+`START_MAC_ANALYZER.cmd`, a no-elevation Python launcher starts `server.py`,
+verifies `/api/health`, opens the browser, and connects it to the database
 from the program folder; a directly opened autonomous HTML remains backend-free.
 DDIO also compares a new upload with the stored device history, so a switch-IP
 change is detected even when the previous export is not loaded in the current

@@ -33,6 +33,7 @@ $data = @(
     @("PARITY_STATUS.json", "."),
     @("README_WEB.md", "."),
     @("PROJECT_STRUCTURE.md", "."),
+    @("scripts\portable_launcher.py", "scripts"),
     @("scripts\portable_start.ps1", "scripts"),
     @("scripts\portable_stop.ps1", "scripts"),
     @("requirements-web.txt", ".")
@@ -110,7 +111,7 @@ if ($git) {
     package = "MAC Analyzer Pro Universal"
     launcher = "START_MAC_ANALYZER.cmd"
     administratorRightsRequired = $false
-    preferredBackend = "server.py via an available user Python"
+    preferredBackend = "server.py via START_MAC_ANALYZER.cmd and Python console"
     fallbackBackend = "MACAnalyzerBackend.exe (asInvoker)"
     dataDirectory = "data"
 } | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath (Join-Path $package "PACKAGE_INFO.json") -Encoding UTF8

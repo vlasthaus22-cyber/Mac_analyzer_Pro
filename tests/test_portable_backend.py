@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -27,6 +28,7 @@ def test_portable_build_is_self_contained_and_excludes_working_data():
     assert '"--name", "MACAnalyzerBackend"' in builder
     assert '@("frontend", "frontend")' in builder
     assert '@("backend", "backend")' in builder
+    assert '@("scripts\\portable_launcher.py", "scripts")' in builder
     assert '@("mac_analyzer_standalone.html", ".")' not in builder
     assert 'data\\reference' in builder
     assert "data\\databases" not in builder
@@ -113,8 +115,15 @@ def test_root_launchers_delegate_to_portable_scripts():
     start = _read("START_MAC_ANALYZER.cmd")
     stop = _read("STOP_MAC_ANALYZER.cmd")
     launcher = _read("scripts/portable_start.ps1")
-    assert "portable_start.ps1" in start
+    python_launcher = _read("scripts/portable_launcher.py")
+    assert "portable_launcher.py" in start
+    assert "portable_start.ps1" in start, "PowerShell remains only as a no-Python compatibility fallback"
     assert "portable_stop.ps1" in stop
+    assert "runas" not in start.lower()
+    assert "CREATE_NEW_CONSOLE" in python_launcher
+    assert "administratorRightsRequired" in python_launcher
+    assert "webbrowser.open" in python_launcher
+    assert "/api/health" in python_launcher
     assert 'Join-Path $root "MACAnalyzerBackend.exe"' in launcher
     assert 'Join-Path $root ".venv-portable\\Scripts\\python.exe"' in launcher
     assert launcher.index("if ($python) {") < launcher.index("elseif (Test-Path -LiteralPath $portableExecutable)")
@@ -125,6 +134,42 @@ def test_root_launchers_delegate_to_portable_scripts():
     assert "$process = Start-Process @startParameters" in launcher
     assert "$pathKeys.Count -gt 1" in launcher
     assert 'SetEnvironmentVariable("Path", $pathValue, "Process")' in launcher
+
+
+def test_python_launcher_validates_a_relocated_cyrillic_path():
+    runtime = ROOT / "data" / "runtime"
+    runtime.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="MAC Python launcher ", dir=runtime) as temporary:
+        relocated = Path(temporary) / "Другой компьютер" / "MAC Analyzer Pro"
+        scripts = relocated / "scripts"
+        scripts.mkdir(parents=True)
+        shutil.copy2(ROOT / "scripts" / "portable_launcher.py", scripts / "portable_launcher.py")
+        for name in ("server.py", "index.html", "START_MAC_ANALYZER.cmd"):
+            shutil.copy2(ROOT / name, relocated / name)
+
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(scripts / "portable_launcher.py"),
+                "--root",
+                str(relocated),
+                "--validate-only",
+            ],
+            cwd=Path(temporary),
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+        assert completed.returncode == 0, completed.stderr
+        report = json.loads(completed.stdout.strip())
+        assert Path(report["root"]).resolve() == relocated.resolve()
+        assert report["server"] is True
+        assert report["index"] is True
+        assert report["launcher"] is True
+        assert report["administratorRightsRequired"] is False
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ def test_project_structure_and_maintenance_commands_exist():
         "scripts/start_server.ps1",
         "scripts/stop_server.ps1",
         "scripts/portable_start.ps1",
+        "scripts/portable_launcher.py",
         "scripts/portable_stop.ps1",
         "scripts/build_portable.ps1",
         "scripts/build_html_portable.ps1",

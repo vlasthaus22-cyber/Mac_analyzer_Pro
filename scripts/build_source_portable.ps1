@@ -41,6 +41,7 @@ $files = @(
     "PROJECT_STRUCTURE.md",
     "START_MAC_ANALYZER.cmd",
     "STOP_MAC_ANALYZER.cmd",
+    "scripts\portable_launcher.py",
     "scripts\portable_start.ps1",
     "scripts\portable_stop.ps1"
 )

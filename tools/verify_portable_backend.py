@@ -102,6 +102,13 @@ def verify(package: Path, port: int, use_package_database: bool = False) -> dict
     executable = package / "MACAnalyzerBackend.exe"
     if not executable.is_file():
         raise FileNotFoundError(executable)
+    launcher = package / "START_MAC_ANALYZER.cmd"
+    python_launcher = package / "scripts" / "portable_launcher.py"
+    if not launcher.is_file() or not python_launcher.is_file():
+        raise FileNotFoundError("Portable CMD/Python launcher is incomplete")
+    launcher_text = launcher.read_text(encoding="utf-8-sig").lower()
+    if "portable_launcher.py" not in launcher_text or "runas" in launcher_text:
+        raise AssertionError("Portable CMD must use the no-elevation Python launcher")
     if (package / "mac_analyzer_standalone.html").exists():
         raise AssertionError("Universal package must expose only the primary index.html interface")
     package_info = json.loads((package / "PACKAGE_INFO.json").read_text(encoding="utf-8-sig"))

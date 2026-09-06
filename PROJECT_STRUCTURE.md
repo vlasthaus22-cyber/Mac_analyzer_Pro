@@ -61,12 +61,13 @@ Mac_analyzer_Pro/
     legacy-data/MAC-Analyzer-*-Full.zip полная программа со всей рабочей базой v1.0.27; секреты удалены из копии
     full-project/MAC-Analyzer-*-Source.zip полный Git-проект, HTML и все tracked-файлы без пользовательских данных
     dist/MACAnalyzerBackend/ единый пакет: исходный server.py, Python-first лаунчер и резервный asInvoker backend
-  START_MAC_ANALYZER.cmd    необязательный legacy-запуск backend для разработки
+  START_MAC_ANALYZER.cmd    основной CMD-запуск Python/backend без повышения прав с автоматическим открытием браузера
   STOP_MAC_ANALYZER.cmd     остановка необязательного backend
   index.html               HTML-интерфейс и автономный browser fallback
   mac_analyzer_standalone.html устаревший parity-артефакт; в пользовательскую сборку не включается
   app.js                   UI-контроллер web frontend; доменная логика выносится в frontend-модули
   styles.css               стили web frontend
+  scripts/portable_launcher.py Python-first запуск, health check и открытие браузера
   server.py                HTTP API, SQLite и раздача frontend
   *_service.py             совместимые импорты и ещё не сгруппированные сервисы
   MAC_ANALYZER финальная.py исходный PyQt-файл для проверки parity
