@@ -119,7 +119,7 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert '<script src="frontend/memory-guard.js?v=20260722.9"></script>' in html
     assert '<script src="frontend/file-readers.js?v=20260722.8"></script>' in html
-    assert '<meta name="application-build" content="2026.08.12.2">' in html
+    assert '<meta name="application-build" content="2026.09.08.1">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";' in app
@@ -1027,7 +1027,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=1061"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=1062"></script>' in html
     assert '<script src="frontend/xlsx-exporter.js?v=20260727.5"></script>' in html
     assert '<script src="frontend/full-xlsx-report.js?v=20260729.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
@@ -2175,6 +2175,9 @@ def test_search_dashboard_smartroom_and_unified_exports_are_wired():
         'id="dashboardSearchInput"', 'id="databaseImportButton"', 'id="databaseImportInput"',
         'id="dashboardChangedRoomMetric"', 'data-field="smartroomId"',
         'data-dashboard-card-toggle="changedRooms"',
+        'id="dashboardAllChangedRoomsButton"', 'id="dashboardAllChangedRoomsMetric"',
+        'id="dashboardAllChangedRoomsDialog"', 'data-dashboard-card-toggle="allChangedRooms"',
+        'class="analytics-group"',
     ):
         assert marker in html
     for marker in (
@@ -2183,6 +2186,7 @@ def test_search_dashboard_smartroom_and_unified_exports_are_wired():
         "BrowserSnapshots.aggregate(currentId,{limit:200,vendor:settings.vendor,room:settings.room",
         "async function exportFullJson()", "FullJsonReport.createReport({",
         "function initializeAnalyticsExpanders()",
+        "function renderDashboardAllChangedRooms()", "function showDashboardAllChangedRooms()",
         "function normalizedRoomName(", "function synchronizeSmartroomIdentity(",
         "function inferSmartroomRoomMappings(", "function mergeDdioOverlayMovements(",
         'api("/database/import"',
@@ -2192,6 +2196,7 @@ def test_search_dashboard_smartroom_and_unified_exports_are_wired():
     assert "const roomFilter = String(options.room || \"\").trim();" in snapshots
     assert "smartroomId: String(device?.smartroomId || device?.smartroom_id || \"\")" in snapshots
     assert "function appearanceChanges(appearances)" in chronology
+    assert "roomCoverage" in snapshots
     assert "window.MacAnalyzerFullJsonReport" in full_json
 
 

@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
-  <meta name="application-build" content="2026.08.12.2">
-  <meta name="application-version" content="1.0.61">
-  <link rel="stylesheet" href="styles.css?v=1055">
+  <meta name="application-build" content="2026.09.08.1">
+  <meta name="application-version" content="1.0.62">
+  <link rel="stylesheet" href="styles.css?v=1062">
 </head>
 <body>
   <div class="app-error-banner" id="appErrorBanner" role="alert" aria-live="assertive" hidden><span data-error-message>Ошибка приложения.</span><button type="button" id="closeAppErrorBanner" aria-label="Закрыть сообщение">×</button></div>
@@ -339,6 +339,7 @@
           <article class="metric" data-dashboard-card="vendors"><span>Производителей</span><strong id="dashboardVendorMetric">0</strong><small>Уникальных</small></article>
           <article class="metric" data-dashboard-card="rooms"><span>Помещений</span><strong id="dashboardRoomCountMetric">0</strong><small>Уникальных</small></article>
           <article class="metric" data-dashboard-card="changedRooms"><span>Помещений с изменениями</span><strong id="dashboardChangedRoomMetric">0</strong><small>За выбранный интервал</small></article>
+          <button type="button" class="metric dashboard-kpi room-coverage-kpi" id="dashboardAllChangedRoomsButton" data-dashboard-card="allChangedRooms"><span>Изменилось всё оборудование</span><strong id="dashboardAllChangedRoomsMetric">0</strong><small>Переговорных · открыть список</small></button>
         </section>
         <section class="metrics analytics-metrics">
           <article class="metric"><span>Снимков</span><strong id="snapshotMetric">0</strong></article>
@@ -346,7 +347,10 @@
           <article class="metric"><span>Коммутаторов</span><strong id="switchMetric">0</strong></article>
           <article class="metric"><span>Помещений</span><strong id="roomMetric">0</strong></article>
         </section>
-        <section class="analytics-grid">
+        <div class="analytics-groups">
+        <details class="analytics-group" open>
+          <summary><span>Ключевые графики</span><small>Изменения, добавления, отсутствие и общий парк</small></summary>
+          <section class="analytics-grid">
           <div class="tool-panel smartroom-chart-panel"><div class="panel-head"><h2>Динамика изменений</h2></div><div class="chart-canvas-wrap"><canvas id="smartroomChangesChart"></canvas><p class="chart-state" data-chart-state="smartroomChangesChart" hidden></p></div></div>
           <div class="tool-panel smartroom-chart-panel"><div class="panel-head"><h2>Добавления и пропажи</h2></div><div class="chart-canvas-wrap"><canvas id="smartroomAddedRemovedChart"></canvas><p class="chart-state" data-chart-state="smartroomAddedRemovedChart" hidden></p></div></div>
           <div class="tool-panel smartroom-chart-panel"><div class="panel-head"><h2>Общее число устройств</h2></div><div class="chart-canvas-wrap"><canvas id="smartroomTotalChart"></canvas><p class="chart-state" data-chart-state="smartroomTotalChart" hidden></p></div></div>
@@ -354,11 +358,21 @@
           <div class="tool-panel" data-dashboard-chart="vendors"><div class="panel-head"><h2>Топ производителей</h2></div><div class="bar-list" id="dashboardStatusVendorChart"></div></div>
           <div class="tool-panel" data-dashboard-chart="fields"><div class="panel-head"><h2>Изменения по полям</h2></div><div class="bar-list" id="dashboardFieldChangesChart"></div></div>
           <div class="tool-panel" data-dashboard-chart="missing"><div class="panel-head"><h2>Отсутствующие устройства</h2></div><div class="bar-list" id="dashboardMissingChart"></div></div>
+          </section>
+        </details>
+        <details class="analytics-group">
+          <summary><span>Состав и качество данных</span><small>Производители, модели, помещения и заполненность</small></summary>
+          <section class="analytics-grid">
           <div class="tool-panel"><div class="panel-head"><h2>Вендоры</h2></div><div class="bar-list" id="vendorChart"></div></div>
           <div class="tool-panel"><div class="panel-head"><h2>Модели</h2></div><div class="bar-list" id="modelChart"></div></div>
           <div class="tool-panel room-occupancy-panel"><div class="panel-head"><div><h2>Заполненность помещений</h2><span class="muted" id="roomOccupancyStatus">Нет данных о распределении устройств</span></div></div><div class="bar-list" id="roomOccupancyChart"></div></div>
           <div class="tool-panel"><div class="panel-head"><h2>Состояние данных</h2></div><div class="bar-list" id="qualityChart"></div></div>
           <div class="tool-panel"><div class="panel-head"><h2>Диаграммы данных</h2><button class="button secondary" id="exportChartsSvgButton">SVG</button></div><div class="bar-list" id="backendChartsPanel"></div></div>
+          </section>
+        </details>
+        <details class="analytics-group">
+          <summary><span>Расширенная аналитика</span><small>История, база, кластеры, топология и отчёт</small></summary>
+          <section class="analytics-grid">
           <div class="tool-panel"><div class="panel-head"><h2>Динамика загрузок</h2><span class="muted">Снимки по времени</span></div><div class="bar-list" id="timelineChart"></div></div>
           <div class="tool-panel"><div class="panel-head"><h2>Статистика локальной базы</h2><span class="muted">Снимки, динамика, производительность</span></div><div class="bar-list" id="backendStatisticsChart"></div></div>
           <div class="tool-panel"><div class="panel-head"><h2>Временная статистика</h2><span class="muted">Дни, недели, месяцы</span></div><div class="bar-list" id="temporalStatisticsChart"></div></div>
@@ -366,7 +380,9 @@
           <div class="tool-panel topology-panel"><div class="panel-head"><h2>Топология сети</h2><button class="button secondary legacy-export-trigger" id="exportTopologyButton" hidden>HTML</button></div><div class="topology-list" id="topologyGraph"></div></div>
           <div class="tool-panel"><div class="panel-head"><h2>Анализ качества данных</h2><button class="button secondary" id="qualityAnalysisButton">Проверить</button></div><div class="bar-list" id="qualityInsights"><p class="muted">Запустите проверку текущего набора устройств.</p></div><div class="mapping-list" id="qualityReportsList"></div></div>
           <div class="tool-panel analytics-report-panel"><div class="panel-head"><div><h2>Аналитический отчёт</h2><span class="muted" id="analyticsReportStatus">Отчёт по текущему набору устройств</span></div><div class="report-actions"><button class="button secondary" id="refreshAnalyticsReportButton">Обновить</button><button class="button secondary legacy-export-trigger" id="exportAnalyticsReportButton" hidden>TXT</button></div></div><pre id="analyticsReportPreview" class="analytics-report-preview">Нет данных</pre></div>
-        </section>
+          </section>
+        </details>
+        </div>
       </section>
 
       <section class="view" id="historyView" role="tabpanel">
@@ -798,6 +814,11 @@
     </div>
     <div class="table-wrap dashboard-changes-table" id="dashboardChangesPanel" role="tabpanel"><table><thead><tr><th>Важность</th><th>Дата</th><th>MAC</th><th>Тип</th><th>Модель</th><th>Адрес помещения</th><th>Помещение</th><th>Что изменилось</th><th>Источник</th></tr></thead><tbody id="dashboardChangesBody"><tr><td colspan="9" class="empty-state">Изменений не найдено.</td></tr></tbody></table></div>
   </dialog>
+  <dialog class="device-dialog dashboard-changes-dialog" id="dashboardAllChangedRoomsDialog">
+    <div class="dialog-head"><div><h2>Переговорные: изменилось всё оборудование</h2><p class="muted" id="dashboardAllChangedRoomsPeriod">Сравнение двух финальных обогащений</p></div><button class="icon-button" id="closeDashboardAllChangedRoomsDialog" aria-label="Закрыть">×</button></div>
+    <p class="room-coverage-explanation">В список попадают только помещения, где каждое учтённое устройство было добавлено, удалено, перемещено или имело подтверждённое изменение непустого значения. Простое заполнение ранее пустого поля изменением оборудования не считается.</p>
+    <div class="table-wrap dashboard-changes-table"><table><thead><tr><th>Smartroom ID</th><th>ТБ</th><th>Город</th><th>Площадка</th><th>Этаж</th><th>Помещение</th><th>Изменилось</th><th>Добавлено</th><th>Отсутствует</th><th>Изменено</th></tr></thead><tbody id="dashboardAllChangedRoomsBody"><tr><td colspan="10" class="empty-state">Нет помещений, где изменилось всё оборудование.</td></tr></tbody></table></div>
+  </dialog>
   <dialog class="device-dialog room-chronology-dialog" id="roomChronologyDialog">
     <div class="dialog-head"><div><h2 id="roomChronologyDialogTitle">Хронология помещения</h2><p id="roomChronologyDialogSubtitle" class="muted"></p></div><button class="icon-button" id="closeRoomChronologyDialog" aria-label="Закрыть">×</button></div>
     <div class="room-timeline room-timeline-horizontal" id="roomChronologyDialogTimeline"></div>
@@ -824,6 +845,7 @@
         <label class="check"><input type="checkbox" data-dashboard-card-toggle="vendors">Производителей</label>
         <label class="check"><input type="checkbox" data-dashboard-card-toggle="rooms">Помещений</label>
         <label class="check"><input type="checkbox" data-dashboard-card-toggle="changedRooms">Помещений с изменениями</label>
+        <label class="check"><input type="checkbox" data-dashboard-card-toggle="allChangedRooms">Всё оборудование изменилось</label>
       </div></fieldset>
     </section>
     <section class="dashboard-settings-panel" data-dashboard-settings-panel="charts" role="tabpanel" hidden>
@@ -866,11 +888,11 @@
   <script src="frontend/ieee-vendor-registry.js?v=20260810.1"></script>
   <script src="frontend/memory-guard.js?v=20260722.9"></script>
   <script src="frontend/file-readers.js?v=20260722.8"></script>
-  <script src="frontend/state-persistence.js?v=1058"></script>
+  <script src="frontend/state-persistence.js?v=1062"></script>
   <script src="frontend/record-validation.js?v=1053"></script>
-  <script src="frontend/device-identity.js?v=1048"></script>
+  <script src="frontend/device-identity.js?v=1062"></script>
   <script src="frontend/enrichment-strategy.js?v=1050"></script>
-  <script src="frontend/browser-snapshot-store.js?v=1061"></script>
+  <script src="frontend/browser-snapshot-store.js?v=1062"></script>
   <script src="frontend/time-utils.js?v=1047"></script>
   <script src="frontend/mac-chronology.js?v=1056"></script>
   <script src="frontend/local-analytics.js?v=20260729.3"></script>
@@ -889,11 +911,11 @@
   <script src="frontend/smartroom-worker.js?v=1058"></script>
   <script src="frontend/smartroom-store.js?v=1061"></script>
   <script src="frontend/smartroom-charts.js?v=1058"></script>
-  <script src="frontend/room-timeline.js?v=1061"></script>
+  <script src="frontend/room-timeline.js?v=1062"></script>
   <script src="frontend/room-location.js?v=1058"></script>
   <script src="frontend/smartroom-ui.js?v=1061"></script>
   <script src="frontend/table-sorter.js?v=1055"></script>
-  <script src="app.js?v=1061"></script>
+  <script src="app.js?v=1062"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;
@@ -924,7 +946,7 @@
       const fallbackBrowserRecordId = "fallback-v2";
       const fallbackEngineeringOnlyViews = new Set(["single", "compare", "data", "automation", "settings"]);
       const fallbackEngineeringPermissions = ["delete:history", "delete:snapshots", "delete:mappings", "delete:tasks", "delete:ip-mappings", "delete:api-cache", "write:settings", "write:migration"];
-      const fallbackState = { files: [], devices: [], invalid: [], snapshots: [], movementHistory: [], ipMappings: [], localVendorMappings: {}, localModelMappings: {}, activeMappingFileId: "", mappingDisplayMode: "name", theme: localStorage.getItem("mac-analyzer-theme") || "light", engineeringMode: false, engineeringExpiresAt: "", engineeringPermissions: [], ouiLength: 3, ouiStyle: "plain", vendorDetectorSettings: { enabled: true, useOui3: true, useMac5: true, useText: true, useInference: true, confidenceThreshold: 0.6 }, historyEnrichmentSettings: { enabled: true, priorityHistory: true, useOuiMatch: true, useMac5Match: true }, externalApiSettings: { enabled: false, provider: "macvendors", endpoint: "", rateLimit: 25, cacheTtlDays: 30, onlyUnknown: true }, dashboardSettings: { vendor: "", room: "", status: "all", chartLimit: 8, showUnknown: true, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60, changeMode: "snapshots", changeDateFrom: "", changeDateTo: "", baselineSnapshotId: "", comparisonSnapshotId: "" } };
+      const fallbackState = { files: [], devices: [], invalid: [], snapshots: [], movementHistory: [], ipMappings: [], localVendorMappings: {}, localModelMappings: {}, activeMappingFileId: "", mappingDisplayMode: "name", theme: localStorage.getItem("mac-analyzer-theme") || "light", engineeringMode: false, engineeringExpiresAt: "", engineeringPermissions: [], ouiLength: 3, ouiStyle: "plain", vendorDetectorSettings: { enabled: true, useOui3: true, useMac5: true, useText: true, useInference: true, confidenceThreshold: 0.6 }, historyEnrichmentSettings: { enabled: true, priorityHistory: true, useOuiMatch: true, useMac5Match: true }, externalApiSettings: { enabled: false, provider: "macvendors", endpoint: "", rateLimit: 25, cacheTtlDays: 30, onlyUnknown: true }, dashboardSettings: { vendor: "", room: "", status: "all", chartLimit: 8, showUnknown: true, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true, changedRooms: true, allChangedRooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60, changeMode: "snapshots", changeDateFrom: "", changeDateTo: "", baselineSnapshotId: "", comparisonSnapshotId: "" } };
       let fallbackDashboardRefreshTimer = null;
       let fallbackActiveProcessId = "";
       let fallbackProcessHideTimer = null;
@@ -1982,7 +2004,7 @@
       }
 
       function normalizeFallbackDashboardSettings(settings = {}) {
-        const defaults = { vendor: "", room: "", status: "all", chartLimit: 8, showUnknown: true, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60, changeMode: "snapshots", changeDateFrom: "", changeDateTo: "", baselineSnapshotId: "", comparisonSnapshotId: "" };
+        const defaults = { vendor: "", room: "", status: "all", chartLimit: 8, showUnknown: true, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true, changedRooms: true, allChangedRooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60, changeMode: "snapshots", changeDateFrom: "", changeDateTo: "", baselineSnapshotId: "", comparisonSnapshotId: "" };
         return { ...defaults, ...settings, visibleCards: { ...defaults.visibleCards, ...(settings.visibleCards || {}) }, visibleCharts: { ...defaults.visibleCharts, ...(settings.visibleCharts || {}) }, autoRefresh: settings.autoRefresh !== false, refreshInterval: Math.max(10, Math.min(300, Number(settings.refreshInterval || 60))) };
       }
 
@@ -2004,10 +2026,12 @@
 
       function buildFallbackChangeAnalysis(settings = fallbackState.dashboardSettings) {
         const options = fallbackSnapshotOptions(), changes = [], labels = { vendor: "Производитель", model: "Модель", ip: "IP-адрес", address: "Адрес", room: "Помещение", switchIp: "Коммутатор", switchPort: "Порт", device: "Устройство" };
+        let roomCoverage = { totalRooms: 0, changedRooms: 0, allChangedRoomCount: 0, rooms: [] };
         const add = (mac, date, type, field = "device", before = "", after = "", source = "history") => { field = ({ switch_ip: "switchIp", switch_port: "switchPort" })[field] || field; changes.push({ macFormatted: normalizeMac(mac), date, type, typeLabel: ({ added: "Добавлено", removed: "Удалено", modified: "Изменено" })[type] || "Изменено", fieldLabel: labels[field] || field, before: String(before || "-"), after: String(after || "-"), source: String(source || "history"), severity: fallbackChangeSeverity(type, field) }); };
         let baselineSnapshotId = settings.baselineSnapshotId || options.at(-2)?.id || "", comparisonSnapshotId = settings.comparisonSnapshotId || options.at(-1)?.id || "", dateFrom = settings.changeDateFrom || "", dateTo = settings.changeDateTo || "";
         if (settings.changeMode === "snapshots" && fallbackState.snapshots.length >= 2) {
           const id = (snapshot, index) => String(snapshot.id || snapshot.snapshotId || snapshot.name || `snapshot-${index + 1}`), byId = new Map(fallbackState.snapshots.map((snapshot, index) => [id(snapshot, index), snapshot])), baseline = byId.get(baselineSnapshotId) || fallbackState.snapshots[0], comparison = byId.get(comparisonSnapshotId) || fallbackState.snapshots.at(-1), beforeMap = new Map((baseline.devices || []).map((device) => [fallbackMacHex(device.mac || device.macFormatted), device]).filter(([mac]) => mac)), afterMap = new Map((comparison.devices || []).map((device) => [fallbackMacHex(device.mac || device.macFormatted), device]).filter(([mac]) => mac)), date = comparison.fileCreatedAt || comparison.createdAt || "";
+          roomCoverage = window.MacAnalyzerRoomTimeline?.compareFleetRooms?.(baseline.devices || [], comparison.devices || []) || roomCoverage;
           afterMap.forEach((device, mac) => { if (!beforeMap.has(mac)) add(mac, date, "added", "device", "", device.source || "Устройство", "snapshot"); });
           beforeMap.forEach((device, mac) => { if (!afterMap.has(mac)) add(mac, date, "removed", "device", device.source || "Устройство", "", "snapshot"); });
           afterMap.forEach((device, mac) => { const before = beforeMap.get(mac); if (!before) return; ["vendor", "model", "ip", "address", "room", "switchIp", "switchPort"].forEach((field) => { if (String(before[field] || "") !== String(device[field] || "")) add(mac, date, "modified", field, before[field], device[field], "snapshot"); }); });
@@ -2016,7 +2040,7 @@
           fallbackState.movementHistory.forEach((item) => { const date = String(item.changedAt || item.changed_at || item.date_str || ""), parsed = date ? new Date(date) : null; if (parsed && !Number.isNaN(parsed.valueOf()) && (parsed < start || parsed > end)) return; let type = String(item.type || item.change_type || "modified").toLowerCase(); if (!["added", "removed", "modified"].includes(type)) type = "modified"; add(fallbackMacHex(item.mac || item.macFormatted), date, type, item.field || item.field_name || "device", item.before ?? item.from_value, item.after ?? item.to_value, item.source || item.file_name || "history"); });
         }
         const summary = { added: changes.filter((item) => item.type === "added").length, removed: changes.filter((item) => item.type === "removed").length, modified: changes.filter((item) => item.type === "modified").length, critical: changes.filter((item) => item.severity === "critical").length, total: changes.length };
-        return { mode: settings.changeMode, dateFrom, dateTo, baselineSnapshotId, comparisonSnapshotId, snapshotOptions: options, summary, changes };
+        return { mode: settings.changeMode, dateFrom, dateTo, baselineSnapshotId, comparisonSnapshotId, snapshotOptions: options, summary, roomCoverage, changes };
       }
 
       let fallbackChangeAnalysis = { summary: {}, changes: [] };
@@ -2038,7 +2062,9 @@
         fallbackChangeAnalysis = buildFallbackChangeAnalysis(); const summary = fallbackChangeAnalysis.summary, put = (id, value) => { if ($(id)) $(id).textContent = value || 0; };
         const settings = fallbackState.dashboardSettings, options = fallbackChangeAnalysis.snapshotOptions || []; if ($("#dashboardChangeMode")) $("#dashboardChangeMode").value = settings.changeMode || "snapshots"; if ($("#dashboardChangeDateFrom")) $("#dashboardChangeDateFrom").value = settings.changeDateFrom || ""; if ($("#dashboardChangeDateTo")) $("#dashboardChangeDateTo").value = settings.changeDateTo || ""; if ($("#dashboardPeriodControls")) $("#dashboardPeriodControls").hidden = settings.changeMode === "snapshots"; if ($("#dashboardSnapshotControls")) $("#dashboardSnapshotControls").hidden = settings.changeMode !== "snapshots";
         const fill = (selector, selected) => { if (!$(selector)) return; $(selector).innerHTML = options.length ? options.map((item) => `<option value="${esc(item.id)}"${item.id === selected ? " selected" : ""}>${esc(item.name)}${item.date ? ` · ${esc(item.date.slice(0, 10))}` : ""}</option>`).join("") : '<option value="">Нет сохранённых выгрузок</option>'; }; fill("#dashboardBaselineSnapshot", settings.baselineSnapshotId || options.at(-2)?.id || ""); fill("#dashboardComparisonSnapshot", settings.comparisonSnapshotId || options.at(-1)?.id || "");
-        put("#dashboardChangeTotal", summary.total); put("#dashboardCriticalCount", summary.critical); put("#dashboardAddedCount", summary.added); put("#dashboardRemovedCount", summary.removed); put("#dashboardModifiedCount", summary.modified);
+        put("#dashboardChangeTotal", summary.total); put("#dashboardCriticalCount", summary.critical); put("#dashboardAddedCount", summary.added); put("#dashboardRemovedCount", summary.removed); put("#dashboardModifiedCount", summary.modified); put("#dashboardAllChangedRoomsMetric", fallbackChangeAnalysis.roomCoverage?.allChangedRoomCount);
+        const coverageRows = (fallbackChangeAnalysis.roomCoverage?.rooms || []).filter((item) => item.allChanged);
+        if ($("#dashboardAllChangedRoomsBody")) $("#dashboardAllChangedRoomsBody").innerHTML = coverageRows.length ? coverageRows.map((item) => `<tr><td>${esc(item.smartroomId || "—")}</td><td>${esc(item.tb || "—")}</td><td>${esc(item.city || "—")}</td><td>${esc(item.site || "—")}</td><td>${esc(item.floor || "—")}</td><td>${esc(item.room || item.smartroomId || "—")}</td><td><strong>${item.changed} / ${item.total}</strong></td><td>${item.added || 0}</td><td>${item.removed || 0}</td><td>${item.modified || 0}</td></tr>`).join("") : '<tr><td colspan="10" class="empty-state">Нет переговорных, где между выбранными Final изменилось всё оборудование.</td></tr>';
         const severity = $("#dashboardChangeSeverityFilter")?.value || "all", type = $("#dashboardChangeTypeFilter")?.value || "all", macQuery = ($("#dashboardChangeMacSearch")?.value || "").toUpperCase().replace(/[^0-9A-F]/g, ""), query = ($("#dashboardChangeSearch")?.value || "").toLowerCase(), rows = fallbackChangeAnalysis.changes.filter((item) => (severity === "all" || item.severity === severity) && (type === "all" || item.type === type) && (!macQuery || fallbackMacHex(item.macFormatted).includes(macQuery)) && (!query || Object.values(item).some((value) => String(value).toLowerCase().includes(query))));
         syncFallbackDashboardChangeTabState();
         $("#dashboardChangesBody").innerHTML = rows.length ? rows.map((item) => `<tr><td><span class="severity-badge severity-${esc(item.severity)}">${esc(item.severity)}</span></td><td>${esc(item.date)}</td><td>${esc(item.macFormatted)}</td><td>${esc(item.typeLabel)}</td><td>-</td><td>-</td><td>-</td><td>${esc(item.fieldLabel)}: ${esc(item.before)} → ${esc(item.after)}</td><td>${esc(item.source)}</td></tr>`).join("") : '<tr><td colspan="9" class="empty-state">Изменений не найдено.</td></tr>';
@@ -2595,11 +2621,13 @@
       $$('[data-dashboard-change-type]').forEach((button) => button.addEventListener("click", () => selectFallbackDashboardChangeTab(button.dataset.dashboardChangeType || "all")));
       $(".dashboard-change-metrics")?.addEventListener("keydown", (event) => { const button = event.target.closest("[data-dashboard-change-type]"); if (!button || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return; event.preventDefault(); selectFallbackDashboardChangeTab(window.MacAnalyzerDashboardChangeTabs.nextTab(button.dataset.dashboardChangeType, event.key), true); });
       $("#closeDashboardChangesDialog")?.addEventListener("click", () => $("#dashboardChangesDialog").close());
+      $("#dashboardAllChangedRoomsButton")?.addEventListener("click", () => { renderFallbackChanges(); if (!$("#dashboardAllChangedRoomsDialog").open) $("#dashboardAllChangedRoomsDialog").showModal(); });
+      $("#closeDashboardAllChangedRoomsDialog")?.addEventListener("click", () => $("#dashboardAllChangedRoomsDialog").close());
       $("#saveDashboardSettingsButton")?.addEventListener("click", showFallbackDashboardSettingsDialog);
       $$('[data-dashboard-settings-tab]').forEach((button) => button.addEventListener("click", () => selectFallbackDashboardSettingsTab(button.dataset.dashboardSettingsTab)));
       $("#applyDashboardSettingsButton")?.addEventListener("click", () => saveFallbackDashboardSettings());
       $("#resetDashboardSettingsButton")?.addEventListener("click", () => {
-        fillFallbackDashboardSettingsDialog({ ...fallbackState.dashboardSettings, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60 });
+        fillFallbackDashboardSettingsDialog({ ...fallbackState.dashboardSettings, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true, changedRooms: true, allChangedRooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60 });
         saveFallbackDashboardSettings();
       });
       $("#closeDashboardSettingsDialog")?.addEventListener("click", () => $("#dashboardSettingsDialog").close());

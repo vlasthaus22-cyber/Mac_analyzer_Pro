@@ -5,551 +5,571 @@
       {
         "line": 5,
         "checked": true,
-        "text": "Конфликты идентификации/источников хранятся как диагностика и не"
+        "text": "Сильнейший стабильный идентификатор устройства выбирается детерминированно;"
       },
       {
         "line": 7,
         "checked": true,
-        "text": "Placeholder-модели не блокируют восстановление модели из предыдущего"
+        "text": "Перед сохранением удаляются функции, циклические ссылки и встроенные копии"
       },
       {
         "line": 9,
         "checked": true,
-        "text": "Хронология выбранного помещения явно показывает, изменились ли все его"
+        "text": "Пагинация явно разделяет полное число загруженных устройств и 50 строк"
       },
       {
-        "line": 14,
+        "line": 11,
         "checked": true,
-        "text": "`START_MAC_ANALYZER.cmd` является основным пользовательским входом и без"
+        "text": "Dashboard показывает количество комнат, в которых между выбранными Final"
       },
       {
         "line": 16,
         "checked": true,
-        "text": "Python-launcher выбирает свободный порт, запускает `server.py` в отдельной"
+        "text": "Конфликты идентификации/источников хранятся как диагностика и не"
       },
       {
         "line": 18,
         "checked": true,
-        "text": "Полный Windows-пакет сохраняет резервный `asInvoker` backend без UAC;"
+        "text": "Placeholder-модели не блокируют восстановление модели из предыдущего"
       },
       {
-        "line": 23,
+        "line": 20,
         "checked": true,
-        "text": "Оригиналы основного, SmartRoom и DDIO-файлов сохраняются в IndexedDB при"
+        "text": "Хронология выбранного помещения явно показывает, изменились ли все его"
       },
       {
-        "line": 26,
+        "line": 25,
         "checked": true,
-        "text": "Истёкший backend-токен автоматически восстанавливается из сохранённого"
+        "text": "`START_MAC_ANALYZER.cmd` является основным пользовательским входом и без"
+      },
+      {
+        "line": 27,
+        "checked": true,
+        "text": "Python-launcher выбирает свободный порт, запускает `server.py` в отдельной"
       },
       {
         "line": 29,
         "checked": true,
+        "text": "Полный Windows-пакет сохраняет резервный `asInvoker` backend без UAC;"
+      },
+      {
+        "line": 34,
+        "checked": true,
+        "text": "Оригиналы основного, SmartRoom и DDIO-файлов сохраняются в IndexedDB при"
+      },
+      {
+        "line": 37,
+        "checked": true,
+        "text": "Истёкший backend-токен автоматически восстанавливается из сохранённого"
+      },
+      {
+        "line": 40,
+        "checked": true,
         "text": "Повторное открытие неизменённой вкладки использует сигнатурный кеш уже"
-      },
-      {
-        "line": 35,
-        "checked": true,
-        "text": "Производный DDIO-индекс и dashboard-кеш больше не дублируются в одной"
-      },
-      {
-        "line": 38,
-        "checked": true,
-        "text": "Поиск совпадений по multi-entry индексу ограничен двумя результатами,"
-      },
-      {
-        "line": 41,
-        "checked": true,
-        "text": "Каждая комната получает состояние для каждого Final, включая отсутствие;"
-      },
-      {
-        "line": 44,
-        "checked": true,
-        "text": "Кнопка проверки всех устройств комнаты сравнивает два последних Final и"
       },
       {
         "line": 46,
         "checked": true,
-        "text": "Первый Final исключён из добавлений/отсутствий; добавления рисуются выше"
+        "text": "Производный DDIO-индекс и dashboard-кеш больше не дублируются в одной"
+      },
+      {
+        "line": 49,
+        "checked": true,
+        "text": "Поиск совпадений по multi-entry индексу ограничен двумя результатами,"
       },
       {
         "line": 52,
         "checked": true,
-        "text": "Фильтры хронологии помещения образуют строгий каскад ТБ → Город →"
+        "text": "Каждая комната получает состояние для каждого Final, включая отсутствие;"
       },
       {
-        "line": 54,
+        "line": 55,
         "checked": true,
-        "text": "Полная иерархия распознаётся из адреса, location path либо самой колонки"
+        "text": "Кнопка проверки всех устройств комнаты сравнивает два последних Final и"
       },
       {
         "line": 57,
         "checked": true,
-        "text": "Кнопка проверки помещения сравнивает два последних Final и включает"
-      },
-      {
-        "line": 59,
-        "checked": true,
-        "text": "Сравнение Final сопоставляет устройство по набору сильных псевдонимов,"
+        "text": "Первый Final исключён из добавлений/отсутствий; добавления рисуются выше"
       },
       {
         "line": 63,
         "checked": true,
+        "text": "Фильтры хронологии помещения образуют строгий каскад ТБ → Город →"
+      },
+      {
+        "line": 65,
+        "checked": true,
+        "text": "Полная иерархия распознаётся из адреса, location path либо самой колонки"
+      },
+      {
+        "line": 68,
+        "checked": true,
+        "text": "Кнопка проверки помещения сравнивает два последних Final и включает"
+      },
+      {
+        "line": 70,
+        "checked": true,
+        "text": "Сравнение Final сопоставляет устройство по набору сильных псевдонимов,"
+      },
+      {
+        "line": 74,
+        "checked": true,
         "text": "IP из DDIO подставляется только в отсутствующее поле устройства,"
       },
       {
-        "line": 66,
+        "line": 77,
         "checked": true,
         "text": "Автономная MADB и backend SQLite описаны отдельной инструкцией без"
       },
       {
-        "line": 71,
+        "line": 82,
         "checked": true,
         "text": "Хронология помещения разбирает путь `ТБ, Город, Площадка, Этаж,"
       },
       {
-        "line": 73,
+        "line": 84,
         "checked": true,
         "text": "Для выбранной переговорной сравниваются два последних Final и отдельно"
       },
       {
-        "line": 75,
+        "line": 86,
         "checked": true,
         "text": "Динамика изменений агрегирует несколько выгрузок одного месяца,"
       },
       {
-        "line": 78,
+        "line": 89,
         "checked": true,
         "text": "MAC-хронология и история изменений явно показывают предыдущий и новый"
       },
       {
-        "line": 80,
+        "line": 91,
         "checked": true,
         "text": "Вкладки критических и других изменений фильтруют вложенные события и не"
       },
       {
-        "line": 85,
+        "line": 96,
         "checked": true,
         "text": "Явно выбранный режим «За период» сохраняется на backend и в автономном"
       },
       {
-        "line": 88,
+        "line": 99,
         "checked": true,
         "text": "Сравнение между выгрузками использует одинаковый стабильный ключ при"
       },
       {
-        "line": 91,
+        "line": 102,
         "checked": true,
         "text": "Числовые итоги добавлений, исчезновений, изменений, критических событий и"
       },
       {
-        "line": 93,
+        "line": 104,
         "checked": true,
         "text": "График динамики общего числа устройств строится по финальным снимкам,"
       },
       {
-        "line": 99,
+        "line": 110,
         "checked": true,
         "text": "Пустые строки не считаются ошибочными устройствами, а некорректный MAC"
       },
       {
-        "line": 102,
+        "line": 113,
         "checked": true,
         "text": "Графики Chart.js получают числовые массивы в совместимом формате и"
       },
       {
-        "line": 105,
+        "line": 116,
         "checked": true,
         "text": "Хронология помещения показывает добавления, удаления, изменения и"
       },
       {
-        "line": 108,
+        "line": 119,
         "checked": true,
         "text": "Хронология MAC сохраняет всю загруженную цепочку, объединяет одно"
       },
       {
-        "line": 111,
+        "line": 122,
         "checked": true,
         "text": "Русские и технические имена полей/типов изменений приводятся к единой"
       },
       {
-        "line": 117,
+        "line": 128,
         "checked": true,
         "text": "Локальное сравнение предыдущего и нового Final имеет определённый"
       },
       {
-        "line": 123,
+        "line": 134,
         "checked": true,
         "text": "Все модули открывают общую IndexedDB версии 11; fallback больше не"
       },
       {
-        "line": 125,
+        "line": 136,
         "checked": true,
         "text": "Локальный Final восстанавливается до синхронизации SQLite и не удаляется,"
       },
       {
-        "line": 128,
+        "line": 139,
         "checked": true,
         "text": "Физический адрес определяется по IP коммутатора только при историческом"
       },
       {
-        "line": 134,
+        "line": 145,
         "checked": true,
         "text": "`NO_EXPANSION` ограничивает текущий Final уникальными устройствами файла №1."
       },
       {
-        "line": 135,
+        "line": 146,
         "checked": true,
         "text": "`ALLOW_EXPANSION` разрешает добавлять только достоверно идентифицированные устройства SmartRoom."
       },
       {
-        "line": 136,
+        "line": 147,
         "checked": true,
         "text": "DDIO, Previous Final, история, конфликты и Possible IPs не создают строки Final."
       },
       {
-        "line": 137,
+        "line": 148,
         "checked": true,
         "text": "При ошибке браузерного или SQLite-сохранения предыдущий успешный Final остаётся активным."
       },
       {
-        "line": 144,
+        "line": 155,
         "checked": true,
         "text": "Устройства, присутствующие только во втором файле, сохраняются в Final только в явном режиме `ALLOW_EXPANSION`; в `NO_EXPANSION` они остаются диагностическими несопоставленными записями. DDIO заполняет отсутствующий IP устройства с явным источником, но не создаёт Final-строки. Единый identity-сервис нормализует MAC, hostname, серийный номер и Device ID, отвергает неоднозначные слабые совпадения и переносит только непротиворечивые сведения последнего финального состояния."
       },
       {
-        "line": 145,
+        "line": 156,
         "checked": true,
         "text": "Отдельная страница «Изменения IP» удалена. Смена IP коммутатора сравнивается с предыдущим финальным состоянием и отображается как критическое изменение вместе с отдельным IP устройства и вариантами из DDIO."
       },
       {
-        "line": 146,
+        "line": 157,
         "checked": true,
         "text": "SQLite inventory/history добавочно хранит hostname, серийный номер, Device ID/name, источники полей и конфликты; непустые известные значения защищены от затирания, одинаковое повторное наблюдение не дублируется, пользовательский режим открывается на поиске по полному inventory."
       },
       {
-        "line": 148,
+        "line": 159,
         "checked": true,
         "text": "Мониторинг Smartroom использует Smartroom ID как стабильный ключ,"
       },
       {
-        "line": 156,
+        "line": 167,
         "checked": true,
         "text": "Текущая финальная выгрузка имеет приоритет: старые файлы обогащения"
       },
       {
-        "line": 159,
+        "line": 170,
         "checked": true,
         "text": "DDIO-предупреждение о смене IP коммутатора создаётся только после строгого"
       },
       {
-        "line": 163,
+        "line": 174,
         "checked": true,
         "text": "APICache и MACVendorAPI: кэш, выбор сервиса, rate-limit, тест API."
       },
       {
-        "line": 164,
+        "line": 175,
         "checked": true,
         "text": "VendorDatabase и VendorDetector: OUI, MAC5, confidence, source,"
       },
       {
-        "line": 170,
+        "line": 181,
         "checked": true,
         "text": "Внешний справочник PyQt `oui.txt`: корневой TXT/CSV безопасно переносится в `data/reference`,"
       },
       {
-        "line": 173,
+        "line": 184,
         "checked": true,
         "text": "MACHistoryDatabase: все операции поиска, фильтра, удаления и статистики."
       },
       {
-        "line": 174,
+        "line": 185,
         "checked": true,
         "text": "VendorModelHistory и HistoryEnricher применяют изученные HEX-префиксы"
       },
       {
-        "line": 177,
+        "line": 188,
         "checked": true,
         "text": "IPToAddressMapper: импорт, автоопределение, ручные правила и экспорт;"
       },
       {
-        "line": 179,
+        "line": 190,
         "checked": true,
         "text": "Постоянные связи IP коммутатора → физический адрес и Smartroom ID → помещение автоматически изучаются при анализе, применяются внутри текущего пакета и в последующих обогащениях; текущая выгрузка имеет приоритет. Smartroom ID и название помещения сохраняются как независимые колонки; ID используется как стабильный ключ при подсчёте помещений, а числовые суффиксы названий не удаляются."
       },
       {
-        "line": 180,
+        "line": 191,
         "checked": true,
         "text": "Загрузка SQLite из интерфейса проверяет формат и integrity, сохраняет исходный импорт и объединяет поддерживаемые таблицы без удаления или перезаписи активной базы."
       },
       {
-        "line": 181,
+        "line": 192,
         "checked": true,
         "text": "AutoColumnDetector, AIColumnDetector и ColumnConflictDialog: оценки уверенности, альтернативы, примеры данных, ручное подтверждение/отмена, автовыбор и обязательная колонка MAC."
       },
       {
-        "line": 182,
+        "line": 193,
         "checked": true,
         "text": "StatisticsDatabase: snapshots, trends, history, performance metrics."
       },
       {
-        "line": 183,
+        "line": 194,
         "checked": true,
         "text": "SettingsManager, AppLogger, AutoSaveManager, SignalHandler."
       },
       {
-        "line": 184,
+        "line": 195,
         "checked": true,
         "text": "Структурированное хранение: основная SQLite-база, legacy-базы истории,"
       },
       {
-        "line": 187,
+        "line": 198,
         "checked": true,
         "text": "Структура сопровождения проекта: документированная карта каталогов,"
       },
       {
-        "line": 191,
+        "line": 202,
         "checked": true,
         "text": "Аналитический backend структурирован в `backend/services/analytics`:"
       },
       {
-        "line": 195,
+        "line": 206,
         "checked": true,
         "text": "Интеграционные сервисы структурированы в `backend/services/integrations`:"
       },
       {
-        "line": 198,
+        "line": 209,
         "checked": true,
         "text": "Сравнение и экспорт структурированы в `backend/services/comparison` и"
       },
       {
-        "line": 201,
+        "line": 212,
         "checked": true,
         "text": "Системные сервисы структурированы в `backend/services/system`: единая"
       },
       {
-        "line": 206,
+        "line": 217,
         "checked": true,
         "text": "Браузерный импорт структурирован в `frontend/file-readers.js`: чтение"
       },
       {
-        "line": 213,
+        "line": 224,
         "checked": true,
         "text": "Третья выгрузка DDIO изолирована в `frontend/ddio-overlay.js` и"
       },
       {
-        "line": 220,
+        "line": 231,
         "checked": true,
         "text": "Пакетное ускорение обогащения: правила, история vendor/model и IP-адреса"
       },
       {
-        "line": 225,
+        "line": 236,
         "checked": true,
         "text": "Повторное обогащение восстанавливает по точному MAC последнее непустое"
       },
       {
-        "line": 231,
+        "line": 242,
         "checked": true,
         "text": "ColumnManager: видимость, порядок, пользовательские столбцы, ручная ширина,"
       },
       {
-        "line": 233,
+        "line": 244,
         "checked": true,
         "text": "ExportManager: Excel, CSV, TXT, HTML, PDF, JSON, YAML. CSV, TXT,"
       },
       {
-        "line": 255,
+        "line": 266,
         "checked": true,
         "text": "Обогащение: основной/дополнительные файлы с явными ролями и раздельными"
       },
       {
-        "line": 264,
+        "line": 275,
         "checked": true,
         "text": "Сопоставление колонок, поля обогащения, OUI-форматы. Поле `Smartroom ID`"
       },
       {
-        "line": 268,
+        "line": 279,
         "checked": true,
         "text": "Поиск по БД, результаты, двойной клик по устройству."
       },
       {
-        "line": 269,
+        "line": 280,
         "checked": true,
         "text": "История MAC и расширенная история изменений: отдельные PyQt-таблицы"
       },
       {
-        "line": 277,
+        "line": 288,
         "checked": true,
         "text": "История производителей, моделей и загрузок."
       },
       {
-        "line": 278,
+        "line": 289,
         "checked": true,
         "text": "Управление SQLite-базой и удаление выгрузок: структурные фильтры истории по MAC, файлу, vendor/model, помещению и датам, выбор строк, удаление по ID и по фильтру; в истории загрузок можно выборочно удалить отмеченные выгрузки из SQLite и IndexedDB."
       },
       {
-        "line": 281,
+        "line": 292,
         "checked": true,
         "text": "Анализ одного файла."
       },
       {
-        "line": 285,
+        "line": 296,
         "checked": true,
         "text": "Сравнение двух файлов: added/removed/modified, Excel/CSV/TXT export."
       },
       {
-        "line": 286,
+        "line": 297,
         "checked": true,
         "text": "В селекторах сравнения, аналитике и истории участвуют только финальные результаты `Анализ:`/`Analysis:`; mapping и промежуточные файлы не показываются как отдельные выгрузки. По умолчанию сравниваются два последних финальных обогащения."
       },
       {
-        "line": 287,
+        "line": 298,
         "checked": true,
         "text": "Сравнение нескольких файлов до 10 с отдельным mapping каждого файла."
       },
       {
-        "line": 288,
+        "line": 299,
         "checked": true,
         "text": "Временная статистика."
       },
       {
-        "line": 289,
+        "line": 300,
         "checked": true,
         "text": "Графики и диаграммы, отдельный текстовый AnalyticsDialog-отчёт с"
       },
       {
-        "line": 292,
+        "line": 303,
         "checked": true,
         "text": "DashboardWidget и DashboardSettingsDialog: сохранение настроек, фильтры производителя/помещения и статусов"
       },
       {
-        "line": 320,
+        "line": 331,
         "checked": true,
         "text": "Сетевая топология."
       },
       {
-        "line": 321,
+        "line": 332,
         "checked": true,
         "text": "Кластеризация."
       },
       {
-        "line": 322,
+        "line": 333,
         "checked": true,
         "text": "Автономная аналитика без backend вынесена в `frontend/local-analytics.js`:"
       },
       {
-        "line": 327,
+        "line": 338,
         "checked": true,
         "text": "Аналитика одного устройства и модели/префиксы: точный текстовый отчёт"
       },
       {
-        "line": 334,
+        "line": 345,
         "checked": true,
         "text": "Внешнее API-обогащение с выбором устройств и настройкой сервисов:"
       },
       {
-        "line": 337,
+        "line": 348,
         "checked": true,
         "text": "Уведомления: Email, Telegram, Slack, тесты и события анализа."
       },
       {
-        "line": 338,
+        "line": 349,
         "checked": true,
         "text": "Планировщик реальных задач и очереди файлов."
       },
       {
-        "line": 339,
+        "line": 350,
         "checked": true,
         "text": "AI-анализ качества данных."
       },
       {
-        "line": 340,
+        "line": 351,
         "checked": true,
         "text": "Быстрое обогащение больших XLSX: серверный кэш импортов с токенами,"
       },
       {
-        "line": 343,
+        "line": 354,
         "checked": true,
         "text": "Защита больших анализов от Out of Memory: результаты выводятся страницами по 25-1000 строк,"
       },
       {
-        "line": 389,
+        "line": 400,
         "checked": true,
         "text": "Светлая/тёмная тема: отдельный ThemeSelectionDialog, немедленное применение,"
       },
       {
-        "line": 391,
+        "line": 402,
         "checked": true,
         "text": "Инженерный/пользовательский режим как в PyQt: пользователь видит только безопасные"
       },
       {
-        "line": 396,
+        "line": 407,
         "checked": true,
         "text": "Контекстные действия таблиц: выбор строки, копирование MAC/строки/таблицы,"
       },
       {
-        "line": 398,
+        "line": 409,
         "checked": true,
         "text": "Полная справка и горячие клавиши PyQt: Ctrl+O/S/E/A/H/F,"
       },
       {
-        "line": 403,
+        "line": 414,
         "checked": true,
         "text": "Самодиагностика web-системы: read-only проверка файлов frontend/backend,"
       },
       {
-        "line": 407,
+        "line": 418,
         "checked": true,
         "text": "Переносимый Windows-backend: автономная PyInstaller-сборка с frontend,"
       },
       {
-        "line": 413,
+        "line": 424,
         "checked": true,
         "text": "Полный автономный IEEE-справочник: MA-L, MA-M, MA-S, IAB и CID"
       },
       {
-        "line": 418,
+        "line": 429,
         "checked": true,
         "text": "Накопительная база всех устройств: SQLite `device_inventory` и IndexedDB"
       },
       {
-        "line": 422,
+        "line": 433,
         "checked": true,
         "text": "DDIO сравнивает IP коммутатора не только между одновременно открытыми"
       },
       {
-        "line": 425,
+        "line": 436,
         "checked": true,
         "text": "При запуске через локальный Windows launcher frontend автоматически"
       },
       {
-        "line": 431,
+        "line": 442,
         "checked": true,
         "text": "Сортировка таблиц доступна кликом и клавишами Enter/Space по заголовку:"
       },
       {
-        "line": 445,
+        "line": 456,
         "checked": true,
         "text": "Все пункты выше реализованы."
       },
       {
-        "line": 446,
+        "line": 457,
         "checked": true,
         "text": "Импортированы текущие SQLite-данные Python-версии."
       },
       {
-        "line": 447,
+        "line": 458,
         "checked": true,
         "text": "Все операции проверены через UI и REST API."
       },
       {
-        "line": 448,
+        "line": 459,
         "checked": true,
         "text": "Не осталось функций PyQt, для которых нет web-эквивалента."
       }
     ],
-    "checked": 109,
-    "total": 109,
+    "checked": 113,
+    "total": 113,
     "unchecked": []
   },
   "equivalents": [
@@ -1220,7 +1240,7 @@
     "registryUnchecked": 0
   },
   "missingEquivalents": [],
-  "summaryHtml": "<div class=\"bar-label\"><span>Status</span><strong>complete</strong></div><div class=\"bar-label\"><span>PyQt blocks</span><strong>31/31</strong></div><div class=\"bar-label\"><span>Missing equivalents</span><strong>0</strong></div><div class=\"bar-label\"><span>Registry unchecked</span><strong>0</strong></div><div class=\"bar-label\"><span>Registry checked</span><strong>109/109</strong></div>",
+  "summaryHtml": "<div class=\"bar-label\"><span>Status</span><strong>complete</strong></div><div class=\"bar-label\"><span>PyQt blocks</span><strong>31/31</strong></div><div class=\"bar-label\"><span>Missing equivalents</span><strong>0</strong></div><div class=\"bar-label\"><span>Registry unchecked</span><strong>0</strong></div><div class=\"bar-label\"><span>Registry checked</span><strong>113/113</strong></div>",
   "detailsHtml": "<div class=\"mapping-row\"><span><strong>Database management</strong><small>class DatabaseManagementDialog · complete · markers 4</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Enhanced MAC history</strong><small>class EnhancedHistoryDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>MAC history dialog</strong><small>class MACHistoryDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Column conflict review</strong><small>class ColumnConflictDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Vendor detector settings</strong><small>class VendorDetectorSettingsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>History enrichment settings</strong><small>class HistoryEnrichmentSettingsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Vendor/model history</strong><small>class VendorModelHistoryDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>IP address mapping</strong><small>class IPAddressMappingDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Column mapping</strong><small>class ColumnMappingDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Column manager</strong><small>class ColumnManagerDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>OUI format selection</strong><small>class OUIFormatSelectionDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Comparison file mapping</strong><small>class ComparisonFileMappingDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Multi-file comparison</strong><small>class MultiFileComparisonDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Comparison fields</strong><small>class FieldsSelectionDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>File comparison</strong><small>class FileComparisonDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Time statistics</strong><small>class TimeStatsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Notifications</strong><small>class NotificationSettingsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Scheduler</strong><small>class SchedulerDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>API enrichment</strong><small>class APIEnrichmentDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Clustering</strong><small>class ClusteringDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Single file analysis</strong><small>class SingleFileAnalysisDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Export dialog</strong><small>class ExportDialog · complete · markers 4</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Analytics dialog</strong><small>class AnalyticsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Single device analytics</strong><small>class SingleDeviceAnalyticsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Model prefixes</strong><small>class ModelPrefixesDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Theme selection</strong><small>class ThemeSelectionDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>API settings</strong><small>class APISettingsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Dashboard settings</strong><small>class DashboardSettingsDialog · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Topology</strong><small>show_topology · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Data quality analysis</strong><small>def analyze_data_quality · complete · markers 3</small></span><span class=\"muted\">OK</span></div><div class=\"mapping-row\"><span><strong>Legacy SQLite migration</strong><small>mac_history.db · complete · markers 3</small></span><span class=\"muted\">OK</span></div>",
   "emptyDetailsHtml": "<p class=\"muted\">Нет данных parity.</p>"
 }

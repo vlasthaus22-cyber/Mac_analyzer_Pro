@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 require("fake-indexeddb/auto");
 global.window = globalThis;
 global.document = { documentElement: { dataset: {} } };
+require("../frontend/device-identity.js");
 require("../frontend/browser-snapshot-store.js");
 const store = global.MacAnalyzerBrowserSnapshots;
 const device = (model, extra = {}) => ({ mac: "001122334455", deviceId: "codec-1", model, ...extra });
@@ -132,6 +133,37 @@ assert.deepEqual(store.comparisonHistoryIds(null, "baseline", "current"), []);
   const sourceConflict = await store.compareSnapshots("conflict-base", "conflict-current");
   assert.equal(sourceConflict.summary.modified, 0, "source metadata conflicts are diagnostics, not physical changes");
   assert.equal(sourceConflict.summary.total, 0);
+  await store.save({ id: "rooms-base", kind: "analysis", devices: [
+    device("Old", { internalDeviceId: "room-a", smartroomId: "SR-A", room: "A" }),
+    { mac: "AABBCCDDEE01", internalDeviceId: "room-b", smartroomId: "SR-A", room: "A", model: "Stable" },
+    { mac: "AABBCCDDEE02", internalDeviceId: "room-c", smartroomId: "SR-B", room: "B" },
+  ] });
+  await store.save({ id: "rooms-current", kind: "analysis", devices: [
+    device("New", { internalDeviceId: "room-a", smartroomId: "SR-A", room: "A" }),
+    { mac: "AABBCCDDEE01", internalDeviceId: "room-b", smartroomId: "SR-A", room: "A", model: "Stable" },
+    { mac: "AABBCCDDEE03", internalDeviceId: "room-d", smartroomId: "SR-B", room: "B" },
+  ] });
+  const roomComparison = await store.compareSnapshots("rooms-base", "rooms-current");
+  assert.equal(roomComparison.roomCoverage.allChangedRoomCount, 1);
+  assert.equal(roomComparison.roomCoverage.rooms.find((item) => item.smartroomId === "SR-A").allChanged, false);
+  assert.equal(roomComparison.roomCoverage.rooms.find((item) => item.smartroomId === "SR-B").allChanged, true);
+
+  // A current row with a stable internal ID must not become a duplicate merely
+  // because a stale secondary identifier still points to another old device.
+  const identityJob = "identity-conflict-regression";
+  await store.clearEnrichment(identityJob);
+  await store.mergeEnrichmentRows(identityJob, [
+    { internalDeviceId: "stable-a", mac: "001122334401", serialNumber: "SER-A", model: "A" },
+    { internalDeviceId: "stable-b", mac: "001122334402", serialNumber: "SER-B", model: "B" },
+  ], { allowNew: true });
+  const identityStats = {};
+  await store.mergeEnrichmentRows(identityJob, [
+    { internalDeviceId: "stable-a", mac: "001122334401", serialNumber: "SER-B", model: "A current" },
+  ], { allowNew: false, stats: identityStats });
+  assert.equal(await store.countEnrichmentRows(identityJob), 2);
+  assert.equal(identityStats.matched, 1);
+  assert.equal(identityStats.conflicts || 0, 0);
+  await store.clearEnrichment(identityJob);
   console.log("frontend IndexedDB snapshot history tests passed");
 })().catch((error) => {
   console.error(error);

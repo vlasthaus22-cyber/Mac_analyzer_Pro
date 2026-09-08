@@ -39,7 +39,7 @@ def normalize_dashboard_settings(settings: dict[str, Any] | None = None) -> dict
         "showUnknown": bool(settings.get("showUnknown", True)),
         "visibleCards": {
             key: bool(card_settings.get(key, True))
-            for key in ("total", "changed", "missing", "unchanged", "vendors", "rooms", "changedRooms")
+            for key in ("total", "changed", "missing", "unchanged", "vendors", "rooms", "changedRooms", "allChangedRooms")
         },
         "visibleCharts": {
             key: bool(chart_settings.get(key, True))
@@ -205,6 +205,91 @@ def _device_identity(device: dict[str, Any] | None, mac: str = "") -> str:
     return identity_key(device or {}) or ("mac:" + (_mac(device or {}) or mac) if (_mac(device or {}) or mac) else "")
 
 
+def _room_descriptor(device: dict[str, Any] | None) -> dict[str, str]:
+    device = device if isinstance(device, dict) else {}
+    smartroom_id = _text(device.get("smartroomId") or device.get("smartroom_id"))
+    room = _text(device.get("room") or device.get("room_name"))
+    key = f"smartroom:{smartroom_id.casefold()}" if smartroom_id else (f"room:{room.casefold()}" if room else "")
+    return {
+        "key": key,
+        "smartroomId": smartroom_id,
+        "room": room,
+        "tb": _text(device.get("tb") or device.get("territorialBank") or device.get("territorial_bank")),
+        "city": _text(device.get("city") or device.get("city_name")),
+        "site": _text(device.get("site") or device.get("siteName") or device.get("site_name")),
+        "floor": _text(device.get("floor") or device.get("floorName") or device.get("floor_name")),
+    }
+
+
+def _confirmed_device_change(before: dict[str, Any], after: dict[str, Any]) -> bool:
+    for field in CHANGE_FIELDS:
+        old_value = _mac(before) if field == "mac" else _text(before.get(field))
+        new_value = _mac(after) if field == "mac" else _text(after.get(field))
+        # A field merely becoming populated (or temporarily empty) is enrichment
+        # quality, not proof that equipment in the room physically changed.
+        if old_value and new_value and old_value != new_value:
+            return True
+    return False
+
+
+def analyze_room_change_coverage(
+    previous_devices: list[dict[str, Any]], current_devices: list[dict[str, Any]],
+) -> dict[str, Any]:
+    pairs, added_devices, removed_devices = pair_device_sets(previous_devices, current_devices)
+    rooms: dict[str, dict[str, Any]] = {}
+    anonymous = 0
+
+    def mark(device: dict[str, Any], identity: str, changed: bool, event_type: str = "") -> None:
+        nonlocal anonymous
+        descriptor = _room_descriptor(device)
+        if not descriptor["key"]:
+            return
+        row = rooms.setdefault(descriptor["key"], {
+            **descriptor, "members": {}, "added": 0, "removed": 0, "modified": 0,
+        })
+        member_key = identity or _device_identity(device) or f"anonymous:{anonymous}"
+        if member_key.startswith("anonymous:"):
+            anonymous += 1
+        existed = member_key in row["members"]
+        row["members"][member_key] = bool(row["members"].get(member_key) or changed)
+        if event_type and not existed:
+            row[event_type] += 1
+
+    for before, after in pairs:
+        identity = _device_identity(after) or _device_identity(before)
+        before_room = _room_descriptor(before)
+        after_room = _room_descriptor(after)
+        if before_room["key"] != after_room["key"]:
+            mark(before, identity, True, "removed")
+            mark(after, identity, True, "added")
+        else:
+            changed = _confirmed_device_change(before, after)
+            mark(after, identity, changed, "modified" if changed else "")
+    for device in added_devices:
+        mark(device, _device_identity(device), True, "added")
+    for device in removed_devices:
+        mark(device, _device_identity(device), True, "removed")
+
+    result = []
+    for row in rooms.values():
+        total = len(row["members"])
+        changed = sum(1 for value in row["members"].values() if value)
+        result.append({
+            **{key: value for key, value in row.items() if key != "members"},
+            "total": total,
+            "changed": changed,
+            "unchanged": total - changed,
+            "allChanged": total > 0 and changed == total,
+        })
+    result.sort(key=lambda row: (not row["allChanged"], (row["room"] or row["smartroomId"]).casefold()))
+    return {
+        "totalRooms": len(result),
+        "changedRooms": sum(1 for row in result if row["changed"] > 0),
+        "allChangedRoomCount": sum(1 for row in result if row["allChanged"]),
+        "rooms": result,
+    }
+
+
 def _change_row(
     *, mac: str, changed_at: str, change_type: str, field: str = "device",
     before: Any = "", after: Any = "", source: str = "history",
@@ -250,6 +335,7 @@ def analyze_dashboard_changes(
     baseline_date = ""
     comparison_date = ""
     skipped_invalid_dates = 0
+    room_coverage = {"totalRooms": 0, "changedRooms": 0, "allChangedRoomCount": 0, "rooms": []}
 
     if len(snapshots) >= 2:
         baseline_id = baseline_id or options[-2]["id"]
@@ -265,6 +351,7 @@ def analyze_dashboard_changes(
         baseline_devices = [device for device in baseline.get("devices", []) if isinstance(device, dict)]
         comparison_devices = [device for device in comparison.get("devices", []) if isinstance(device, dict)]
         pairs, added_devices, removed_devices = pair_device_sets(baseline_devices, comparison_devices)
+        room_coverage = analyze_room_change_coverage(baseline_devices, comparison_devices)
         changed_at = _text(comparison.get("fileCreatedAt") or comparison.get("createdAt") or comparison.get("created_at"))
         comparison_source = (
             f'Final «{_text(baseline.get("name") or baseline_id or "Предыдущая выгрузка")}» → '
@@ -390,6 +477,7 @@ def analyze_dashboard_changes(
         "fieldChanges": len(changes),
         "skippedInvalidDates": skipped_invalid_dates,
         "fieldCounts": [{"label": label, "value": value} for label, value in field_counts.most_common(12)],
+        "roomCoverage": room_coverage,
     }
 
 

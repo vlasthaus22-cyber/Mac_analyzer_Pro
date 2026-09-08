@@ -99,7 +99,15 @@
     const current = (currentDevices || []).filter((item) => item && typeof item === "object");
     const index = buildIndex(previous), used = new Set(), pairs = [], added = [];
     for (const device of current) {
-      const match = resolve(device, index, { allowIdentifierChanges: true }).match;
+      // Prefer the strongest unused stable alias. Strict conflict diagnostics
+      // remain in resolve(), but comparison must not turn a stale alias into a
+      // false add+remove pair.
+      let match = null;
+      for (const candidate of candidates(device)) {
+        if (index.ambiguousCandidates?.has(candidate)) continue;
+        const found = index.get(candidate);
+        if (found && !used.has(found)) { match = found; break; }
+      }
       if (!match || used.has(match)) added.push(device);
       else { used.add(match); pairs.push([match, device]); }
     }

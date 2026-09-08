@@ -639,6 +639,7 @@
     return new Promise((resolve, reject) => {
       const current = database.transaction(enrichmentRowStore, "readwrite");
       const store = current.objectStore(enrichmentRowStore);
+      const aliasIndex = store.index("aliases");
       const identityApi = window.MacAnalyzerDeviceIdentity;
       const aliasesFor = (device) => (identityApi?.candidates?.(device) || []).map((alias) => `${id}:${alias}`);
       let written = 0, position = 0, operationError = null;
@@ -647,15 +648,25 @@
         const device = rows[position++], mac = String(device?.mac || ""), aliases = aliasesFor(device);
         const fallbackIdentity = String(device?.storageIdentity || device?.internalDeviceId || device?.identityKey || mac);
         if (!aliases.length && !fallbackIdentity) { if (stats) stats.invalidIdentity = (stats.invalidIdentity || 0) + 1; processNext(); return; }
-        const matches = new Map(), aliasIndex = store.index("aliases");
+        const matches = new Map();
         let pending = aliases.length;
         const finishLookup = () => {
           if (pending > 0) return;
           const records = Array.from(matches.values());
-          const resolutionIndex = identityApi?.buildIndex?.(records.map((record) => record.device));
-          const resolution = resolutionIndex ? identityApi.resolve(device, resolutionIndex) : { status: records.length > 1 ? "conflict" : records.length ? "matched" : "unmatched", match: records[0]?.device };
-          let record = records.find((item) => item.device === resolution.match);
-          if (resolution.status === "conflict") { record = null; if (stats) stats.conflicts = (stats.conflicts || 0) + 1; }
+          // Resolve the strongest exact alias first. A device can legitimately
+          // carry a stale weaker alias from an older source; rejecting every
+          // such row as an identity conflict created duplicate devices and made
+          // enrichment slower on later runs.
+          let record = null;
+          for (const alias of aliases) {
+            const exact = records.filter((item) => (item.aliases || []).includes(alias));
+            if (exact.length === 1) { record = exact[0]; break; }
+          }
+          const resolution = record
+            ? { status: "matched", match: record.device, evidence: [] }
+            : { status: records.length > 1 ? "conflict" : records.length ? "matched" : "unmatched", match: records[0]?.device, evidence: [] };
+          if (!record && records.length === 1) record = records[0];
+          if (resolution.status === "conflict") { if (stats) stats.conflicts = (stats.conflicts || 0) + 1; }
           const previous = record?.device;
           if (!previous && !allowNew) { if (stats) stats.skipped = (stats.skipped || 0) + 1; processNext(); return; }
           const merged = previous ? { ...previous } : {};
@@ -1494,6 +1505,10 @@
       address: String(device?.address || ""),
       room: String(device?.room || ""),
       smartroomId: String(device?.smartroomId || device?.smartroom_id || ""),
+      tb: String(device?.tb || device?.territorialBank || device?.territorial_bank || ""),
+      city: String(device?.city || device?.city_name || ""),
+      site: String(device?.site || device?.siteName || device?.site_name || ""),
+      floor: String(device?.floor || device?.floorName || device?.floor_name || ""),
       switchIp: String(device?.switchIp || device?.switch_ip || ""),
       switchPort: String(device?.switchPort || device?.switch_port || ""),
       hostname: String(device?.hostname || device?.host_name || ""),
@@ -1653,6 +1668,56 @@
     }
   }
 
+  function comparisonRoom(device = {}) {
+    const smartroomId = String(device.smartroomId || device.smartroom_id || "").trim();
+    const room = String(device.room || "").trim();
+    return {
+      key: smartroomId ? `smartroom:${smartroomId.toLowerCase()}` : room ? `room:${room.toLowerCase()}` : "",
+      smartroomId,
+      room,
+      tb: String(device.tb || "").trim(),
+      city: String(device.city || "").trim(),
+      site: String(device.site || "").trim(),
+      floor: String(device.floor || "").trim(),
+    };
+  }
+
+  function comparisonConfirmedChange(previous = {}, current = {}) {
+    for (const field of ["mac", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName"]) {
+      const before = String(previous[field] || "").trim();
+      const after = String(current[field] || "").trim();
+      if (before && after && before !== after) return true;
+    }
+    return false;
+  }
+
+  function markComparisonRoom(rooms, device, changed, eventType = "") {
+    const descriptor = comparisonRoom(device);
+    if (!descriptor.key) return;
+    let row = rooms.get(descriptor.key);
+    if (!row) {
+      row = { ...descriptor, total: 0, changed: 0, added: 0, removed: 0, modified: 0 };
+      rooms.set(descriptor.key, row);
+    }
+    row.total += 1;
+    if (changed) row.changed += 1;
+    if (eventType && Object.prototype.hasOwnProperty.call(row, eventType)) row[eventType] += 1;
+  }
+
+  function summarizeComparisonRooms(rooms) {
+    const rows = Array.from(rooms.values()).map((row) => ({
+      ...row,
+      unchanged: Math.max(0, row.total - row.changed),
+      allChanged: row.total > 0 && row.changed === row.total,
+    })).sort((left, right) => Number(right.allChanged) - Number(left.allChanged) || String(left.room || left.smartroomId).localeCompare(String(right.room || right.smartroomId), "ru"));
+    return {
+      totalRooms: rows.length,
+      changedRooms: rows.filter((row) => row.changed > 0).length,
+      allChangedRoomCount: rows.filter((row) => row.allChanged).length,
+      rooms: rows,
+    };
+  }
+
   async function compareCurrentChunk(jobId, rows, result, limit) {
     const database = await openDatabase();
     return new Promise((resolve, reject) => {
@@ -1688,7 +1753,9 @@
           for (const candidate of resolution.candidates) {
             candidate.matched = true;
             store.put(candidate);
+            markComparisonRoom(result.roomCoverage, candidate.device, false);
           }
+          markComparisonRoom(result.roomCoverage, device, false);
           return;
         }
         const matchedRecord = resolution.record;
@@ -1697,6 +1764,7 @@
             result.added += 1;
             result.changedDevices += 1;
             tallyRows(result.changedVendors, device.vendor);
+            markComparisonRoom(result.roomCoverage, device, true, "added");
             if (result.changes.length < limit) result.changes.push({
               mac: device.mac, type: "added", field: "device", before: "", after: device.vendor || "Устройство",
               beforeDevice: null, afterDevice: { ...device },
@@ -1705,6 +1773,14 @@
         }
           matchedRecord.matched = true;
           store.put(matchedRecord);
+          const previousRoom = comparisonRoom(previous), currentRoom = comparisonRoom(device);
+          if (previousRoom.key !== currentRoom.key) {
+            markComparisonRoom(result.roomCoverage, previous, true, "removed");
+            markComparisonRoom(result.roomCoverage, device, true, "added");
+          } else {
+            const confirmedChange = comparisonConfirmedChange(previous, device);
+            markComparisonRoom(result.roomCoverage, device, confirmedChange, confirmedChange ? "modified" : "");
+          }
           let modified = false;
           const criticalMove = ["mac", "switchIp", "ip"].some((field) => {
             const before = String(previous[field] || "").trim();
@@ -1781,6 +1857,7 @@
         const previous = cursor.value?.device || {};
         result.removed += 1;
         tallyRows(result.missingVendors, previous.vendor);
+        markComparisonRoom(result.roomCoverage, previous, true, "removed");
         if (result.changes.length < limit) result.changes.push({
           mac: previous.mac || cursor.value?.mac || "", type: "removed", field: "device",
           before: previous.vendor || "Устройство", after: "", beforeDevice: { ...previous }, afterDevice: null,
@@ -1800,7 +1877,7 @@
       baselineSnapshotId: String(baselineId || ""),
       fields: ["mac", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName"],
       added: 0, removed: 0, modifiedDevices: 0, modifiedFields: 0, changedDevices: 0, unchanged: 0, critical: 0, identityConflicts: 0,
-      changes: [], fieldCounts: new Map(), changedVendors: new Map(), unchangedVendors: new Map(), missingVendors: new Map(),
+      changes: [], fieldCounts: new Map(), changedVendors: new Map(), unchangedVendors: new Map(), missingVendors: new Map(), roomCoverage: new Map(),
     };
     await clearEnrichment(jobId).catch(() => false);
     try {
@@ -1838,6 +1915,7 @@
         changedVendors: rankedRows(result.changedVendors, 20),
         unchangedVendors: rankedRows(result.unchangedVendors, 20),
         missingVendors: rankedRows(result.missingVendors, 20),
+        roomCoverage: summarizeComparisonRooms(result.roomCoverage),
       };
     } finally {
       await clearEnrichment(jobId).catch(() => false);
@@ -1846,6 +1924,7 @@
       result.changedVendors.clear();
       result.unchangedVendors.clear();
       result.missingVendors.clear();
+      result.roomCoverage.clear();
     }
   }
 

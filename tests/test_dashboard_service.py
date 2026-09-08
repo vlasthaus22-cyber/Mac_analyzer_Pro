@@ -3,7 +3,7 @@ from io import BytesIO
 
 from PIL import Image
 
-from dashboard_service import analyze_dashboard_changes, build_dashboard_metrics_payload, build_dashboard_payload, export_dashboard_html, export_dashboard_png, filter_dashboard_devices, normalize_dashboard_settings
+from dashboard_service import analyze_dashboard_changes, analyze_room_change_coverage, build_dashboard_metrics_payload, build_dashboard_payload, export_dashboard_html, export_dashboard_png, filter_dashboard_devices, normalize_dashboard_settings
 
 
 DEVICES = [
@@ -240,6 +240,24 @@ def test_dashboard_change_analysis_compares_selected_snapshots():
     assert next(item for item in result["changes"] if item["type"] == "removed")["severity"] == "high"
 
 
+def test_dashboard_reports_rooms_where_every_device_changed():
+    previous = [
+        {"internalDeviceId": "a", "mac": "001122334455", "smartroomId": "SR-1", "room": "One", "model": "Old"},
+        {"internalDeviceId": "b", "mac": "AABBCCDDEEFF", "smartroomId": "SR-1", "room": "One", "model": "Stable"},
+        {"internalDeviceId": "c", "mac": "112233445566", "smartroomId": "SR-2", "room": "Two"},
+    ]
+    current = [
+        {"internalDeviceId": "a", "mac": "001122334455", "smartroomId": "SR-1", "room": "One", "model": "New"},
+        {"internalDeviceId": "b", "mac": "AABBCCDDEEFF", "smartroomId": "SR-1", "room": "One", "model": "Stable"},
+        {"internalDeviceId": "d", "mac": "223344556677", "smartroomId": "SR-2", "room": "Two"},
+    ]
+    coverage = analyze_room_change_coverage(previous, current)
+    assert coverage["totalRooms"] == 2
+    assert coverage["allChangedRoomCount"] == 1
+    assert next(row for row in coverage["rooms"] if row["smartroomId"] == "SR-1")["allChanged"] is False
+    assert next(row for row in coverage["rooms"] if row["smartroomId"] == "SR-2")["allChanged"] is True
+
+
 def test_dashboard_pairs_changed_mac_by_stable_device_id_and_keeps_full_final_context():
     snapshots = [
         {
@@ -451,6 +469,7 @@ if __name__ == "__main__":
     test_dashboard_normalizes_russian_history_and_ignores_missing_new_values()
     test_newly_filled_switch_ip_is_not_a_false_critical_change()
     test_dashboard_change_analysis_compares_selected_snapshots()
+    test_dashboard_reports_rooms_where_every_device_changed()
     test_dashboard_period_compares_the_final_snapshots_at_its_boundaries()
     test_dashboard_uses_previous_and_current_final_snapshots_for_all_status_metrics()
     test_dashboard_reports_unique_macs_across_uploads_and_latest_count()

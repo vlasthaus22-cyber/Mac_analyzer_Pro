@@ -83,13 +83,12 @@
     const pairs = [];
     const added = [];
     for (const device of current) {
-      const matches = new Set(
-        deviceAliases(device)
-          .filter((alias) => !ambiguous.has(alias))
-          .map((alias) => aliases.get(alias))
-          .filter(Boolean),
-      );
-      const match = matches.size === 1 ? matches.values().next().value : null;
+      let match = null;
+      for (const alias of deviceAliases(device)) {
+        if (ambiguous.has(alias)) continue;
+        const candidate = aliases.get(alias);
+        if (candidate && !used.has(candidate)) { match = candidate; break; }
+      }
       if (!match || used.has(match)) added.push(device);
       else {
         used.add(match);
@@ -228,6 +227,62 @@
     };
   }
 
+  function roomDescriptor(device = {}) {
+    const smartroomId = value(device, "smartroomId", "smartroom_id");
+    const room = value(device, "room", "room_name");
+    const key = smartroomId ? `smartroom:${smartroomId.toLowerCase()}` : room ? `room:${room.toLowerCase()}` : "";
+    return {
+      key,
+      smartroomId,
+      room,
+      tb: value(device, "tb", "territorialBank", "territorial_bank"),
+      city: value(device, "city", "city_name"),
+      site: value(device, "site", "siteName", "site_name"),
+      floor: value(device, "floor", "floorName", "floor_name"),
+    };
+  }
+
+  function compareFleetRooms(previousDevices = [], currentDevices = []) {
+    const paired = pairDevices(previousDevices, currentDevices);
+    const rooms = new Map();
+    let anonymous = 0;
+    const mark = (device, identity, changed, type) => {
+      const room = roomDescriptor(device);
+      if (!room.key) return;
+      let row = rooms.get(room.key);
+      if (!row) {
+        row = { ...room, members: new Map(), added: 0, removed: 0, modified: 0 };
+        rooms.set(room.key, row);
+      }
+      const memberKey = identity || deviceAliases(device)[0] || `anonymous:${anonymous++}`;
+      const existed = row.members.has(memberKey);
+      const previous = row.members.get(memberKey);
+      row.members.set(memberKey, Boolean(previous || changed));
+      if (!existed && type && Object.prototype.hasOwnProperty.call(row, type)) row[type] += 1;
+    };
+    for (const [before, after] of paired.pairs) {
+      const identity = deviceAliases(after)[0] || deviceAliases(before)[0] || "";
+      const beforeRoom = roomDescriptor(before);
+      const afterRoom = roomDescriptor(after);
+      if (beforeRoom.key !== afterRoom.key) {
+        mark(before, identity, true, "removed");
+        mark(after, identity, true, "added");
+      } else {
+        const changed = changedValues(before, after).length > 0;
+        mark(after, identity, changed, changed ? "modified" : "");
+      }
+    }
+    paired.added.forEach((device) => mark(device, deviceAliases(device)[0], true, "added"));
+    paired.removed.forEach((device) => mark(device, deviceAliases(device)[0], true, "removed"));
+    const result = Array.from(rooms.values()).map((row) => {
+      const total = row.members.size;
+      const changed = Array.from(row.members.values()).filter(Boolean).length;
+      const { members, ...metadata } = row;
+      return { ...metadata, total, changed, unchanged: total - changed, allChanged: total > 0 && changed === total };
+    }).sort((left, right) => Number(right.allChanged) - Number(left.allChanged) || String(left.room || left.smartroomId).localeCompare(String(right.room || right.smartroomId), "ru"));
+    return { totalRooms: result.length, changedRooms: result.filter((row) => row.changed > 0).length, allChangedRoomCount: result.filter((row) => row.allChanged).length, rooms: result };
+  }
+
   function events(room) {
     const result = [];
     let previous = [];
@@ -330,5 +385,5 @@
     return { rows, tableHtml: rowHtml, timelineHtml };
   }
 
-  window.MacAnalyzerRoomTimeline = Object.freeze({ events, compareLatest, hydrateKnownHistory, pairDevices, render });
+  window.MacAnalyzerRoomTimeline = Object.freeze({ events, compareLatest, compareFleetRooms, hydrateKnownHistory, pairDevices, render });
 })();

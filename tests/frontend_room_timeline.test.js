@@ -146,4 +146,20 @@ assert.equal(
   "automatic replacement of Unknown must not be shown as a physical room change",
 );
 assert.equal(placeholderModel.allChanged, false);
+const fleetCoverage = timeline.compareFleetRooms(
+  [
+    { internalDeviceId: "a", mac: "001122334455", smartroomId: "SR-1", room: "Переговорная 1", model: "Old" },
+    { internalDeviceId: "b", mac: "AABBCCDDEEFF", smartroomId: "SR-1", room: "Переговорная 1", model: "Stable" },
+    { internalDeviceId: "c", mac: "112233445566", smartroomId: "SR-2", room: "Переговорная 2" },
+  ],
+  [
+    { internalDeviceId: "a", mac: "001122334455", smartroomId: "SR-1", room: "Переговорная 1", model: "New" },
+    { internalDeviceId: "b", mac: "AABBCCDDEEFF", smartroomId: "SR-1", room: "Переговорная 1", model: "Stable" },
+    { internalDeviceId: "d", mac: "223344556677", smartroomId: "SR-2", room: "Переговорная 2" },
+  ],
+);
+assert.equal(fleetCoverage.totalRooms, 2);
+assert.equal(fleetCoverage.allChangedRoomCount, 1);
+assert.equal(fleetCoverage.rooms.find((item) => item.smartroomId === "SR-1").allChanged, false);
+assert.equal(fleetCoverage.rooms.find((item) => item.smartroomId === "SR-2").allChanged, true);
 console.log("frontend room timeline test passed");

@@ -5,6 +5,23 @@
   const workspacePreviewRows = 101;
   const maxInlineResultRows = 20_000;
 
+  function cloneSafe(value, seen = new WeakSet(), depth = 0) {
+    if (value === null || value === undefined || ["string", "number", "boolean"].includes(typeof value)) return value;
+    if (["function", "symbol"].includes(typeof value)) return undefined;
+    if (typeof value === "bigint") return String(value);
+    if (value instanceof Date) return Number.isFinite(value.valueOf()) ? value.toISOString() : "";
+    if (typeof Blob !== "undefined" && value instanceof Blob) return value;
+    if (typeof value !== "object" || depth > 10 || seen.has(value)) return undefined;
+    seen.add(value);
+    if (Array.isArray(value)) return value.map((item) => cloneSafe(item, seen, depth + 1)).filter((item) => item !== undefined);
+    const result = {};
+    for (const [key, item] of Object.entries(value)) {
+      const safe = cloneSafe(item, seen, depth + 1);
+      if (safe !== undefined) result[key] = safe;
+    }
+    return result;
+  }
+
   function compactTransientState(source = {}) {
     return {
       ...source,
@@ -25,22 +42,30 @@
   }
 
   function compactSnapshots(snapshots) {
-    return list(snapshots).slice(0, 25).map((snapshot) => (
-      snapshot.backendStored || snapshot.browserStored ? { ...snapshot, devices: [] } : snapshot
-    ));
+    // A workspace record is metadata, not a second snapshot database. Older
+    // workspaces may still contain inline rows, so always remove them before
+    // IndexedDB performs the structured clone. Complete rows live in the
+    // chunked snapshot store (or SQLite).
+    return list(snapshots).slice(0, 25).map((snapshot) => ({
+      ...snapshot,
+      deviceCount: Math.max(0, Number(snapshot?.deviceCount ?? snapshot?.devices?.length ?? 0) || 0),
+      invalidCount: Math.max(0, Number(snapshot?.invalidCount ?? snapshot?.invalid?.length ?? 0) || 0),
+      devices: [],
+      invalid: [],
+    }));
   }
 
   function compactLocalState(source = {}) {
-    return {
+    return cloneSafe({
       ...compactTransientState(source),
       browserStateInIndexedDb: true,
       files: compactFiles(source.files, false),
       ddioFile: source.ddioFile ? {...source.ddioFile, rows: []} : null,
       devices: [],
       invalid: [],
-      snapshots: list(source.snapshots).slice(0, 25).map((snapshot) => ({ ...snapshot, devices: [] })),
+      snapshots: compactSnapshots(source.snapshots),
       movementHistory: list(source.movementHistory).slice(0, 100),
-    };
+    });
   }
 
   function compactIndexedState(source = {}) {
@@ -52,7 +77,7 @@
     const invalidRows = list(source.invalid);
     const inlineResult = !snapshotBackedResult
       && resultRows.length + invalidRows.length <= maxInlineResultRows;
-    return {
+    return cloneSafe({
       ...compactTransientState(source),
       browserStateInIndexedDb: true,
       files: compactFiles(source.files, true),
@@ -62,7 +87,7 @@
       resultPersistenceTruncated: !snapshotBackedResult && !inlineResult,
       snapshots: compactSnapshots(source.snapshots),
       movementHistory: list(source.movementHistory).slice(0, 100),
-    };
+    });
   }
 
   window.MacAnalyzerStatePersistence = Object.freeze({

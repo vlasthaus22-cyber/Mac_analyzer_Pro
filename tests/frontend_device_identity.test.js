@@ -20,4 +20,14 @@ const ambiguous = Identity.buildIndex([
   { mac: "AABBCCDDEEFF", serialNumber: "serial-x" },
 ]);
 assert.strictEqual(Identity.resolve({ serialNumber: "SERIAL-X" }, ambiguous).status, "conflict");
+const staleAliasPair = Identity.pairSets(
+  [
+    { internalDeviceId: "stable-1", mac: "001122334455", serialNumber: "SERIAL-A" },
+    { internalDeviceId: "stable-2", mac: "AABBCCDDEEFF", serialNumber: "SERIAL-B" },
+  ],
+  [{ internalDeviceId: "stable-1", mac: "001122334455", serialNumber: "SERIAL-B" }],
+);
+assert.strictEqual(staleAliasPair.pairs.length, 1, "strong internal id must win over a stale weaker alias");
+assert.strictEqual(staleAliasPair.pairs[0][0].internalDeviceId, "stable-1");
+assert.strictEqual(staleAliasPair.added.length, 0, "alias disagreement must not become a false added device");
 console.log("frontend_device_identity.test.js: ok");

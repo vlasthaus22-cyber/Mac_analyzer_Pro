@@ -23,6 +23,7 @@ const source = {
   snapshots: [
     { id: "snapshot-1", backendStored: true, devices: [{ mac: "001122334455" }] },
     { id: "snapshot-2", browserStored: true, devices: [{ mac: "AABBCCDDEEFF" }] },
+    { id: "legacy-inline", devices: Array.from({ length: 25000 }, (_, index) => ({ mac: `001122${index.toString(16).padStart(6, "0")}` })), invalid: [{ row: 4 }] },
   ],
   movementHistory: Array.from({ length: 130 }, (_, index) => ({ index })),
   ddioOverlay: Object.fromEntries(Array.from({ length: 1000 }, (_, index) => [`MAC-${index}`, { possibleIps: ["192.0.2.1"] }])),
@@ -36,11 +37,18 @@ assert.deepEqual(indexed.devices, [], "SQLite-backed result page must not be clo
 assert.deepEqual(indexed.invalid, []);
 assert.deepEqual(indexed.snapshots[0].devices, []);
 assert.deepEqual(indexed.snapshots[1].devices, [], "browser snapshot rows must live in the dedicated IndexedDB store");
+assert.deepEqual(indexed.snapshots[2].devices, [], "legacy inline snapshot rows must never be cloned into the workspace record");
+assert.deepEqual(indexed.snapshots[2].invalid, []);
+assert.equal(indexed.snapshots[2].deviceCount, 25000);
 assert.equal(indexed.movementHistory.length, 100);
 assert.equal(source.files[0].rows.length, 3, "compaction must not mutate live workspace state");
 assert.deepEqual(indexed.ddioOverlay, {}, "derived DDIO index must not be cloned into the workspace record");
 assert.equal(indexed.dashboardFleetCache, null, "derived dashboard cache must be rebuilt instead of persisted");
 assert.equal(Object.keys(source.ddioOverlay).length, 1000, "workspace compaction must not mutate the live DDIO index");
+const cyclic = {}; cyclic.self = cyclic;
+const cloneSafeState = persistence.compactIndexedState({ files: [], snapshots: [{ id: "safe", callback: () => true }], rogue: cyclic });
+assert.equal("callback" in cloneSafeState.snapshots[0], false, "non-cloneable callback metadata must be removed");
+assert.equal("self" in cloneSafeState.rogue, false, "cyclic metadata must not break autosave");
 
 const standalone = persistence.compactIndexedState({ ...source, resultSnapshotId: "", files: [source.files[1]] });
 assert.deepEqual(standalone.files[0].rows, browserRows);
