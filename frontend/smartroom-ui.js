@@ -431,6 +431,14 @@
     $("#roomChronologyDialog").showModal();
   }
 
+  async function openRoom(id) {
+    await build(false);
+    const room = report?.rooms?.find((item) => item.smartroomId === text(id));
+    if (!room) return false;
+    showRoom(room.smartroomId);
+    return true;
+  }
+
   async function addKnownModel(button) {
     const mac = normalizeMac(button?.dataset.addKnownModel),
       model = text(window.prompt(`Введите модель для ${formatMac(mac)}`));
@@ -539,5 +547,5 @@
     if (name === "analytics") return renderCharts(force);
   }
 
-  window.MacAnalyzerSmartroomUI = Object.freeze({ initialize, render, autoLoad, build, invalidate });
+  window.MacAnalyzerSmartroomUI = Object.freeze({ initialize, render, autoLoad, build, invalidate, openRoom });
 })();

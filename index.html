@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
-  <meta name="application-build" content="2026.09.08.1">
-  <meta name="application-version" content="1.0.62">
-  <link rel="stylesheet" href="styles.css?v=1062">
+  <meta name="application-build" content="2026.09.13.1">
+  <meta name="application-version" content="1.0.63">
+  <link rel="stylesheet" href="styles.css?v=1063">
 </head>
 <body>
   <div class="app-error-banner" id="appErrorBanner" role="alert" aria-live="assertive" hidden><span data-error-message>Ошибка приложения.</span><button type="button" id="closeAppErrorBanner" aria-label="Закрыть сообщение">×</button></div>
@@ -220,6 +220,8 @@
             <article class="metric"><span>Производителей</span><strong id="analysisMetricVendors">0</strong></article>
             <article class="metric"><span>Моделей</span><strong id="analysisMetricModels">0</strong></article>
             <article class="metric"><span>Помещений</span><strong id="analysisMetricRooms">0</strong></article>
+            <article class="metric"><span>Без помещения</span><strong id="analysisMetricMissingRoom">0</strong></article>
+            <article class="metric"><span>Без помещения</span><strong id="analysisMetricMissingRoom">0</strong></article>
             <article class="metric"><span>Коммутаторов</span><strong id="analysisMetricSwitches">0</strong></article>
             <article class="metric"><span>Ошибок</span><strong id="analysisMetricInvalid">0</strong></article>
           </section>
@@ -234,6 +236,10 @@
             <div class="tool-panel"><div class="panel-head"><h2>Топ OUI 5 байт</h2></div><div class="bar-list" id="analysisOui5Chart"></div></div>
             <div class="tool-panel"><div class="panel-head"><h2>Заполненность данных</h2></div><div class="bar-list" id="analysisCoverageChart"></div></div>
             <div class="tool-panel"><div class="panel-head"><h2>Качество</h2></div><div class="bar-list" id="analysisQualityChart"></div></div>
+            <div class="tool-panel"><div class="panel-head"><h2>Без помещения · производители</h2></div><div class="bar-list" id="analysisMissingRoomVendorChart"></div></div>
+            <div class="tool-panel"><div class="panel-head"><h2>Без помещения · модели</h2></div><div class="bar-list" id="analysisMissingRoomModelChart"></div></div>
+            <div class="tool-panel"><div class="panel-head"><h2>Без помещения · производители</h2></div><div class="bar-list" id="analysisMissingRoomVendorChart"></div></div>
+            <div class="tool-panel"><div class="panel-head"><h2>Без помещения · модели</h2></div><div class="bar-list" id="analysisMissingRoomModelChart"></div></div>
           </section>
         </section>
       </section>
@@ -338,6 +344,7 @@
           <button type="button" class="metric dashboard-kpi" data-dashboard-status="unchanged" data-dashboard-card="unchanged"><span>Без изменений</span><strong id="dashboardUnchangedMetric">0</strong><small id="dashboardUnchangedHint">0% от всех</small></button>
           <article class="metric" data-dashboard-card="vendors"><span>Производителей</span><strong id="dashboardVendorMetric">0</strong><small>Уникальных</small></article>
           <article class="metric" data-dashboard-card="rooms"><span>Помещений</span><strong id="dashboardRoomCountMetric">0</strong><small>Уникальных</small></article>
+          <article class="metric" data-dashboard-card="missingRoom"><span>Без помещения</span><strong id="dashboardMissingRoomMetric">0</strong><small>Устройств в текущем Final</small></article>
           <article class="metric" data-dashboard-card="changedRooms"><span>Помещений с изменениями</span><strong id="dashboardChangedRoomMetric">0</strong><small>За выбранный интервал</small></article>
           <button type="button" class="metric dashboard-kpi room-coverage-kpi" id="dashboardAllChangedRoomsButton" data-dashboard-card="allChangedRooms"><span>Изменилось всё оборудование</span><strong id="dashboardAllChangedRoomsMetric">0</strong><small>Переговорных · открыть список</small></button>
         </section>
@@ -351,8 +358,8 @@
         <details class="analytics-group" open>
           <summary><span>Ключевые графики</span><small>Изменения, добавления, отсутствие и общий парк</small></summary>
           <section class="analytics-grid">
-          <div class="tool-panel smartroom-chart-panel"><div class="panel-head"><h2>Динамика изменений</h2></div><div class="chart-canvas-wrap"><canvas id="smartroomChangesChart"></canvas><p class="chart-state" data-chart-state="smartroomChangesChart" hidden></p></div></div>
-          <div class="tool-panel smartroom-chart-panel"><div class="panel-head"><h2>Добавления и пропажи</h2></div><div class="chart-canvas-wrap"><canvas id="smartroomAddedRemovedChart"></canvas><p class="chart-state" data-chart-state="smartroomAddedRemovedChart" hidden></p></div></div>
+          <div class="tool-panel smartroom-chart-panel"><div class="panel-head"><h2>Динамика изменения MAC-адресов</h2></div><div class="chart-canvas-wrap"><canvas id="smartroomChangesChart"></canvas><p class="chart-state" data-chart-state="smartroomChangesChart" hidden></p></div></div>
+          <div class="tool-panel smartroom-chart-panel"><div class="panel-head"><h2>Добавленные и отсутствующие устройства</h2></div><div class="chart-canvas-wrap"><canvas id="smartroomAddedRemovedChart"></canvas><p class="chart-state" data-chart-state="smartroomAddedRemovedChart" hidden></p></div></div>
           <div class="tool-panel smartroom-chart-panel"><div class="panel-head"><h2>Общее число устройств</h2></div><div class="chart-canvas-wrap"><canvas id="smartroomTotalChart"></canvas><p class="chart-state" data-chart-state="smartroomTotalChart" hidden></p></div></div>
           <div class="tool-panel" data-dashboard-chart="dynamics"><div class="panel-head"><h2>Динамика общего числа устройств</h2></div><div class="bar-list" id="dashboardDynamicsChart"></div></div>
           <div class="tool-panel" data-dashboard-chart="vendors"><div class="panel-head"><h2>Топ производителей</h2></div><div class="bar-list" id="dashboardStatusVendorChart"></div></div>
@@ -367,6 +374,8 @@
           <div class="tool-panel"><div class="panel-head"><h2>Модели</h2></div><div class="bar-list" id="modelChart"></div></div>
           <div class="tool-panel room-occupancy-panel"><div class="panel-head"><div><h2>Заполненность помещений</h2><span class="muted" id="roomOccupancyStatus">Нет данных о распределении устройств</span></div></div><div class="bar-list" id="roomOccupancyChart"></div></div>
           <div class="tool-panel"><div class="panel-head"><h2>Состояние данных</h2></div><div class="bar-list" id="qualityChart"></div></div>
+          <div class="tool-panel"><div class="panel-head"><h2>Без помещения · производители</h2></div><div class="bar-list" id="dashboardMissingRoomVendorChart"></div></div>
+          <div class="tool-panel"><div class="panel-head"><h2>Без помещения · модели</h2></div><div class="bar-list" id="dashboardMissingRoomModelChart"></div></div>
           <div class="tool-panel"><div class="panel-head"><h2>Диаграммы данных</h2><button class="button secondary" id="exportChartsSvgButton">SVG</button></div><div class="bar-list" id="backendChartsPanel"></div></div>
           </section>
         </details>
@@ -817,7 +826,7 @@
   <dialog class="device-dialog dashboard-changes-dialog" id="dashboardAllChangedRoomsDialog">
     <div class="dialog-head"><div><h2>Переговорные: изменилось всё оборудование</h2><p class="muted" id="dashboardAllChangedRoomsPeriod">Сравнение двух финальных обогащений</p></div><button class="icon-button" id="closeDashboardAllChangedRoomsDialog" aria-label="Закрыть">×</button></div>
     <p class="room-coverage-explanation">В список попадают только помещения, где каждое учтённое устройство было добавлено, удалено, перемещено или имело подтверждённое изменение непустого значения. Простое заполнение ранее пустого поля изменением оборудования не считается.</p>
-    <div class="table-wrap dashboard-changes-table"><table><thead><tr><th>Smartroom ID</th><th>ТБ</th><th>Город</th><th>Площадка</th><th>Этаж</th><th>Помещение</th><th>Изменилось</th><th>Добавлено</th><th>Отсутствует</th><th>Изменено</th></tr></thead><tbody id="dashboardAllChangedRoomsBody"><tr><td colspan="10" class="empty-state">Нет помещений, где изменилось всё оборудование.</td></tr></tbody></table></div>
+    <div class="table-wrap dashboard-changes-table"><table><thead><tr><th>Smartroom ID</th><th>ТБ</th><th>Город</th><th>Площадка</th><th>Этаж</th><th>Помещение</th><th>Адрес</th><th>Изменилось</th><th>Добавлено</th><th>Отсутствует</th><th>Изменено</th><th>Детали</th></tr></thead><tbody id="dashboardAllChangedRoomsBody"><tr><td colspan="12" class="empty-state">Нет помещений, где изменилось всё оборудование.</td></tr></tbody></table></div>
   </dialog>
   <dialog class="device-dialog room-chronology-dialog" id="roomChronologyDialog">
     <div class="dialog-head"><div><h2 id="roomChronologyDialogTitle">Хронология помещения</h2><p id="roomChronologyDialogSubtitle" class="muted"></p></div><button class="icon-button" id="closeRoomChronologyDialog" aria-label="Закрыть">×</button></div>
@@ -844,6 +853,7 @@
         <label class="check"><input type="checkbox" data-dashboard-card-toggle="unchanged">Без изменений</label>
         <label class="check"><input type="checkbox" data-dashboard-card-toggle="vendors">Производителей</label>
         <label class="check"><input type="checkbox" data-dashboard-card-toggle="rooms">Помещений</label>
+        <label class="check"><input type="checkbox" data-dashboard-card-toggle="missingRoom">Без помещения</label>
         <label class="check"><input type="checkbox" data-dashboard-card-toggle="changedRooms">Помещений с изменениями</label>
         <label class="check"><input type="checkbox" data-dashboard-card-toggle="allChangedRooms">Всё оборудование изменилось</label>
       </div></fieldset>
@@ -887,12 +897,12 @@
   <script src="frontend/vendor/chart.umd.min.js?v=4.5.1"></script>
   <script src="frontend/ieee-vendor-registry.js?v=20260810.1"></script>
   <script src="frontend/memory-guard.js?v=20260722.9"></script>
-  <script src="frontend/file-readers.js?v=20260722.8"></script>
+  <script src="frontend/file-readers.js?v=1063"></script>
   <script src="frontend/state-persistence.js?v=1062"></script>
   <script src="frontend/record-validation.js?v=1053"></script>
   <script src="frontend/device-identity.js?v=1062"></script>
   <script src="frontend/enrichment-strategy.js?v=1050"></script>
-  <script src="frontend/browser-snapshot-store.js?v=1062"></script>
+  <script src="frontend/browser-snapshot-store.js?v=1063"></script>
   <script src="frontend/time-utils.js?v=1047"></script>
   <script src="frontend/mac-chronology.js?v=1056"></script>
   <script src="frontend/local-analytics.js?v=20260729.3"></script>
@@ -902,7 +912,7 @@
   <script src="frontend/portable-database.js?v=20260810.1"></script>
   <script src="frontend/local-folder-store.js?v=1059"></script>
   <script src="frontend/workspace-file-lifecycle.js?v=20260722.7"></script>
-  <script src="frontend/ddio-overlay.js?v=20260813.1"></script>
+  <script src="frontend/ddio-overlay.js?v=1063"></script>
   <script src="frontend/dashboard-change-tabs.js?v=20260803.1"></script>
   <script src="frontend/guide.js?v=20260722.7"></script>
   <script src="frontend/ui-feedback.js?v=1055"></script>
@@ -911,11 +921,11 @@
   <script src="frontend/smartroom-worker.js?v=1058"></script>
   <script src="frontend/smartroom-store.js?v=1061"></script>
   <script src="frontend/smartroom-charts.js?v=1058"></script>
-  <script src="frontend/room-timeline.js?v=1062"></script>
+  <script src="frontend/room-timeline.js?v=1063"></script>
   <script src="frontend/room-location.js?v=1058"></script>
-  <script src="frontend/smartroom-ui.js?v=1061"></script>
+  <script src="frontend/smartroom-ui.js?v=1063"></script>
   <script src="frontend/table-sorter.js?v=1055"></script>
-  <script src="app.js?v=1062"></script>
+  <script src="app.js?v=1063"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;
@@ -946,7 +956,7 @@
       const fallbackBrowserRecordId = "fallback-v2";
       const fallbackEngineeringOnlyViews = new Set(["single", "compare", "data", "automation", "settings"]);
       const fallbackEngineeringPermissions = ["delete:history", "delete:snapshots", "delete:mappings", "delete:tasks", "delete:ip-mappings", "delete:api-cache", "write:settings", "write:migration"];
-      const fallbackState = { files: [], devices: [], invalid: [], snapshots: [], movementHistory: [], ipMappings: [], localVendorMappings: {}, localModelMappings: {}, activeMappingFileId: "", mappingDisplayMode: "name", theme: localStorage.getItem("mac-analyzer-theme") || "light", engineeringMode: false, engineeringExpiresAt: "", engineeringPermissions: [], ouiLength: 3, ouiStyle: "plain", vendorDetectorSettings: { enabled: true, useOui3: true, useMac5: true, useText: true, useInference: true, confidenceThreshold: 0.6 }, historyEnrichmentSettings: { enabled: true, priorityHistory: true, useOuiMatch: true, useMac5Match: true }, externalApiSettings: { enabled: false, provider: "macvendors", endpoint: "", rateLimit: 25, cacheTtlDays: 30, onlyUnknown: true }, dashboardSettings: { vendor: "", room: "", status: "all", chartLimit: 8, showUnknown: true, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true, changedRooms: true, allChangedRooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60, changeMode: "snapshots", changeDateFrom: "", changeDateTo: "", baselineSnapshotId: "", comparisonSnapshotId: "" } };
+      const fallbackState = { files: [], devices: [], invalid: [], snapshots: [], movementHistory: [], ipMappings: [], localVendorMappings: {}, localModelMappings: {}, activeMappingFileId: "", mappingDisplayMode: "name", theme: localStorage.getItem("mac-analyzer-theme") || "light", engineeringMode: false, engineeringExpiresAt: "", engineeringPermissions: [], ouiLength: 3, ouiStyle: "plain", vendorDetectorSettings: { enabled: true, useOui3: true, useMac5: true, useText: true, useInference: true, confidenceThreshold: 0.6 }, historyEnrichmentSettings: { enabled: true, priorityHistory: true,useOuiMatch: true, useMac5Match: true }, externalApiSettings: { enabled: false, provider: "macvendors", endpoint: "", rateLimit: 25, cacheTtlDays: 30, onlyUnknown: true }, dashboardSettings: { vendor: "", room: "", status: "all", chartLimit: 8, showUnknown: true, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true, missingRoom: true, changedRooms: true, allChangedRooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60, changeMode: "snapshots", changeDateFrom: "", changeDateTo: "", baselineSnapshotId: "", comparisonSnapshotId: "" } };
       let fallbackDashboardRefreshTimer = null;
       let fallbackActiveProcessId = "";
       let fallbackProcessHideTimer = null;
@@ -959,7 +969,8 @@
         ["address", "Адрес"],
         ["room", "Помещение"],
         ["switchIp", "IP коммутатора"],
-        ["switchPort", "Порт коммутатора"]
+        ["switchPort", "Порт коммутатора"],
+        ["authenticationTime", "Время аутентификации устройства"]
       ];
 
       function toast(message) {
@@ -1243,7 +1254,10 @@
       }
 
       async function parseFallbackFile(file) {
-        const fileCreatedAt = file && Number(file.lastModified || 0) > 0 ? new Date(Number(file.lastModified)).toISOString() : new Date().toISOString();
+        const dateInfo = window.MacAnalyzerFileReaders?.clientFileObservationDate
+          ? await window.MacAnalyzerFileReaders.clientFileObservationDate(file)
+          : { date: file && Number(file.lastModified || 0) > 0 ? new Date(Number(file.lastModified)).toISOString() : new Date().toISOString(), source: "file.lastModified" };
+        const fileCreatedAt = dateInfo.date;
         let rows;
         if (/\.(xlsx|xlsm)$/i.test(file.name)) {
           rows = await parseXlsxFile(file);
@@ -1266,6 +1280,7 @@
           id: Date.now() + "-" + Math.random().toString(16).slice(2),
           filename: file.name,
           createdAt: fileCreatedAt,
+          fileDateSource: dateInfo.source,
           fileLastModified: file.lastModified || 0,
           headers,
           rows: rows.slice(1),
@@ -1283,7 +1298,8 @@
           address: /address|addr|адрес|location|локац|стойк/i,
           room: /room|помещ|кабинет|комната/i,
           switchIp: /switch.*ip|ip.*switch|коммут/i,
-          switchPort: /switch.*port|port.*switch|порт/i
+          switchPort: /switch.*port|port.*switch|порт/i,
+          authenticationTime: /authentication.*time|auth.*time|last.*auth|время.*аутентификац|время.*авторизац/i
         };
         return Object.fromEntries(fields.map(([key]) => [key, headers.findIndex((header) => tests[key].test(header))]).map(([key, index]) => [key, index >= 0 ? index : ""]));
       }
@@ -1470,6 +1486,12 @@
         if (!settings.enabled || !settings.useMac5) return "";
         const rules = { ...fallbackBuiltinModels, ...fallbackState.localModelMappings };
         return fallbackRuleValue(mac, rules) || fallbackCompatibleRuleValue(mac, rules);
+      }
+
+      function fallbackAuthenticationTime(value) {
+        const text = String(value ?? "").trim(), serial = Number(text.replace(",", "."));
+        if (!text || !Number.isFinite(serial) || serial < 1 || serial > 2958465) return text;
+        return new Date(Date.UTC(1899, 11, 30) + Math.round(serial * 86400000)).toISOString();
       }
 
       function fallbackKnownModel(value) {
@@ -1832,11 +1854,11 @@
       }
 
       function renderFallbackResults() {
-        if ($("#resultsHeader")) $("#resultsHeader").innerHTML = ["MAC", "OUI", "Vendor", "Model", "IP", "Address", "Room", "Name", "Switch IP", "Switch port", "Source"].map((title) => `<th>${esc(title)}</th>`).join("");
+        if ($("#resultsHeader")) $("#resultsHeader").innerHTML = ["MAC", "OUI", "Vendor", "Model", "IP", "Address", "Room", "Name", "Switch IP", "Switch port", "Время аутентификации устройства", "Source"].map((title) => `<th>${esc(title)}</th>`).join("");
         const visibleDevices = fallbackState.devices.slice(0, window.MacAnalyzerMemoryGuard?.limits?.resultPageSize || 500);
         if ($("#resultsBody")) $("#resultsBody").innerHTML = visibleDevices.length
-          ? visibleDevices.map((device) => `<tr><td>${esc(device.mac)}</td><td>${esc(fallbackFormatOui(device.mac || device.oui))}</td><td>${esc(device.vendor)}</td><td>${esc(device.model)}</td><td>${esc(device.ip)}</td><td>${esc(device.address)}</td><td>${esc(device.room)}</td><td>${esc(device.name)}</td><td>${esc(device.switchIp)}</td><td>${esc(device.switchPort)}</td><td>${esc(device.source)}</td></tr>`).join("")
-          : "<tr><td colspan=\"11\" class=\"empty-state\">No valid MAC data.</td></tr>";
+          ? visibleDevices.map((device) => `<tr><td>${esc(device.mac)}</td><td>${esc(fallbackFormatOui(device.mac || device.oui))}</td><td>${esc(device.vendor)}</td><td>${esc(device.model)}</td><td>${esc(device.ip)}</td><td>${esc(device.address)}</td><td>${esc(device.room)}</td><td>${esc(device.name)}</td><td>${esc(device.switchIp)}</td><td>${esc(device.switchPort)}</td><td>${esc(device.authenticationTime)}</td><td>${esc(device.source)}</td></tr>`).join("")
+          : "<tr><td colspan=\"12\" class=\"empty-state\">No valid MAC data.</td></tr>";
         if ($("#resultCount")) $("#resultCount").textContent = fallbackState.devices.length + " records · показано " + visibleDevices.length;
         renderFallbackTopMetrics();
         renderFallbackAnalysisDashboard();
@@ -1867,6 +1889,7 @@
         const ouiRows = (length) => fallbackTally(devices.map((device) => ({ oui: fallbackFormatOui(device.mac || device.oui, length, "plain") })), "oui", 20);
         const oui3 = ouiRows(3), oui4 = ouiRows(4), oui5 = ouiRows(5);
         const filled = (getter) => devices.filter((device) => String(getter(device) || "").trim()).length;
+        const missingRoomDevices = devices.filter((device) => !String(device.room || "").trim());
         const coverage = [
           ["Производитель", known],
           ["Модель", filled((device) => device.model)],
@@ -1881,6 +1904,7 @@
         if ($("#analysisMetricModels")) $("#analysisMetricModels").textContent = models.size;
         if ($("#analysisMetricUnknown")) $("#analysisMetricUnknown").textContent = unknown;
         if ($("#analysisMetricRooms")) $("#analysisMetricRooms").textContent = rooms.size;
+        if ($("#analysisMetricMissingRoom")) $("#analysisMetricMissingRoom").textContent = missingRoomDevices.length;
         if ($("#analysisMetricSwitches")) $("#analysisMetricSwitches").textContent = switches.size;
         if ($("#analysisMetricInvalid")) $("#analysisMetricInvalid").textContent = fallbackState.invalid.length;
         if ($("#analysisDashboardStatus")) $("#analysisDashboardStatus").textContent = devices.length ? "Dashboard built from current analysis results." : "Run analysis to build dashboard.";
@@ -1894,6 +1918,8 @@
         if ($("#analysisOui5Chart")) $("#analysisOui5Chart").innerHTML = fallbackChartHtml(oui5, "No OUI 5-byte data.");
         if ($("#analysisCoverageChart")) $("#analysisCoverageChart").innerHTML = fallbackChartHtml(coverage, "No coverage data.");
         if ($("#analysisQualityChart")) $("#analysisQualityChart").innerHTML = fallbackChartHtml([["Known", known], ["Unknown", unknown], ["Errors", fallbackState.invalid.length]].filter((item) => item[1] > 0), "No quality issues.");
+        if ($("#analysisMissingRoomVendorChart")) $("#analysisMissingRoomVendorChart").innerHTML = fallbackChartHtml(fallbackTally(missingRoomDevices, "vendor", 20), "Все устройства привязаны к помещениям.");
+        if ($("#analysisMissingRoomModelChart")) $("#analysisMissingRoomModelChart").innerHTML = fallbackChartHtml(fallbackTally(missingRoomDevices, "model", 20), "Все устройства привязаны к помещениям.");
       }
 
       function renderFallbackTopMetrics() {
@@ -2004,7 +2030,7 @@
       }
 
       function normalizeFallbackDashboardSettings(settings = {}) {
-        const defaults = { vendor: "", room: "", status: "all", chartLimit: 8, showUnknown: true, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true, changedRooms: true, allChangedRooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60, changeMode: "snapshots", changeDateFrom: "", changeDateTo: "", baselineSnapshotId: "", comparisonSnapshotId: "" };
+        const defaults = { vendor: "", room: "", status: "all", chartLimit: 8, showUnknown: true, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true, missingRoom: true, changedRooms: true, allChangedRooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60, changeMode: "snapshots", changeDateFrom: "", changeDateTo: "", baselineSnapshotId: "", comparisonSnapshotId: "" };
         return { ...defaults, ...settings, visibleCards: { ...defaults.visibleCards, ...(settings.visibleCards || {}) }, visibleCharts: { ...defaults.visibleCharts, ...(settings.visibleCharts || {}) }, autoRefresh: settings.autoRefresh !== false, refreshInterval: Math.max(10, Math.min(300, Number(settings.refreshInterval || 60))) };
       }
 
@@ -2064,7 +2090,7 @@
         const fill = (selector, selected) => { if (!$(selector)) return; $(selector).innerHTML = options.length ? options.map((item) => `<option value="${esc(item.id)}"${item.id === selected ? " selected" : ""}>${esc(item.name)}${item.date ? ` · ${esc(item.date.slice(0, 10))}` : ""}</option>`).join("") : '<option value="">Нет сохранённых выгрузок</option>'; }; fill("#dashboardBaselineSnapshot", settings.baselineSnapshotId || options.at(-2)?.id || ""); fill("#dashboardComparisonSnapshot", settings.comparisonSnapshotId || options.at(-1)?.id || "");
         put("#dashboardChangeTotal", summary.total); put("#dashboardCriticalCount", summary.critical); put("#dashboardAddedCount", summary.added); put("#dashboardRemovedCount", summary.removed); put("#dashboardModifiedCount", summary.modified); put("#dashboardAllChangedRoomsMetric", fallbackChangeAnalysis.roomCoverage?.allChangedRoomCount);
         const coverageRows = (fallbackChangeAnalysis.roomCoverage?.rooms || []).filter((item) => item.allChanged);
-        if ($("#dashboardAllChangedRoomsBody")) $("#dashboardAllChangedRoomsBody").innerHTML = coverageRows.length ? coverageRows.map((item) => `<tr><td>${esc(item.smartroomId || "—")}</td><td>${esc(item.tb || "—")}</td><td>${esc(item.city || "—")}</td><td>${esc(item.site || "—")}</td><td>${esc(item.floor || "—")}</td><td>${esc(item.room || item.smartroomId || "—")}</td><td><strong>${item.changed} / ${item.total}</strong></td><td>${item.added || 0}</td><td>${item.removed || 0}</td><td>${item.modified || 0}</td></tr>`).join("") : '<tr><td colspan="10" class="empty-state">Нет переговорных, где между выбранными Final изменилось всё оборудование.</td></tr>';
+        if ($("#dashboardAllChangedRoomsBody")) $("#dashboardAllChangedRoomsBody").innerHTML = coverageRows.length ? coverageRows.map((item) => `<tr><td>${esc(item.smartroomId || "—")}</td><td>${esc(item.tb || "—")}</td><td>${esc(item.city || "—")}</td><td>${esc(item.site || "—")}</td><td>${esc(item.floor || "—")}</td><td>${esc(item.room || item.smartroomId || "—")}</td><td>${esc(item.address || "—")}</td><td><strong>${item.changed} / ${item.total}</strong></td><td>${item.added || 0}</td><td>${item.removed || 0}</td><td>${item.modified || 0}</td><td><button type="button" class="link-button" data-dashboard-room="${esc(item.smartroomId || "")}" ${item.smartroomId ? "" : "disabled"}>Открыть хронологию</button></td></tr>`).join("") : '<tr><td colspan="12" class="empty-state">Нет переговорных, где между выбранными Final изменилось всё оборудование.</td></tr>';
         const severity = $("#dashboardChangeSeverityFilter")?.value || "all", type = $("#dashboardChangeTypeFilter")?.value || "all", macQuery = ($("#dashboardChangeMacSearch")?.value || "").toUpperCase().replace(/[^0-9A-F]/g, ""), query = ($("#dashboardChangeSearch")?.value || "").toLowerCase(), rows = fallbackChangeAnalysis.changes.filter((item) => (severity === "all" || item.severity === severity) && (type === "all" || item.type === type) && (!macQuery || fallbackMacHex(item.macFormatted).includes(macQuery)) && (!query || Object.values(item).some((value) => String(value).toLowerCase().includes(query))));
         syncFallbackDashboardChangeTabState();
         $("#dashboardChangesBody").innerHTML = rows.length ? rows.map((item) => `<tr><td><span class="severity-badge severity-${esc(item.severity)}">${esc(item.severity)}</span></td><td>${esc(item.date)}</td><td>${esc(item.macFormatted)}</td><td>${esc(item.typeLabel)}</td><td>-</td><td>-</td><td>-</td><td>${esc(item.fieldLabel)}: ${esc(item.before)} → ${esc(item.after)}</td><td>${esc(item.source)}</td></tr>`).join("") : '<tr><td colspan="9" class="empty-state">Изменений не найдено.</td></tr>';
@@ -2157,6 +2183,8 @@
         metric("#dashboardUnchangedMetric", classify.unchanged.length);
         metric("#dashboardVendorMetric", new Set(classify.all.map((device) => device.vendor).filter((value) => value && value !== "Unknown")).size);
         metric("#dashboardRoomCountMetric", new Set(classify.all.map((device) => device.room).filter(Boolean)).size);
+        const missingRoomDevices = classify.all.filter((device) => !String(device.room || "").trim());
+        metric("#dashboardMissingRoomMetric", missingRoomDevices.length);
         metric("#dashboardChangedHint", `${classify.all.length ? Math.round(classify.changed.length / classify.all.length * 100) : 0}% от всех`);
         metric("#dashboardUnchangedHint", `${classify.all.length ? Math.round(classify.unchanged.length / classify.all.length * 100) : 0}% от всех`);
         $$("[data-dashboard-status]").forEach((button) => button.classList.toggle("active-filter", button.dataset.dashboardStatus === settings.status));
@@ -2166,6 +2194,8 @@
         if ($("#dashboardStatusVendorChart")) $("#dashboardStatusVendorChart").innerHTML = fallbackChartHtml(fallbackTally(devices, "vendor"), "Нет данных производителей.");
         if ($("#dashboardFieldChangesChart")) $("#dashboardFieldChangesChart").innerHTML = fallbackChartHtml(Object.entries(fields).sort((a, b) => b[1] - a[1]).slice(0, 8), "Изменения полей не найдены.");
         if ($("#dashboardMissingChart")) $("#dashboardMissingChart").innerHTML = fallbackChartHtml(fallbackTally(classify.missing, "vendor"), "Отсутствовавших устройств нет.");
+        if ($("#dashboardMissingRoomVendorChart")) $("#dashboardMissingRoomVendorChart").innerHTML = fallbackChartHtml(fallbackTally(missingRoomDevices, "vendor"), "Все устройства привязаны к помещениям.");
+        if ($("#dashboardMissingRoomModelChart")) $("#dashboardMissingRoomModelChart").innerHTML = fallbackChartHtml(fallbackTally(missingRoomDevices, "model"), "Все устройства привязаны к помещениям.");
         if ($("#snapshotMetric")) $("#snapshotMetric").textContent = fallbackState.snapshots.length;
         if ($("#uniqueMacMetric")) $("#uniqueMacMetric").textContent = new Set(devices.map((device) => device.mac).filter(Boolean)).size;
         if ($("#switchMetric")) $("#switchMetric").textContent = new Set(devices.map((device) => device.switchIp).filter(Boolean)).size;
@@ -2359,6 +2389,7 @@
               room: rowValue(file, row, "room"),
               switchIp: rowValue(file, row, "switchIp"),
               switchPort: rowValue(file, row, "switchPort"),
+              authenticationTime: fallbackAuthenticationTime(rowValue(file, row, "authenticationTime")),
               source: file.filename
             };
             const existing = byMac.get(mac);
@@ -2623,11 +2654,12 @@
       $("#closeDashboardChangesDialog")?.addEventListener("click", () => $("#dashboardChangesDialog").close());
       $("#dashboardAllChangedRoomsButton")?.addEventListener("click", () => { renderFallbackChanges(); if (!$("#dashboardAllChangedRoomsDialog").open) $("#dashboardAllChangedRoomsDialog").showModal(); });
       $("#closeDashboardAllChangedRoomsDialog")?.addEventListener("click", () => $("#dashboardAllChangedRoomsDialog").close());
+      $("#dashboardAllChangedRoomsBody")?.addEventListener("click", async (event) => { const button = event.target.closest("[data-dashboard-room]"); if (!button?.dataset.dashboardRoom) return; $("#dashboardAllChangedRoomsDialog")?.close(); const opened = await window.MacAnalyzerSmartroomUI?.openRoom?.(button.dataset.dashboardRoom); if (!opened) toast("Хронология выбранной переговорной не найдена."); });
       $("#saveDashboardSettingsButton")?.addEventListener("click", showFallbackDashboardSettingsDialog);
       $$('[data-dashboard-settings-tab]').forEach((button) => button.addEventListener("click", () => selectFallbackDashboardSettingsTab(button.dataset.dashboardSettingsTab)));
       $("#applyDashboardSettingsButton")?.addEventListener("click", () => saveFallbackDashboardSettings());
       $("#resetDashboardSettingsButton")?.addEventListener("click", () => {
-        fillFallbackDashboardSettingsDialog({ ...fallbackState.dashboardSettings, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true, changedRooms: true, allChangedRooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60 });
+        fillFallbackDashboardSettingsDialog({ ...fallbackState.dashboardSettings, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true, missingRoom: true, changedRooms: true, allChangedRooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60 });
         saveFallbackDashboardSettings();
       });
       $("#closeDashboardSettingsDialog")?.addEventListener("click", () => $("#dashboardSettingsDialog").close());

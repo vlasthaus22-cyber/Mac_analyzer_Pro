@@ -459,6 +459,31 @@ def test_contradictory_lower_priority_identity_does_not_inflate_change_count():
     assert result["changes"][0]["field"] == "mac"
 
 
+def test_dashboard_reports_missing_room_breakdown_and_room_address():
+    devices = [
+        {"mac": "001122334455", "vendor": "Cisco", "model": "Room Kit", "room": ""},
+        {"mac": "AABBCCDDEEFF", "vendor": "Cisco", "model": "Board", "room": "101"},
+        {"mac": "112233445566", "vendor": "Poly", "model": "Unknown", "room": ""},
+    ]
+    metrics = build_dashboard_metrics_payload(devices, [], [], {})
+    assert metrics["metrics"]["missingRoomDevices"] == 2
+    assert metrics["distributions"]["missingRoomVendors"] == [
+        {"label": "Cisco", "value": 1}, {"label": "Poly", "value": 1},
+    ]
+    snapshots = [
+        {"id": "old-room", "createdAt": "2026-08-01T00:00:00Z", "devices": [
+            {"mac": "001122334455", "smartroomId": "SR-1", "address": "ЦА, Москва, Кутузовский проспект, 3 этаж, Переговорная 1", "model": "Old"},
+        ]},
+        {"id": "new-room", "createdAt": "2026-09-01T00:00:00Z", "devices": [
+            {"mac": "001122334455", "smartroomId": "SR-1", "address": "ЦА, Москва, Кутузовский проспект, 3 этаж, Переговорная 1", "model": "New"},
+        ]},
+    ]
+    payload = build_dashboard_payload(snapshots[-1]["devices"], snapshots, {"changeMode": "snapshots"})
+    room = payload["changeAnalysis"]["roomCoverage"]["rooms"][0]
+    assert room["address"] == "ЦА, Москва, Кутузовский проспект, 3 этаж, Переговорная 1"
+    assert room["allChanged"] is True
+
+
 if __name__ == "__main__":
     test_dashboard_filters_metrics_and_export()
     test_dashboard_metrics_payload_counts_known_and_invalid_records()
@@ -476,4 +501,5 @@ if __name__ == "__main__":
     test_dashboard_tracks_smartroom_change_without_false_device_replacement()
     test_persistent_source_conflict_is_not_reported_as_device_change()
     test_contradictory_lower_priority_identity_does_not_inflate_change_count()
+    test_dashboard_reports_missing_room_breakdown_and_room_address()
     print("dashboard service test passed")

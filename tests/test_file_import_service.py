@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from io import BytesIO
 
 from backend.services.workspace.file_import_service import read_table
@@ -61,9 +62,25 @@ def test_read_table_supports_xlsx_for_main_file_import():
     assert data["rows"] == [["AA:BB:CC:00:00:04", "Cisco", "C9500"]]
 
 
+def test_xlsx_export_date_prefers_creation_metadata():
+    workbook = Workbook()
+    workbook.properties.created = datetime(2024, 2, 3, 10, 20, 30)
+    workbook.properties.modified = datetime(2025, 7, 8, 11, 22, 33)
+    workbook.active.append(["MAC"])
+    workbook.active.append(["AA:BB:CC:00:00:07"])
+    buffer = BytesIO()
+    workbook.save(buffer)
+
+    data = read_table("export.xlsx", buffer.getvalue())
+
+    assert data["fileCreatedAt"].startswith("2024-02-03T10:20:30")
+    assert data["fileDateSource"] == "xlsx.created"
+
+
 if __name__ == "__main__":
     test_read_table_supports_csv_tsv_and_json()
     test_read_table_handles_windows_csv_and_plain_text_fallbacks()
     test_read_table_reports_clear_errors_for_bad_files()
     test_read_table_supports_xlsx_for_main_file_import()
+    test_xlsx_export_date_prefers_creation_metadata()
     print("file import service test passed")

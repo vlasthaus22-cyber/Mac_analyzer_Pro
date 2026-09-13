@@ -287,6 +287,67 @@
     return strings;
   }
 
+  function validIsoDate(value) {
+    const parsed = new Date(String(value || "").trim());
+    return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : "";
+  }
+
+  function dateFromFilename(filename) {
+    const name = String(filename || "");
+    const yearFirst = name.match(/(?:^|\D)(20\d{2})[-_. ](0?[1-9]|1[0-2])[-_. ](0?[1-9]|[12]\d|3[01])(?:[T _-](\d{1,2})[-_.:](\d{2})(?:[-_.:](\d{2}))?)?(?:\D|$)/);
+    const dayFirst = name.match(/(?:^|\D)(0?[1-9]|[12]\d|3[01])[-_. ](0?[1-9]|1[0-2])[-_. ](20\d{2})(?:[T _-](\d{1,2})[-_.:](\d{2})(?:[-_.:](\d{2}))?)?(?:\D|$)/);
+    const parts = yearFirst
+      ? { year: yearFirst[1], month: yearFirst[2], day: yearFirst[3], hour: yearFirst[4], minute: yearFirst[5], second: yearFirst[6] }
+      : dayFirst
+        ? { year: dayFirst[3], month: dayFirst[2], day: dayFirst[1], hour: dayFirst[4], minute: dayFirst[5], second: dayFirst[6] }
+        : null;
+    if (!parts) return "";
+    const stamp = Date.UTC(
+      Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+      Number(parts.hour || 0), Number(parts.minute || 0), Number(parts.second || 0),
+    );
+    const parsed = new Date(stamp);
+    if (
+      parsed.getUTCFullYear() !== Number(parts.year) ||
+      parsed.getUTCMonth() !== Number(parts.month) - 1 ||
+      parsed.getUTCDate() !== Number(parts.day)
+    ) return "";
+    return parsed.toISOString();
+  }
+
+  function corePropertyDate(documentNode, localName) {
+    if (!documentNode) return "";
+    const node = Array.from(documentNode.getElementsByTagName("*")).find((item) => (
+      String(item.localName || item.nodeName || "").split(":").at(-1).toLowerCase() === localName
+    ));
+    return validIsoDate(node?.textContent);
+  }
+
+  async function clientFileObservationDate(file) {
+    const filenameDate = dateFromFilename(file?.name);
+    if (filenameDate) return { date: filenameDate, source: "filename" };
+    if (/\.(xlsx|xlsm)$/i.test(String(file?.name || ""))) {
+      try {
+        const directory = await clientZipFileDirectory(file);
+        const bytes = await clientZipEntryBytes(directory, "docProps/core.xml", 1024 * 1024);
+        const core = bytes
+          ? new DOMParser().parseFromString(new TextDecoder("utf-8").decode(bytes), "application/xml")
+          : null;
+        const created = corePropertyDate(core, "created");
+        if (created) return { date: created, source: "xlsx.created" };
+        const modified = corePropertyDate(core, "modified");
+        if (modified) return { date: modified, source: "xlsx.modified" };
+      } catch {
+        // A damaged optional metadata entry must not block importing the data.
+      }
+    }
+    const lastModified = Number(file?.lastModified || 0);
+    if (lastModified > 0 && Number.isFinite(lastModified)) {
+      return { date: new Date(lastModified).toISOString(), source: "file.lastModified" };
+    }
+    return { date: new Date().toISOString(), source: "import-time" };
+  }
+
   async function xlsxSharedStringsFromDirectory(directory, onProgress = () => {}) {
     const entry = directory.entries.get("xl/sharedStrings.xml");
     if (!entry) return [];
@@ -638,6 +699,8 @@
     clientZipDirectory,
     clientZipFileDirectory,
     clientZipEntryBytes,
+    dateFromFilename,
+    clientFileObservationDate,
     clientZipEntries,
     xlsxSharedStringsFromXml,
     xlsxSharedStringsFromDirectory,

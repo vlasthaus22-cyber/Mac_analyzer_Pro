@@ -104,7 +104,7 @@ STORAGE, STORAGE_MIGRATION_REPORT = initialize_storage(ROOT)
 DATABASE_PATH = STORAGE.database
 HOST = os.environ.get("MAC_ANALYZER_HOST", "127.0.0.1")
 PORT = int(os.environ.get("MAC_ANALYZER_PORT", "8080"))
-DEFAULT_RESULT_COLUMNS = ["macFormatted", "oui", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName", "source"]
+DEFAULT_RESULT_COLUMNS = ["macFormatted", "oui", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "authenticationTime", "hostname", "serialNumber", "deviceId", "deviceName", "source"]
 DEFAULT_RESULT_COLUMN_WIDTHS = {
     "macFormatted": 180,
     "oui": 110,
@@ -116,6 +116,7 @@ DEFAULT_RESULT_COLUMN_WIDTHS = {
     "smartroomId": 140,
     "switchIp": 150,
     "switchPort": 100,
+    "authenticationTime": 210,
     "hostname": 160,
     "serialNumber": 160,
     "deviceId": 150,
@@ -144,6 +145,7 @@ DEFAULT_RESULT_LABELS = {
     "smartroomId": "Smartroom ID",
     "switchIp": "IP коммутатора",
     "switchPort": "Порт",
+    "authenticationTime": "Время аутентификации устройства",
     "hostname": "Hostname",
     "serialNumber": "Серийный номер",
     "deviceId": "ID устройства",
@@ -204,7 +206,7 @@ BUILTIN_MODELS = {
     "00231401": "Lenovo ThinkPad X1", "00231402": "Lenovo ThinkPad T14",
     "00231410": "Lenovo Legion 5", "00231420": "Lenovo Yoga 9i",
 }
-DEVICE_FIELDS = ("vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName")
+DEVICE_FIELDS = ("vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "authenticationTime", "hostname", "serialNumber", "deviceId", "deviceName")
 SIGNAL_STATE: dict[str, Any] = {"lastSignal": None, "lastSignalAt": None, "shutdownRequested": False}
 ENRICHMENT_JOBS: dict[str, dict[str, Any]] = {}
 WORKSPACE_FILE_CACHE = WorkspaceFileCache(

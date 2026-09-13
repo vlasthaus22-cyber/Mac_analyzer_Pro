@@ -13,13 +13,14 @@ FIELD_PATTERNS = {
     "room": r"room|office|cabinet|floor|auditorium|РїРѕРјРµС‰|РєР°Р±РёРЅРµС‚",
     "smartroomId": r"smart.?room.*id|id.*smart.?room|smartroom",
     "switchPort": r"switch.*port|port|interface|iface|ifname|if.?name|РїРѕСЂС‚",
+    "authenticationTime": r"authentication.*time|auth.*time|last.*auth|время.*аутентификац|время.*авторизац",
     "hostname": r"host.?name|dns.?name|fqdn|РёРјСЏ.?С…РѕСЃС‚Р°",
     "serialNumber": r"serial|serial.?number|serial.?no|СЃРµСЂРёР№",
     "deviceId": r"device.?id|equipment.?id|asset.?id|id.?device|РёРґРµРЅС‚РёС„РёРєР°С‚РѕСЂ.?СѓСЃС‚СЂРѕР№СЃС‚РІР°",
     "deviceName": r"device.?name|equipment.?name|asset.?name|РЅР°Р·РІР°РЅРёРµ.?СѓСЃС‚СЂРѕР№СЃС‚РІР°",
 }
 
-FIELD_ORDER = ["mac", "vendor", "model", "switchIp", "ip", "address", "room", "smartroomId", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName"]
+FIELD_ORDER = ["mac", "vendor", "model", "switchIp", "ip", "address", "room", "smartroomId", "switchPort", "authenticationTime", "hostname", "serialNumber", "deviceId", "deviceName"]
 
 FIELD_LABELS = {
     "mac": "MAC address",
@@ -31,6 +32,7 @@ FIELD_LABELS = {
     "room": "room",
     "smartroomId": "Smartroom ID",
     "switchPort": "switch port",
+    "authenticationTime": "device authentication time",
     "hostname": "hostname",
     "serialNumber": "serial number",
     "deviceId": "device ID",
@@ -47,6 +49,7 @@ FIELD_KEYWORDS = {
     "room": {"room", "office", "cabinet", "floor", "auditorium"},
     "smartroomId": {"smartroom", "smart", "room", "id"},
     "switchPort": {"port", "interface", "iface", "ifname", "if"},
+    "authenticationTime": {"authentication", "authorization", "auth", "time", "timestamp", "last"},
     "hostname": {"hostname", "host", "dns", "fqdn"},
     "serialNumber": {"serial", "number", "sn"},
     "deviceId": {"device", "equipment", "asset", "id"},
@@ -64,6 +67,7 @@ NEGATIVE_KEYWORDS = {
     "serialNumber": {"ip", "mac", "port"},
     "deviceId": {"ip", "mac", "port", "name"},
     "deviceName": {"ip", "mac", "port", "id"},
+    "authenticationTime": {"ip", "mac", "port", "name", "id"},
 }
 
 
@@ -163,7 +167,7 @@ def _sample_score(field, profile, header_score):
         return profile["ip"] if header_score else profile["ip"] * 0.35
     if field == "switchPort":
         return profile["port"]
-    if field in {"vendor", "model", "address", "room", "smartroomId"}:
+    if field in {"vendor", "model", "address", "room", "smartroomId", "authenticationTime"}:
         return min(profile["text"], 0.45)
     return 0.0
 
@@ -192,7 +196,7 @@ def _semantic_boost(field, header, profile):
     elif field == "switchPort" and profile["port"] >= 0.75:
         boost += 0.18
         reasons.append("sample values look like switch ports")
-    elif field in {"vendor", "model", "address", "room", "smartroomId"} and profile["text"] >= 0.8:
+    elif field in {"vendor", "model", "address", "room", "smartroomId", "authenticationTime"} and profile["text"] >= 0.8:
         boost += 0.1
         reasons.append("sample values are descriptive text")
 

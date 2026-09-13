@@ -34,6 +34,7 @@
         role: file.role || "",
         sheet: file.sheet || "",
         createdAt: file.createdAt || "",
+        fileDateSource: file.fileDateSource || "",
         rowCount: Number(file.rowCount || 0),
         mapping: file.mapping || {},
       })),

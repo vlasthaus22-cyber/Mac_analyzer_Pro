@@ -10,6 +10,7 @@ const mapping = DDIO.detectMapping(headers);
 assert.deepStrictEqual(mapping, {
   deviceId: "",
   possibleIps: "",
+  mac: "",
   reservationMac: 1,
   reservationIp: "",
   leaseMac: 2,
@@ -31,6 +32,7 @@ const wideMapping = DDIO.detectMapping(wideHeaders);
 assert.deepStrictEqual(wideMapping, {
   deviceId: "",
   possibleIps: "",
+  mac: "",
   reservationMac: 9,
   reservationIp: 10,
   leaseMac: 12,
@@ -113,6 +115,7 @@ const deviceMapping = DDIO.detectMapping(deviceHeaders);
 assert.deepStrictEqual(deviceMapping, {
   deviceId: 0,
   possibleIps: "",
+  mac: "",
   reservationMac: "",
   reservationIp: 1,
   leaseMac: "",
@@ -136,5 +139,29 @@ const deviceChanges = DDIO.switchChanges(deviceTracker);
 const deviceCandidates = new Map();
 DDIO.collectCandidate(["sw-room-1", "192.168.10.2", "192.168.10.3"], deviceMapping, deviceChanges, deviceCandidates);
 assert.deepStrictEqual(deviceCandidates.get("001122334455").possibleIps, ["192.168.10.2", "192.168.10.3"]);
+
+const genericMapping = DDIO.detectMapping([
+  { name: "MAC устройства", index: 0 },
+  { name: "IP устройства", index: 9 },
+]);
+assert.deepStrictEqual(genericMapping, {
+  deviceId: "",
+  possibleIps: "",
+  mac: 0,
+  reservationMac: "",
+  reservationIp: "",
+  leaseMac: "",
+  leaseIp: "",
+  ip: 9,
+});
+assert.strictEqual(DDIO.validateMapping(genericMapping).genericComplete, true);
+const genericDevices = [{ mac: "00:11:22:33:44:55", ip: "" }];
+const genericIndex = DDIO.buildPossibleIpIndex(
+  [["00:11:22:33:44:55", "", "", "", "", "", "", "", "", "192.168.50.10"]],
+  genericMapping,
+);
+assert.strictEqual(DDIO.applyIpFallback(genericDevices, genericIndex), 1);
+assert.equal(genericDevices[0].ip, "192.168.50.10");
+assert.equal(genericDevices[0].fieldSources.ip, "DDIO");
 
 console.log("frontend_ddio_overlay.test.js: ok");

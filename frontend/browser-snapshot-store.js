@@ -1275,7 +1275,7 @@
       if (vendor && String(row?.vendor || "") !== vendor) return false;
       if (!query) return true;
       const searchable = [row?.mac, row?.macFormatted, row?.vendor, row?.model, row?.ip, row?.address, row?.room,
-        row?.smartroomId, row?.smartroom_id, row?.switchIp, row?.switch_ip, row?.switchPort, row?.switch_port,
+        row?.smartroomId, row?.smartroom_id, row?.switchIp, row?.switch_ip, row?.switchPort, row?.switch_port, row?.authenticationTime, row?.authentication_time,
         row?.hostname, row?.host_name, row?.serialNumber, row?.serial_number, row?.serial,
         row?.deviceId, row?.device_id, row?.deviceName, row?.device_name, row?.internalDeviceId,
         row?.source, row?.raw, row?.row].map((value) => String(value || "")).join(" ").toLowerCase();
@@ -1361,7 +1361,7 @@
     const deviceMac = String(device?.mac || device?.macFormatted || device?.mac_formatted || "").replace(/[^0-9a-f]/gi, "").toUpperCase();
     const searchable = [device?.mac, device?.macFormatted, device?.vendor, device?.model, device?.ip, device?.address,
       device?.room, device?.smartroomId, device?.smartroom_id, device?.switchIp, device?.switch_ip,
-      device?.switchPort, device?.switch_port, device?.hostname, device?.host_name,
+      device?.switchPort, device?.switch_port, device?.authenticationTime, device?.authentication_time, device?.hostname, device?.host_name,
       device?.serialNumber, device?.serial_number, device?.serial, device?.deviceId, device?.device_id,
       device?.deviceName, device?.device_name, device?.internalDeviceId, device?.source]
       .map((value) => String(value || "")).join(" ").toLowerCase();
@@ -1381,6 +1381,8 @@
     const oui3Rows = new Map();
     const oui4Rows = new Map();
     const oui5Rows = new Map();
+    const missingRoomVendors = new Map();
+    const missingRoomModels = new Map();
     const switches = new Set();
     let devices = 0;
     let known = 0;
@@ -1389,6 +1391,7 @@
     let withIp = 0;
     let withSwitch = 0;
     let withModel = 0;
+    let missingRoomDevices = 0;
     let autoVendors = 0;
     let autoModels = 0;
     const unknown = new Set(["", "unknown", "не определено", "неизвестный вендор", "unknown vendor"]);
@@ -1414,6 +1417,11 @@
         if (!unknown.has(vendor.toLowerCase())) known += 1;
         if (String(device?.address || "").trim()) withAddress += 1;
         if (room) withRoom += 1;
+        else {
+          missingRoomDevices += 1;
+          tallyRows(missingRoomVendors, vendor || "Unknown");
+          tallyRows(missingRoomModels, model || "Unknown");
+        }
         if (String(device?.ip || "").trim()) withIp += 1;
         if (switchIp) { withSwitch += 1; switches.add(switchIp); }
         if (model) withModel += 1;
@@ -1440,6 +1448,7 @@
       withIp,
       withSwitch,
       withModel,
+      missingRoomDevices,
       autoVendors,
       autoModels,
       uniqueOui3: oui3Rows.size,
@@ -1452,6 +1461,8 @@
       oui3: rankedRows(oui3Rows, limit),
       oui4: rankedRows(oui4Rows, limit),
       oui5: rankedRows(oui5Rows, limit),
+      missingRoomVendors: rankedRows(missingRoomVendors, limit),
+      missingRoomModels: rankedRows(missingRoomModels, limit),
       metadata: { ...metadata, devices: [], invalid: [] },
     };
   }
@@ -1511,6 +1522,7 @@
       floor: String(device?.floor || device?.floorName || device?.floor_name || ""),
       switchIp: String(device?.switchIp || device?.switch_ip || ""),
       switchPort: String(device?.switchPort || device?.switch_port || ""),
+      authenticationTime: String(device?.authenticationTime || device?.authentication_time || device?.authTime || ""),
       hostname: String(device?.hostname || device?.host_name || ""),
       serialNumber: String(device?.serialNumber || device?.serial_number || device?.serial || ""),
       deviceId: String(device?.deviceId || device?.device_id || ""),
@@ -1670,15 +1682,17 @@
 
   function comparisonRoom(device = {}) {
     const smartroomId = String(device.smartroomId || device.smartroom_id || "").trim();
-    const room = String(device.room || "").trim();
+    const location = window.MacAnalyzerRoomLocation?.parse?.(device) || {};
+    const room = String(location.room || device.room || "").trim();
     return {
       key: smartroomId ? `smartroom:${smartroomId.toLowerCase()}` : room ? `room:${room.toLowerCase()}` : "",
       smartroomId,
       room,
-      tb: String(device.tb || "").trim(),
-      city: String(device.city || "").trim(),
-      site: String(device.site || "").trim(),
-      floor: String(device.floor || "").trim(),
+      tb: String(location.tb || device.tb || "").trim(),
+      city: String(location.city || device.city || "").trim(),
+      site: String(location.site || device.site || "").trim(),
+      floor: String(location.floor || device.floor || "").trim(),
+      address: String(device.address || location.path || "").trim(),
     };
   }
 

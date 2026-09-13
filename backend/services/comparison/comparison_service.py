@@ -19,6 +19,7 @@ FIELD_TITLES = {
     "smartroomId": "Smartroom ID",
     "switchIp": "Коммутатор",
     "switchPort": "Порт",
+    "authenticationTime": "Время аутентификации устройства",
     "source": "Источник",
     "mac": "MAC / физический адрес",
     "hostname": "Hostname",

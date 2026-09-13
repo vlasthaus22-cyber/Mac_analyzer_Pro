@@ -209,15 +209,30 @@ def _room_descriptor(device: dict[str, Any] | None) -> dict[str, str]:
     device = device if isinstance(device, dict) else {}
     smartroom_id = _text(device.get("smartroomId") or device.get("smartroom_id"))
     room = _text(device.get("room") or device.get("room_name"))
+    address = _text(device.get("address") or device.get("physicalAddress"))
+    tb = _text(device.get("tb") or device.get("territorialBank") or device.get("territorial_bank"))
+    city = _text(device.get("city") or device.get("city_name"))
+    site = _text(device.get("site") or device.get("siteName") or device.get("site_name"))
+    floor = _text(device.get("floor") or device.get("floorName") or device.get("floor_name"))
+    path = next((value for value in (address, room) if len(value.split(",")) >= 5), "")
+    if path:
+        parts = [part.strip() for part in path.split(",")]
+        tb = tb or parts[0]
+        city = city or parts[1]
+        site = site or parts[2]
+        floor = floor or parts[3]
+        if not room or room == path:
+            room = ", ".join(parts[4:]).strip()
     key = f"smartroom:{smartroom_id.casefold()}" if smartroom_id else (f"room:{room.casefold()}" if room else "")
     return {
         "key": key,
         "smartroomId": smartroom_id,
         "room": room,
-        "tb": _text(device.get("tb") or device.get("territorialBank") or device.get("territorial_bank")),
-        "city": _text(device.get("city") or device.get("city_name")),
-        "site": _text(device.get("site") or device.get("siteName") or device.get("site_name")),
-        "floor": _text(device.get("floor") or device.get("floorName") or device.get("floor_name")),
+        "tb": tb,
+        "city": city,
+        "site": site,
+        "floor": floor,
+        "address": address or path,
     }
 
 
@@ -745,6 +760,7 @@ def build_dashboard_payload(
         "unchanged": unchanged_scope,
     }
     filtered = status_devices[normalized["status"]]
+    missing_room_scope = [device for device in current_scope if not _text(device.get("room") or device.get("room_name"))]
     chart_payload = build_chart_payload(filtered, snapshots or [])
     fleet = dashboard_upload_fleet(snapshots or [])
     status_charts = _status_charts({**classified, "missing": missing_scope}, filtered, normalized["chartLimit"])
@@ -757,6 +773,14 @@ def build_dashboard_payload(
             "value": int(item.get("count") or 0),
         }
         for item in (fleet.get("series") or [])[-20:]
+    ]
+    status_charts["missingRoomVendors"] = [
+        {"label": label, "value": count}
+        for label, count in Counter(_text(device.get("vendor")) or "Unknown" for device in missing_room_scope).most_common(normalized["chartLimit"])
+    ]
+    status_charts["missingRoomModels"] = [
+        {"label": label, "value": count}
+        for label, count in Counter(_text(device.get("model")) or "Unknown" for device in missing_room_scope).most_common(normalized["chartLimit"])
     ]
     vendors = sorted({_text(device.get("vendor")) for device in devices if _text(device.get("vendor"))})
     rooms = sorted({_text(device.get("room")) for device in devices if _text(device.get("room"))})
@@ -783,6 +807,7 @@ def build_dashboard_payload(
                 if _text(device.get("smartroomId") or device.get("smartroom_id") or device.get("room")) not in {"", "Unknown"}
             }),
             "switches": len({_text(device.get("switchIp") or device.get("switch_ip")) for device in filtered if _text(device.get("switchIp") or device.get("switch_ip"))}),
+            "missingRoomDevices": len(missing_room_scope),
         },
         "statusCounts": {key: len(value) for key, value in status_devices.items()},
         "uploadFleet": fleet,
@@ -829,6 +854,7 @@ def build_dashboard_metrics_payload(
     with_model = sum(bool(item) for item in models)
     with_address = sum(bool(value(device, "address")) for device in filtered)
     with_room = sum(bool(item) for item in rooms)
+    missing_room_devices = [device for device, room in zip(filtered, rooms) if not room]
     with_ip = sum(bool(value(device, "ip")) for device in filtered)
     with_switch = sum(bool(item) for item in switches)
     auto_vendors = sum(
@@ -854,6 +880,7 @@ def build_dashboard_metrics_payload(
             "invalid": len(invalid or []),
             "withAddress": with_address,
             "withRoom": with_room,
+            "missingRoomDevices": len(missing_room_devices),
             "withIp": with_ip,
             "withSwitch": with_switch,
             "withModel": with_model,
@@ -871,6 +898,8 @@ def build_dashboard_metrics_payload(
             "oui3": ranked(oui3),
             "oui4": ranked(oui4),
             "oui5": ranked(oui5),
+            "missingRoomVendors": ranked([value(device, "vendor") or "Unknown" for device in missing_room_devices]),
+            "missingRoomModels": ranked([value(device, "model") or "Unknown" for device in missing_room_devices]),
         },
         "filters": payload.get("filters", {}),
         "settings": payload.get("settings", {}),

@@ -19,6 +19,9 @@ assert.deepEqual(
   { headers: ["MAC", "Vendor"], rows: [["00:11:22:33:44:55", "Cisco"]] },
 );
 assert.equal(readers.clientDelimiter("MAC;Vendor\n001122;Cisco", "sample.csv"), ";");
+assert.equal(readers.dateFromFilename("DDIO_2026-09-13_14-25-30.xlsx"), "2026-09-13T14:25:30.000Z");
+assert.equal(readers.dateFromFilename("Final 13.09.2026.xlsx"), "2026-09-13T00:00:00.000Z");
+assert.equal(readers.dateFromFilename("Final 31.02.2026.xlsx"), "", "invalid calendar dates must be rejected");
 const utf8Csv = "MAC,Address\n00:11:22:33:44:55,Ленина 1\n";
 const utf8Bytes = new TextEncoder().encode(utf8Csv);
 const decodedUtf8 = readers.readClientTextFile({

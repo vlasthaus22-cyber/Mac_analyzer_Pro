@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Iterable
 
 from backend.services.identity.device_identity_service import (
@@ -18,7 +19,7 @@ from .workspace_cache_service import WorkspaceFileCache, workspace_row_iterator
 
 ENRICH_FIELDS = [
     "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp",
-    "switchPort", "hostname", "serialNumber", "deviceId", "deviceName",
+    "switchPort", "authenticationTime", "hostname", "serialNumber", "deviceId", "deviceName",
 ]
 
 NO_EXPANSION = "NO_EXPANSION"
@@ -83,6 +84,19 @@ def read_mapped(row: list[Any], mapping: dict[str, Any], field: str) -> str:
     return str(row[position] or "").strip()
 
 
+def normalize_authentication_time(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        serial = float(text.replace(",", "."))
+    except ValueError:
+        return text
+    if not 1 <= serial <= 2_958_465:
+        return text
+    return (datetime(1899, 12, 30, tzinfo=timezone.utc) + timedelta(days=serial)).isoformat().replace("+00:00", "Z")
+
+
 def compile_mapping(mapping: dict[str, Any] | None) -> dict[str, int]:
     compiled: dict[str, int] = {}
     for field, value in (mapping or {}).items():
@@ -114,6 +128,7 @@ def row_to_device(row: list[Any], file_info: dict[str, Any], row_index: int, com
     }
     for field in ENRICH_FIELDS:
         device[field] = read_mapped(row, mapping, field)
+    device["authenticationTime"] = normalize_authentication_time(device.get("authenticationTime"))
     if not [candidate for candidate in identity_candidates(device) if not candidate.startswith("internal-id:")]:
         return invalid_identity_record(
             row=row,

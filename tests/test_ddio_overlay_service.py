@@ -1,7 +1,7 @@
 from copy import deepcopy
 
 from backend.services.identity.device_identity_service import build_identity_index
-from backend.services.workspace.ddio_overlay_service import build_ddio_overlay
+from backend.services.workspace.ddio_overlay_service import apply_ddio_ip_fallback, build_ddio_device_index, build_ddio_overlay
 from backend.services.workspace.enrichment_service import enrich_files
 from server import merge_switch_ip_changes_with_history
 
@@ -111,6 +111,21 @@ def test_ddio_switch_change_is_derived_from_previous_final_state():
     assert overlay["001122334455"]["ip"] == "192.168.1.50"
 
 
+def test_ddio_generic_device_mac_and_ip_fill_only_a_blank_ip():
+    index = build_ddio_device_index(
+        [["00:11:22:33:44:55", "192.168.50.10"]],
+        {"mac": 0, "ip": 1},
+    )
+    devices = [
+        {"mac": "001122334455", "ip": ""},
+        {"mac": "001122334455", "ip": "192.168.50.99"},
+    ]
+    assert apply_ddio_ip_fallback(devices, index) == 1
+    assert devices[0]["ip"] == "192.168.50.10"
+    assert devices[0]["fieldSources"]["ip"] == "DDIO"
+    assert devices[1]["ip"] == "192.168.50.99"
+
+
 def test_enrichment_fills_blanks_without_overwriting_primary_values():
     enriched = enrich_files(
         [
@@ -138,5 +153,6 @@ if __name__ == "__main__":
     test_ddio_requires_ip_and_at_least_one_mac_column()
     test_ddio_uses_independent_reservation_and_lease_ip_columns_after_h()
     test_ddio_switch_change_is_derived_from_previous_final_state()
+    test_ddio_generic_device_mac_and_ip_fill_only_a_blank_ip()
     test_enrichment_fills_blanks_without_overwriting_primary_values()
     print("DDIO overlay service test passed")

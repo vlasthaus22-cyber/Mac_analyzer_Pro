@@ -87,7 +87,10 @@
       for (const alias of deviceAliases(device)) {
         if (ambiguous.has(alias)) continue;
         const candidate = aliases.get(alias);
-        if (candidate && !used.has(candidate)) { match = candidate; break; }
+        if (candidate && !used.has(candidate)) {
+          match = candidate;
+          break;
+        }
       }
       if (!match || used.has(match)) added.push(device);
       else {
@@ -229,16 +232,18 @@
 
   function roomDescriptor(device = {}) {
     const smartroomId = value(device, "smartroomId", "smartroom_id");
-    const room = value(device, "room", "room_name");
+    const location = window.MacAnalyzerRoomLocation?.parse?.(device) || {};
+    const room = text(location.room) || value(device, "room", "room_name");
     const key = smartroomId ? `smartroom:${smartroomId.toLowerCase()}` : room ? `room:${room.toLowerCase()}` : "";
     return {
       key,
       smartroomId,
       room,
-      tb: value(device, "tb", "territorialBank", "territorial_bank"),
-      city: value(device, "city", "city_name"),
-      site: value(device, "site", "siteName", "site_name"),
-      floor: value(device, "floor", "floorName", "floor_name"),
+      tb: text(location.tb) || value(device, "tb", "territorialBank", "territorial_bank"),
+      city: text(location.city) || value(device, "city", "city_name"),
+      site: text(location.site) || value(device, "site", "siteName", "site_name"),
+      floor: text(location.floor) || value(device, "floor", "floorName", "floor_name"),
+      address: value(device, "address", "physicalAddress") || text(location.path),
     };
   }
 
@@ -274,13 +279,24 @@
     }
     paired.added.forEach((device) => mark(device, deviceAliases(device)[0], true, "added"));
     paired.removed.forEach((device) => mark(device, deviceAliases(device)[0], true, "removed"));
-    const result = Array.from(rooms.values()).map((row) => {
-      const total = row.members.size;
-      const changed = Array.from(row.members.values()).filter(Boolean).length;
-      const { members, ...metadata } = row;
-      return { ...metadata, total, changed, unchanged: total - changed, allChanged: total > 0 && changed === total };
-    }).sort((left, right) => Number(right.allChanged) - Number(left.allChanged) || String(left.room || left.smartroomId).localeCompare(String(right.room || right.smartroomId), "ru"));
-    return { totalRooms: result.length, changedRooms: result.filter((row) => row.changed > 0).length, allChangedRoomCount: result.filter((row) => row.allChanged).length, rooms: result };
+    const result = Array.from(rooms.values())
+      .map((row) => {
+        const total = row.members.size;
+        const changed = Array.from(row.members.values()).filter(Boolean).length;
+        const { members, ...metadata } = row;
+        return { ...metadata, total, changed, unchanged: total - changed, allChanged: total > 0 && changed === total };
+      })
+      .sort(
+        (left, right) =>
+          Number(right.allChanged) - Number(left.allChanged) ||
+          String(left.room || left.smartroomId).localeCompare(String(right.room || right.smartroomId), "ru"),
+      );
+    return {
+      totalRooms: result.length,
+      changedRooms: result.filter((row) => row.changed > 0).length,
+      allChangedRoomCount: result.filter((row) => row.allChanged).length,
+      rooms: result,
+    };
   }
 
   function events(room) {
@@ -385,5 +401,12 @@
     return { rows, tableHtml: rowHtml, timelineHtml };
   }
 
-  window.MacAnalyzerRoomTimeline = Object.freeze({ events, compareLatest, compareFleetRooms, hydrateKnownHistory, pairDevices, render });
+  window.MacAnalyzerRoomTimeline = Object.freeze({
+    events,
+    compareLatest,
+    compareFleetRooms,
+    hydrateKnownHistory,
+    pairDevices,
+    render,
+  });
 })();

@@ -162,4 +162,29 @@ assert.equal(fleetCoverage.totalRooms, 2);
 assert.equal(fleetCoverage.allChangedRoomCount, 1);
 assert.equal(fleetCoverage.rooms.find((item) => item.smartroomId === "SR-1").allChanged, false);
 assert.equal(fleetCoverage.rooms.find((item) => item.smartroomId === "SR-2").allChanged, true);
+global.MacAnalyzerRoomLocation = require("../frontend/room-location.js");
+const locationCoverage = timeline.compareFleetRooms(
+  [{ mac: "001122334455", smartroomId: "SR-3", address: "ЦА, Москва, Кутузовский проспект, 3 этаж, Переговорная 1" }],
+  [
+    {
+      mac: "001122334455",
+      smartroomId: "SR-3",
+      address: "ЦА, Москва, Кутузовский проспект, 3 этаж, Переговорная 1",
+      switchPort: "Gi2",
+    },
+  ],
+);
+assert.deepEqual(
+  Object.fromEntries(
+    ["tb", "city", "site", "floor", "room", "address"].map((field) => [field, locationCoverage.rooms[0][field]]),
+  ),
+  {
+    tb: "ЦА",
+    city: "Москва",
+    site: "Кутузовский проспект",
+    floor: "3 этаж",
+    room: "Переговорная 1",
+    address: "ЦА, Москва, Кутузовский проспект, 3 этаж, Переговорная 1",
+  },
+);
 console.log("frontend room timeline test passed");

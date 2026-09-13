@@ -18,8 +18,9 @@ CANONICAL_ALIASES = {
 STABLE_FIELDS = ("mac", "serialNumber", "deviceId", "hostname")
 MERGE_FIELDS = (
     "mac", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp",
-    "switchPort", "hostname", "serialNumber", "deviceId", "deviceName",
+    "switchPort", "authenticationTime", "hostname", "serialNumber", "deviceId", "deviceName",
 )
+CONFLICT_FIELDS = tuple(field for field in MERGE_FIELDS if field != "authenticationTime")
 
 MATCH_CONFIDENCE = {
     "internal-id": ("Exact", 1.0),
@@ -241,7 +242,7 @@ def merge_device_records(
             continue
         existing = merged.get(key)
         has_existing = existing not in ("", None)
-        if has_existing and str(existing).strip() != str(value).strip() and key in MERGE_FIELDS:
+        if has_existing and str(existing).strip() != str(value).strip() and key in CONFLICT_FIELDS:
             selected = existing if prefer_existing else value
             conflict = {
                 "field": key,

@@ -11,10 +11,13 @@ def read_xlsx(content: bytes, sheet_name: str | None = None) -> dict[str, Any]:
     workbook = load_workbook(BytesIO(content), read_only=True, data_only=True)
     sheet = workbook[sheet_name] if sheet_name else workbook.active
     rows = [list(row) for row in sheet.iter_rows(values_only=True)]
+    workbook_date = workbook.properties.created or workbook.properties.modified
+    date_source = "xlsx.created" if workbook.properties.created else ("xlsx.modified" if workbook.properties.modified else "")
+    date_value = workbook_date.isoformat() if workbook_date else ""
     if not rows:
-        return {"sheet": sheet.title, "headers": [], "rows": []}
+        return {"sheet": sheet.title, "headers": [], "rows": [], "fileCreatedAt": date_value, "fileDateSource": date_source}
     headers = [str(value or f"Column {index + 1}") for index, value in enumerate(rows[0])]
-    return {"sheet": sheet.title, "headers": headers, "rows": [["" if value is None else str(value) for value in row] for row in rows[1:]]}
+    return {"sheet": sheet.title, "headers": headers, "rows": [["" if value is None else str(value) for value in row] for row in rows[1:]], "fileCreatedAt": date_value, "fileDateSource": date_source}
 
 
 def read_xls(content: bytes, sheet_name: str | None = None) -> dict[str, Any]:

@@ -42,6 +42,21 @@ def test_enrichment_primary_and_merge_strategies():
     assert merged["devices"][1]["source"] == "extra.csv"
 
 
+def test_enrichment_preserves_device_authentication_time_column():
+    result = enrich_files([{
+        "name": "auth.csv",
+        "mapping": {"mac": 0, "authenticationTime": 1},
+        "rows": [["MAC", "Время аутентификации устройства"], ["00:11:22:33:44:55", "2026-09-13 10:15:00"]],
+    }])
+    assert result["devices"][0]["authenticationTime"] == "2026-09-13 10:15:00"
+    serial = enrich_files([{
+        "name": "auth.xlsx", "mapping": {"mac": 0, "authenticationTime": 1},
+        "rows": [["MAC", "Auth"], ["00:11:22:33:44:66", "46000.5"]],
+    }])
+    assert serial["devices"][0]["authenticationTime"] == "2025-12-09T12:00:00Z"
+
+
 if __name__ == "__main__":
     test_enrichment_primary_and_merge_strategies()
+    test_enrichment_preserves_device_authentication_time_column()
     print("enrichment service test passed")

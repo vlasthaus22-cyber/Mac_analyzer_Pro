@@ -7,7 +7,7 @@ from backend.services.identity.device_identity_service import normalize_ip
 from .enrichment_service import compile_mapping, normalize_mac, read_mapped
 
 
-DDIO_FIELDS = ("deviceId", "reservationMac", "reservationIp", "leaseMac", "leaseIp", "ip", "possibleIps")
+DDIO_FIELDS = ("deviceId", "mac", "ip", "reservationMac", "reservationIp", "leaseMac", "leaseIp", "possibleIps")
 
 
 def parse_possible_ips(value: Any) -> list[str]:
@@ -38,10 +38,11 @@ def validate_ddio_mapping(mapping: Any) -> dict[str, int]:
     result = {field: compiled[field] for field in DDIO_FIELDS if field in compiled}
     reservation_complete = "reservationMac" in result and ("reservationIp" in result or "ip" in result)
     lease_complete = "leaseMac" in result and ("leaseIp" in result or "ip" in result)
+    generic_complete = "mac" in result and "ip" in result
     device_complete = "deviceId" in result and any(field in result for field in ("reservationIp", "leaseIp", "ip", "possibleIps"))
-    if not reservation_complete and not lease_complete and not device_complete:
+    if not generic_complete and not reservation_complete and not lease_complete and not device_complete:
         raise ValueError(
-            "DDIO: выберите пару MAC + IP для резервации/аренды "
+            "DDIO: выберите MAC устройства + IP устройства, пару MAC + IP для резервации/аренды "
             "или Device ID + IP/Possible IPs"
         )
     return result
@@ -72,12 +73,18 @@ def build_ddio_device_index(
             continue
         reservation_mac = normalize_mac(read_mapped(row, compiled, "reservationMac"))
         lease_mac = normalize_mac(read_mapped(row, compiled, "leaseMac"))
+        generic_mac = normalize_mac(read_mapped(row, compiled, "mac"))
+        generic_ip = normalize_ip(read_mapped(row, compiled, "ip"))
         reservation_ip_field = "reservationIp" if "reservationIp" in compiled else "ip"
         lease_ip_field = "leaseIp" if "leaseIp" in compiled else "ip"
         reservation_ip = normalize_ip(read_mapped(row, compiled, reservation_ip_field))
         lease_ip = normalize_ip(read_mapped(row, compiled, lease_ip_field))
         device_id = read_mapped(row, compiled, "deviceId").casefold() if "deviceId" in compiled else ""
         explicit_possible = parse_possible_ips(read_mapped(row, compiled, "possibleIps")) if "possibleIps" in compiled else []
+        if generic_mac and generic_ip:
+            candidate = candidates.setdefault(generic_mac, {"ip": generic_ip, "match": "mac/ip", "possibleIps": []})
+            candidate.update({"ip": generic_ip, "match": "mac/ip"})
+            candidate["possibleIps"] = list(dict.fromkeys([*candidate.get("possibleIps", []), generic_ip]))
         if reservation_mac and reservation_ip:
             candidate = candidates.setdefault(reservation_mac, {"ip": reservation_ip, "match": "reservation", "possibleIps": []})
             candidate["possibleIps"] = list(dict.fromkeys([*candidate.get("possibleIps", []), reservation_ip]))
@@ -93,7 +100,7 @@ def build_ddio_device_index(
                     "match": "device-id" if values else "device-id/possible-ips",
                     "possibleIps": list(dict.fromkeys([*values, *explicit_possible])),
                 }
-        for mac in (reservation_mac, lease_mac):
+        for mac in (generic_mac, reservation_mac, lease_mac):
             if mac and explicit_possible:
                 candidate = candidates.setdefault(mac, {"ip": "", "match": "possible-ips", "possibleIps": []})
                 candidate["possibleIps"] = list(dict.fromkeys([*candidate.get("possibleIps", []), *explicit_possible]))

@@ -102,7 +102,7 @@ def test_user_requested_frontend_parity_blocks_are_present():
             'api("/files/import-binary",{method:"POST",headers:{"Content-Type":"application/octet-stream","X-File-Name":encodeURIComponent(file.name),"X-Sheet-Name":"","X-Preview-Rows":"100"},body:file})',
             "function fileInfoDate(file)",
             "function primaryFileCreatedAt()",
-            "const fileCreatedAt=fileInfoDate(pendingSingleFile);",
+            "const fileCreatedAt=await resolveFileInfoDate(pendingSingleFile);",
             "mapping:singleManualMapping(),createdAt:fileCreatedAt,saveHistory:true,saveSnapshot:true",
             "async function clientXlsxTable(file, onProgress = () => {}, options = {})",
             "async function xlsxWorksheetRows(directory, sheetPath, sharedStrings, onProgress = () => {}, options = {})",
