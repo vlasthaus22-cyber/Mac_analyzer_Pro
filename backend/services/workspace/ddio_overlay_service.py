@@ -42,8 +42,7 @@ def validate_ddio_mapping(mapping: Any) -> dict[str, int]:
     device_complete = "deviceId" in result and any(field in result for field in ("reservationIp", "leaseIp", "ip", "possibleIps"))
     if not generic_complete and not reservation_complete and not lease_complete and not device_complete:
         raise ValueError(
-            "DDIO: выберите MAC устройства + IP устройства, пару MAC + IP для резервации/аренды "
-            "или Device ID + IP/Possible IPs"
+            "DDIO: выберите полную пару MAC/IP резервации и/или полную пару MAC/IP аренды"
         )
     return result
 
@@ -113,7 +112,10 @@ def apply_ddio_ip_fallback(
     """Fill a missing device IP from DDIO while preserving provenance."""
     updated = 0
     for device in devices:
-        if str(device.get("ip") or "").strip():
+        # Human-readable placeholders (for example ``Не определено`` or ``-``)
+        # are not usable IP addresses.  Treat a value as already filled only
+        # after the same IP normalization used by the DDIO index.
+        if normalize_ip(device.get("ip")):
             continue
         mac = normalize_mac(device.get("mac") or device.get("macFormatted"))
         device_id = str(device.get("deviceId") or device.get("device_id") or "").strip().casefold()

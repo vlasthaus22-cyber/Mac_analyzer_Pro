@@ -6961,6 +6961,7 @@ class AppHandler(BaseHTTPRequestHandler):
                         "loaded": bool(ddio_file),
                         "switchIpChanges": len(switch_ip_changes),
                         "newIpHints": len(ddio_overlay),
+                        "ipFallbacks": ddio_ip_fallbacks,
                     },
                     "diagnostics": diagnostics,
                     "creationDecisions": decisions,

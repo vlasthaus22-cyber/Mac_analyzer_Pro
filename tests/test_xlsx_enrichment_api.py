@@ -307,7 +307,99 @@ def test_third_ddio_xlsx_returns_display_only_ip_hint_after_switch_change():
             }
         }
         assert result["ddioOverlay"] == expected_overlay, result["ddioOverlay"]
-        assert result["ddioSummary"] == {"loaded": True, "switchIpChanges": 1, "newIpHints": 1}
+        assert result["ddioSummary"] == {"loaded": True, "switchIpChanges": 1, "newIpHints": 1, "ipFallbacks": 0}
+    finally:
+        for item in imported:
+            WORKSPACE_FILE_CACHE.discard(item.get("fileToken", ""))
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_empty_primary_and_smartroom_ip_is_filled_from_four_column_ddio_mapping():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), AppHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    imported = []
+    try:
+        host, port = server.server_address
+        base_url = f"http://{host}:{port}"
+        main = post_binary_file(
+            base_url,
+            "main-empty-ip.xlsx",
+            workbook_bytes(
+                ["MAC Address", "IP Address", "Name"],
+                [["00:11:22:33:44:55", "Не определено", "Main device"]],
+            ),
+        )
+        smartroom = post_binary_file(
+            base_url,
+            "smartroom-empty-ip.xlsx",
+            workbook_bytes(
+                ["MAC Address", "IP Address", "Room", "Smartroom ID"],
+                [["00-11-22-33-44-55", "", "Room 101", "SR-101"]],
+            ),
+        )
+        ddio = post_binary_file(
+            base_url,
+            "ddio-four-columns.xlsx",
+            workbook_bytes(
+                ["Reservation MAC", "Reservation IP", "Lease MAC", "Lease IP"],
+                [
+                    ["00:11:22:33:44:55", "192.168.50.10", "", ""],
+                    ["", "", "0011.2233.4455", "192.168.50.11"],
+                ],
+            ),
+        )
+        imported.extend([main, smartroom, ddio])
+        result = post_json(
+            base_url,
+            "/api/enrichment/run",
+            {
+                "files": [
+                    {
+                        "id": "main-empty-ip",
+                        "name": "main-empty-ip.xlsx",
+                        "role": "primary",
+                        "fileToken": main["fileToken"],
+                        "rowCount": main["rowCount"],
+                        "mapping": {"mac": 0, "ip": 1, "deviceName": 2},
+                    },
+                    {
+                        "id": "smartroom-empty-ip",
+                        "name": "smartroom-empty-ip.xlsx",
+                        "role": "smartroom",
+                        "fileToken": smartroom["fileToken"],
+                        "rowCount": smartroom["rowCount"],
+                        "mapping": {"mac": 0, "ip": 1, "room": 2, "smartroomId": 3},
+                    },
+                ],
+                "ddioFile": {
+                    "id": "ddio-four-columns",
+                    "name": "ddio-four-columns.xlsx",
+                    "role": "ddio",
+                    "fileToken": ddio["fileToken"],
+                    "rowCount": ddio["rowCount"],
+                    "mapping": {"reservationMac": 0, "reservationIp": 1, "leaseMac": 2, "leaseIp": 3},
+                },
+                "strategy": "primary",
+                "fields": {"ip": True, "room": True, "smartroomId": True},
+                "source": "main-empty-ip.xlsx",
+                "saveHistory": False,
+                "saveSnapshot": False,
+                "notify": False,
+            },
+        )
+        assert len(result["devices"]) == 1
+        device = result["devices"][0]
+        assert device["mac"] == "001122334455"
+        assert device["ip"] == "192.168.50.11"
+        assert device["room"] == "Room 101"
+        assert device["smartroomId"] == "SR-101"
+        assert device["ipSource"] == "ddio"
+        assert device["fieldSources"]["ip"] == "DDIO"
+        assert device["possibleIps"] == ["192.168.50.10", "192.168.50.11"]
+        assert result["ddioSummary"]["ipFallbacks"] == 1
     finally:
         for item in imported:
             WORKSPACE_FILE_CACHE.discard(item.get("fileToken", ""))
@@ -436,6 +528,7 @@ def test_large_binary_import_response_is_bounded_to_preview_rows():
 if __name__ == "__main__":
     test_two_xlsx_files_are_visible_and_enrich_matching_primary_mac()
     test_third_ddio_xlsx_returns_display_only_ip_hint_after_switch_change()
+    test_empty_primary_and_smartroom_ip_is_filled_from_four_column_ddio_mapping()
     test_compact_enrichment_keeps_full_result_in_sqlite_snapshot()
     test_large_binary_import_response_is_bounded_to_preview_rows()
     print("xlsx enrichment API test passed")

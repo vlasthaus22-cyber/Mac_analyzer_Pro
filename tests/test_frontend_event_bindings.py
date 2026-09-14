@@ -15,10 +15,12 @@ def test_ddio_third_export_is_display_only_and_bound_in_primary_frontend():
     assert 'id="ddioFileInput"' in html
     assert 'id="browseDdioFileButton"' in html
     assert 'id="ddioMappingGrid"' in html
-    assert '<script src="frontend/ddio-overlay.js?v=1063"></script>' in html
+    assert '<script src="frontend/ddio-overlay.js?v=1064"></script>' in html
     assert 'loadDdioFile(e.target.files,e.target)' in app
     assert all(field in ddio for field in ('reservationMac', 'reservationIp', 'leaseMac', 'leaseIp'))
-    assert '[["deviceId","Device ID"],["mac","MAC устройства"],["ip","IP устройства"],["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"],["possibleIps","Возможные IP"]]' in app
+    assert '[["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"]]' in app
+    assert '[["deviceId","Device ID"],["mac","MAC устройства"]' not in app
+    assert 'const fallbackCount=DdioOverlay.applyIpFallback([device],ddio.index)' in app
     assert 'mappingOptionLabel(header,"letter")' in app
     assert 'headers = Array.from({ length: columnCount }' in Path("frontend/file-readers.js").read_text(encoding="utf-8")
     assert 'applyDdioOverlayToResults(body,columns)' in app
@@ -47,6 +49,10 @@ def test_global_process_progress_covers_file_analysis_compare_and_export():
         'id="processProgressDetail"',
     ):
         assert marker in html
+    assert html.count('id="analysisMetricMissingRoom"') == 1
+    assert html.count('id="analysisMissingRoomVendorChart"') == 1
+    assert html.count('id="analysisMissingRoomModelChart"') == 1
+    assert '<details class="analytics-group" open>\n          <summary><span>Состав и качество данных</span>' in html
     for marker in (
         "function beginProcess(",
         "function updateProcess(",
@@ -118,7 +124,7 @@ def test_portable_two_file_import_is_local_first_and_race_safe():
     assert 'id="fileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert 'id="enrichFileInput" type="file" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm,.xls"' in html
     assert '<script src="frontend/memory-guard.js?v=20260722.9"></script>' in html
-    assert '<script src="frontend/file-readers.js?v=1063"></script>' in html
+    assert '<script src="frontend/file-readers.js?v=1064"></script>' in html
     assert '<meta name="application-build" content="2026.09.13.1">' in html
     assert 'document.documentElement.dataset.memoryGuard = "ready";' in app
     assert 'document.documentElement.dataset.fileReaders = "ready";' in app
@@ -1033,7 +1039,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=1063"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=1064"></script>' in html
     assert '<script src="frontend/xlsx-exporter.js?v=20260727.5"></script>' in html
     assert '<script src="frontend/full-xlsx-report.js?v=20260729.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app

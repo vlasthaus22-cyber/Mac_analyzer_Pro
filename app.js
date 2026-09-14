@@ -1019,7 +1019,7 @@
     const changes=DdioOverlay.switchChanges(switchTracker),file=state.ddioFile;
     if(!file)return{overlay:{},index:new Map(),summary:{loaded:false,switchIpChanges:changes.size,newIpHints:0,ipFallbacks:0}};
     const validation=DdioOverlay.validateMapping(file.mapping||{});
-    if(!validation.valid)throw new Error("DDIO: выберите MAC устройства + IP устройства либо полную пару резервации/аренды");
+    if(!validation.valid)throw new Error("DDIO: выберите полную пару MAC/IP резервации и/или полную пару MAC/IP аренды");
     const candidates=new Map(),index=new Map();
     await visitLocalRowsForAnalysis(file,0,1,(value,detail)=>onProgress(value,`DDIO: ${detail}`),(row)=>{DdioOverlay.collectCandidate(row,file.mapping,changes,candidates);DdioOverlay.collectPossibleIp(row,file.mapping,index);});
     const currentIpByMac=new Map();
@@ -1125,7 +1125,7 @@
       activeLocalDetectionContext=createLocalDetectionContext();
       await BrowserSnapshots.transformEnrichmentRows(jobId,(device)=>{
         let changed=false;const ip=normalizeIp(device.switchIp),addressItem=switchAddresses.get(ip),address=typeof addressItem==="string"?addressItem:addressItem?.address,vendor=localVendor(device.mac),model=localModel(device.mac);
-        if(!device.ip){const fallbackCount=DdioOverlay.applyIpFallback([device],ddio.index);if(fallbackCount){ddio.summary.ipFallbacks+=fallbackCount;changed=true;}}
+        const fallbackCount=DdioOverlay.applyIpFallback([device],ddio.index);if(fallbackCount){ddio.summary.ipFallbacks+=fallbackCount;changed=true;}
         if(address&&!device.address){device.address=address;device.addressSource=addressItem?.source||"switch-address-mapping";if(addressItem?.confidence!==undefined)device.addressConfidence=Number(addressItem.confidence||0);device.fieldSources={...(device.fieldSources||{}),address:device.addressSource};changed=true;}
         const hadRoom=Boolean(normalizedRoomName(device.room));if(synchronizeSmartroomIdentity(device,smartroomRooms)){if(!hadRoom&&device.room)device.roomSource="smartroom_mapping";changed=true;}
         if((!device.vendor||device.vendor==="Unknown"||device.vendor==="Не определено")&&vendor!=="Unknown"){device.vendor=vendor;changed=true;}
@@ -1353,10 +1353,10 @@
     if(!file){summary.textContent="Файл DDIO не выбран.";grid.innerHTML="";if(overlaySummary)overlaySummary.textContent="";return;}
     const validation=DdioOverlay.validateMapping(file.mapping||{});
     summary.textContent=`${file.name} · строк: ${Number(file.rowCount||0).toLocaleString("ru-RU")} · ${validation.valid?"колонки готовы":"проверьте сопоставление колонок"}`;
-    const fields=[["deviceId","Device ID"],["mac","MAC устройства"],["ip","IP устройства"],["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"],["possibleIps","Возможные IP"]];
+    const fields=[["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"]];
     grid.innerHTML=fields.map(([field,title])=>`<label>${title}<select data-ddio-map="${field}">${ddioMappingOptions(file,file.mapping?.[field]??((field==="reservationIp"||field==="leaseIp")?file.mapping?.ip:""))}</select></label>`).join("");
-    const hints=Number(state.ddioSummary?.newIpHints||Object.keys(state.ddioOverlay||{}).length),changes=Number(state.ddioSummary?.switchIpChanges||0);
-    if(overlaySummary)overlaySummary.textContent=state.ddioSummary?`Смен коммутатора: ${changes} · новых IP: ${hints}`:"Подсказки появятся после анализа.";
+    const hints=Number(state.ddioSummary?.newIpHints||Object.keys(state.ddioOverlay||{}).length),changes=Number(state.ddioSummary?.switchIpChanges||0),fallbacks=Number(state.ddioSummary?.ipFallbacks||0);
+    if(overlaySummary)overlaySummary.textContent=state.ddioSummary?`Смен коммутатора: ${changes} · подсказок IP: ${hints} · IP заполнено из DDIO: ${fallbacks}`:"Подсказки появятся после анализа.";
   }
   async function clearDdioFile(){
     const file=state.ddioFile;
@@ -1799,7 +1799,7 @@
       state.resultInvalidCount=serverResult.compactResult?Number(resultReference.invalidCount||0):0;
       state.resultSummary=serverResult.resultSummary||serverResult.resultPage?.summary||null;
       state.ddioOverlay=serverResult.ddioOverlay||{};
-      state.ddioSummary=serverResult.ddioSummary||{loaded:Boolean(state.ddioFile),switchIpChanges:0,newIpHints:0};
+      state.ddioSummary=serverResult.ddioSummary||{loaded:Boolean(state.ddioFile),switchIpChanges:0,newIpHints:0,ipFallbacks:0};
       state.devices = serverResult.devices||[];
       state.lastAnalysis=sourceCreatedAt;
       if(!state.resultSnapshotId){

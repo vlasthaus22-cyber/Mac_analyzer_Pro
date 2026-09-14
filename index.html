@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
   <meta name="application-build" content="2026.09.13.1">
-  <meta name="application-version" content="1.0.63">
-  <link rel="stylesheet" href="styles.css?v=1063">
+  <meta name="application-version" content="1.0.64">
+  <link rel="stylesheet" href="styles.css?v=1064">
 </head>
 <body>
   <div class="app-error-banner" id="appErrorBanner" role="alert" aria-live="assertive" hidden><span data-error-message>Ошибка приложения.</span><button type="button" id="closeAppErrorBanner" aria-label="Закрыть сообщение">×</button></div>
@@ -221,7 +221,6 @@
             <article class="metric"><span>Моделей</span><strong id="analysisMetricModels">0</strong></article>
             <article class="metric"><span>Помещений</span><strong id="analysisMetricRooms">0</strong></article>
             <article class="metric"><span>Без помещения</span><strong id="analysisMetricMissingRoom">0</strong></article>
-            <article class="metric"><span>Без помещения</span><strong id="analysisMetricMissingRoom">0</strong></article>
             <article class="metric"><span>Коммутаторов</span><strong id="analysisMetricSwitches">0</strong></article>
             <article class="metric"><span>Ошибок</span><strong id="analysisMetricInvalid">0</strong></article>
           </section>
@@ -236,8 +235,6 @@
             <div class="tool-panel"><div class="panel-head"><h2>Топ OUI 5 байт</h2></div><div class="bar-list" id="analysisOui5Chart"></div></div>
             <div class="tool-panel"><div class="panel-head"><h2>Заполненность данных</h2></div><div class="bar-list" id="analysisCoverageChart"></div></div>
             <div class="tool-panel"><div class="panel-head"><h2>Качество</h2></div><div class="bar-list" id="analysisQualityChart"></div></div>
-            <div class="tool-panel"><div class="panel-head"><h2>Без помещения · производители</h2></div><div class="bar-list" id="analysisMissingRoomVendorChart"></div></div>
-            <div class="tool-panel"><div class="panel-head"><h2>Без помещения · модели</h2></div><div class="bar-list" id="analysisMissingRoomModelChart"></div></div>
             <div class="tool-panel"><div class="panel-head"><h2>Без помещения · производители</h2></div><div class="bar-list" id="analysisMissingRoomVendorChart"></div></div>
             <div class="tool-panel"><div class="panel-head"><h2>Без помещения · модели</h2></div><div class="bar-list" id="analysisMissingRoomModelChart"></div></div>
           </section>
@@ -367,7 +364,7 @@
           <div class="tool-panel" data-dashboard-chart="missing"><div class="panel-head"><h2>Отсутствующие устройства</h2></div><div class="bar-list" id="dashboardMissingChart"></div></div>
           </section>
         </details>
-        <details class="analytics-group">
+        <details class="analytics-group" open>
           <summary><span>Состав и качество данных</span><small>Производители, модели, помещения и заполненность</small></summary>
           <section class="analytics-grid">
           <div class="tool-panel"><div class="panel-head"><h2>Вендоры</h2></div><div class="bar-list" id="vendorChart"></div></div>
@@ -897,12 +894,12 @@
   <script src="frontend/vendor/chart.umd.min.js?v=4.5.1"></script>
   <script src="frontend/ieee-vendor-registry.js?v=20260810.1"></script>
   <script src="frontend/memory-guard.js?v=20260722.9"></script>
-  <script src="frontend/file-readers.js?v=1063"></script>
+  <script src="frontend/file-readers.js?v=1064"></script>
   <script src="frontend/state-persistence.js?v=1062"></script>
   <script src="frontend/record-validation.js?v=1053"></script>
   <script src="frontend/device-identity.js?v=1062"></script>
   <script src="frontend/enrichment-strategy.js?v=1050"></script>
-  <script src="frontend/browser-snapshot-store.js?v=1063"></script>
+  <script src="frontend/browser-snapshot-store.js?v=1064"></script>
   <script src="frontend/time-utils.js?v=1047"></script>
   <script src="frontend/mac-chronology.js?v=1056"></script>
   <script src="frontend/local-analytics.js?v=20260729.3"></script>
@@ -912,7 +909,7 @@
   <script src="frontend/portable-database.js?v=20260810.1"></script>
   <script src="frontend/local-folder-store.js?v=1059"></script>
   <script src="frontend/workspace-file-lifecycle.js?v=20260722.7"></script>
-  <script src="frontend/ddio-overlay.js?v=1063"></script>
+  <script src="frontend/ddio-overlay.js?v=1064"></script>
   <script src="frontend/dashboard-change-tabs.js?v=20260803.1"></script>
   <script src="frontend/guide.js?v=20260722.7"></script>
   <script src="frontend/ui-feedback.js?v=1055"></script>
@@ -921,11 +918,11 @@
   <script src="frontend/smartroom-worker.js?v=1058"></script>
   <script src="frontend/smartroom-store.js?v=1061"></script>
   <script src="frontend/smartroom-charts.js?v=1058"></script>
-  <script src="frontend/room-timeline.js?v=1063"></script>
+  <script src="frontend/room-timeline.js?v=1064"></script>
   <script src="frontend/room-location.js?v=1058"></script>
-  <script src="frontend/smartroom-ui.js?v=1063"></script>
+  <script src="frontend/smartroom-ui.js?v=1064"></script>
   <script src="frontend/table-sorter.js?v=1055"></script>
-  <script src="app.js?v=1063"></script>
+  <script src="app.js?v=1064"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;
