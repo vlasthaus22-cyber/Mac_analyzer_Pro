@@ -145,6 +145,21 @@ def test_ddio_ip_fallback_replaces_non_ip_placeholders():
     assert all(device.get("ipSource") == "ddio" for device in devices[:2])
 
 
+def test_ddio_ip_fallback_matches_smartroom_secondary_interface_mac():
+    index = build_ddio_device_index(
+        [["AA:BB:CC:DD:EE:FF", "192.168.77.20"]],
+        {"leaseMac": 0, "leaseIp": 1},
+    )
+    devices = [{
+        "mac": "001122334455",
+        "secondaryMac": "AABBCCDDEEFF",
+        "ip": "",
+    }]
+    assert apply_ddio_ip_fallback(devices, index) == 1
+    assert devices[0]["ip"] == "192.168.77.20"
+    assert devices[0]["fieldSources"]["ip"] == "DDIO"
+
+
 def test_enrichment_fills_blanks_without_overwriting_primary_values():
     enriched = enrich_files(
         [
@@ -174,5 +189,6 @@ if __name__ == "__main__":
     test_ddio_switch_change_is_derived_from_previous_final_state()
     test_ddio_generic_device_mac_and_ip_fill_only_a_blank_ip()
     test_ddio_ip_fallback_replaces_non_ip_placeholders()
+    test_ddio_ip_fallback_matches_smartroom_secondary_interface_mac()
     test_enrichment_fills_blanks_without_overwriting_primary_values()
     print("DDIO overlay service test passed")

@@ -1,7 +1,7 @@
 ﻿(() => {
   "use strict";
   window.MacAnalyzerAppBootstrapped = true;
-  const fieldList = [["mac","MAC-адрес"],["vendor","Производитель"],["model","Модель"],["ip","IP"],["address","Адрес"],["room","Помещение"],["smartroomId","Smartroom ID"],["switchIp","IP коммутатора"],["switchPort","Порт"],["authenticationTime","Время аутентификации устройства"],["hostname","Hostname"],["serialNumber","Серийный номер"],["deviceId","ID устройства"],["deviceName","Название устройства"]];
+  const fieldList = [["mac","MAC-адрес"],["secondaryMac","MAC дополнительного интерфейса (SmartRoom)"],["vendor","Производитель"],["model","Модель"],["ip","IP"],["address","Адрес"],["room","Помещение"],["smartroomId","Smartroom ID"],["switchIp","IP коммутатора"],["switchPort","Порт"],["authenticationTime","Время аутентификации устройства"],["hostname","Hostname"],["serialNumber","Серийный номер"],["deviceId","ID устройства"],["deviceName","Название устройства"]];
   const labels = {...Object.fromEntries(fieldList),macFormatted:"MAC",oui:"OUI",smartroomId:"Smartroom ID",switchIp:"IP коммутатора",switchPort:"Порт",source:"Источник",vendorSource:"Источник вендора",vendorConfidence:"Уверенность вендора",vendorMatchedPrefix:"Префикс вендора",modelSource:"Источник модели",modelConfidence:"Уверенность модели",modelMatchedPrefix:"Префикс модели"};
   const builtinVendorMappings={"00037F":"Apple Inc.","001A11":"Apple Inc.","18FE34":"Apple Inc.","001B44":"Intel Corporation","00A0C9":"Intel Corporation","ACDE48":"Samsung Electronics","002590":"Samsung Electronics","001122":"Cisco Systems","00055D":"Cisco Systems","0050B6":"Dell Inc.","00155F":"Hewlett Packard","0050C2":"Microsoft Corp.","005A39":"Google LLC","0025D3":"Huawei Technologies","002128":"Xiaomi Corporation","0022B0":"TP-Link Technologies","001E52":"Netgear Inc.","F832E4":"ASUSTeK Computer","B827EB":"Raspberry Pi Foundation","002314":"Lenovo Group","0022BD":"Acer Inc.","0024B2":"LG Electronics","001E58":"Sony Corporation","000E58":"Cisco-Linksys","001E13":"Nintendo","000C29":"VMware","0050F2":"Microsoft","00107B":"Dell","001EC9":"Huawei","0017C8":"Apple","00236C":"Xiaomi","001AA9":"Samsung"};
   const builtinModelMappings={"00112233":"Cisco Catalyst 2960","00112244":"Cisco Catalyst 3560","00112255":"Cisco Catalyst 3750","00112266":"Cisco Catalyst 4500","00112277":"Cisco Catalyst 6500","00112288":"Cisco ASR 1000","00112299":"Cisco ISR 4000","005055AA":"Cisco Nexus 3000","005055BB":"Cisco Nexus 5000","005055CC":"Cisco Nexus 7000","0010B5AA":"Dell PowerEdge R740","0010B5BB":"Dell PowerEdge R640","0010B5CC":"Dell PowerEdge T340","0010B5DD":"Dell OptiPlex 7070","0010B5EE":"Dell Latitude 5400","0010B5FF":"Dell XPS 15","00215AAB":"HP ProLiant DL380","00215ACC":"HP ProLiant DL360","00215ADD":"HP EliteBook 840","00215AEE":"HP ZBook 15","00215AFF":"HP LaserJet Pro","00215A11":"HP OfficeJet Pro","001A1101":"iPhone 13","001A1102":"iPhone 14","001A1103":"iPhone 15","001A1120":"iPad Pro","001A1121":"iPad Air","001A1130":"MacBook Pro","001A1131":"MacBook Air","001A1140":"iMac 24\"","001A1150":"Mac Studio","00259001":"Samsung Galaxy S23","00259002":"Samsung Galaxy S22","00259010":"Samsung Galaxy Tab","00259020":"Samsung SSD 980 Pro","00259030":"Samsung Smart Monitor","00259040":"Samsung M7","001EC901":"Huawei Mate 50","001EC902":"Huawei P60","001EC910":"Huawei MateBook X","001EC920":"Huawei Watch GT","00236C01":"Xiaomi Mi 11","00236C02":"Xiaomi 12T","00236C10":"Xiaomi Mi Band","00236C20":"Xiaomi Robot Vacuum","0022B001":"TP-Link Archer AX73","0022B002":"TP-Link Deco X60","0022B010":"TP-Link Tapo C200","0022B020":"TP-Link Kasa KP115","001E5201":"Netgear Nighthawk RAX200","001E5202":"Netgear Orbi RBK852","001E5210":"Netgear GS308","001E5220":"Netgear ReadyNAS","F832E401":"ASUS ROG Zephyrus","F832E402":"ASUS TUF Gaming","F832E410":"ASUS RT-AX88U","F832E420":"ASUS ZenBook","00231401":"Lenovo ThinkPad X1","00231402":"Lenovo ThinkPad T14","00231410":"Lenovo Legion 5","00231420":"Lenovo Yoga 9i"};
@@ -187,7 +187,21 @@
     portableDatabaseStatus(detail||"Обработка файловой базы...");
     if(processId)updateProcess(processId,Math.max(1,Math.min(100,Number(value)||0)),detail||"");
   }
-  async function persistPortableDatabase(){
+  function isPortableFileSystemWriteError(error){
+    const name=String(error?.name||""),message=String(error?.message||error||"").toLowerCase();
+    return ["NoModificationAllowedError","NotAllowedError","InvalidStateError","NotFoundError"].includes(name)||/could not be modified|read.?only|write protected|not writable|permission denied|нет разрешения/.test(message);
+  }
+  function detachUnwritablePortableDatabase(error){
+    if(portableDatabaseSaveTimer){clearTimeout(portableDatabaseSaveTimer);portableDatabaseSaveTimer=null;}
+    portableDatabaseHandle=null;
+    portableDatabasePersistedRevision=portableDatabaseQueuedRevision=portableDatabaseSaveRevision;
+    const message="Файл MADB недоступен для записи. Результат сохранён в IndexedDB; подключите локальную базу или папку повторно.";
+    portableDatabaseStatus(message,"warning");
+    if(localFolderStructure)localFolderStatus(message,"warning");
+    return{skipped:true,recoverable:true,error,message,counts:{devices:currentDeviceCount(),invalid:Number(state.resultInvalidCount||state.invalid?.length||0)}};
+  }
+  async function persistPortableDatabase(options={}){
+    const tolerateFileSystemFailure=options.tolerateFileSystemFailure!==false;
     if(portableDatabaseSaveTimer){clearTimeout(portableDatabaseSaveTimer);portableDatabaseSaveTimer=null;}
     if(!PortableDatabase||!portableDatabaseHandle||portableDatabaseQueuedRevision>=portableDatabaseSaveRevision)return portableDatabaseSavePromise;
     const revision=portableDatabaseSaveRevision,payload=portableDatabasePayload();
@@ -205,7 +219,14 @@
       }
       if(portableDatabaseSaveRevision>portableDatabaseQueuedRevision)schedulePortableDatabaseSave(500);
       return result;
-    }).catch((error)=>{portableDatabaseStatus(error.message,"error");throw error;});
+    }).catch((error)=>{
+      if(isPortableFileSystemWriteError(error)){
+        const result=detachUnwritablePortableDatabase(error);
+        if(tolerateFileSystemFailure)return result;
+        const friendly=new Error(result.message);friendly.name=error?.name||"PortableDatabaseWriteError";friendly.cause=error;throw friendly;
+      }
+      portableDatabaseStatus(error.message,"error");throw error;
+    });
     return portableDatabaseSavePromise;
   }
   function schedulePortableDatabaseSave(delay=4000){
@@ -344,7 +365,7 @@
     if(!portableDatabaseHandle)return createPortableDatabase();
     const processId=beginProcess("Файловая база","Сохранение текущего состояния",5);
     portableDatabaseSaveRevision++;
-    try{await persistPortableDatabase();finishProcess(processId,"Файловая база обновлена");}
+    try{await persistPortableDatabase({tolerateFileSystemFailure:false});finishProcess(processId,"Файловая база обновлена");}
     catch(error){failProcess(processId,error);toast(error.message);}
   }
   async function restorePortableDatabaseHandle(){
@@ -850,7 +871,7 @@
   const fileReaders=window.MacAnalyzerFileReaders;
   if(!fileReaders)throw new Error("Модуль frontend/file-readers.js не загружен");
   const {readClientTextFile,clientDelimiter,clientTableRows,clientJsonTable,clientZipEntries,clientXlsxTable,clientReadTable}=fileReaders;
-  function localAutoMapping(headers){const find=(patterns)=>{const index=headers.findIndex(header=>patterns.some(pattern=>pattern.test(String(header).toLowerCase())));return index>=0?index:"";};return{mac:find([/mac/,/мак/]),vendor:find([/vendor/,/производ/,/вендор/]),model:find([/model/,/модель/]),ip:find([/^ip/,/ip address/,/адрес ip/]),address:find([/address/,/адрес/]),room:find([/room/,/помещ/,/кабин/]),smartroomId:find([/smart.?room.*id/,/id.*smart.?room/,/ид.*smart.?room/]),switchIp:find([/switch.*ip/,/коммутатор.*ip/]),switchPort:find([/port/,/порт/]),authenticationTime:find([/authentication.*time/,/auth.*time/,/last.*auth/,/время.*аутентификац/,/время.*авторизац/]),hostname:find([/host.?name/,/имя хоста/,/dns name/]),serialNumber:find([/serial/,/серийн/]),deviceId:find([/device.*id/,/id.*device/,/идентификатор.*устрой/]),deviceName:find([/device.*name/,/название.*устрой/,/наименование.*устрой/])};}
+  function localAutoMapping(headers){const find=(patterns,excluded=new Set())=>{const index=headers.findIndex((header,column)=>!excluded.has(column)&&patterns.some(pattern=>pattern.test(String(header).toLowerCase())));return index>=0?index:"";},secondaryPatterns=[/secondary.*mac/,/additional.*mac/,/mac.*(?:2|secondary|additional)/,/мак.*(?:2|дополн|втор)/,/дополн.*мак/,/втор.*интерфейс/],secondaryMac=find(secondaryPatterns),mac=find([/mac/,/мак/],new Set(secondaryMac===""?[]:[secondaryMac]));return{mac,secondaryMac,vendor:find([/vendor/,/производ/,/вендор/]),model:find([/model/,/модель/]),ip:find([/^ip/,/ip address/,/адрес ip/]),address:find([/address/,/адрес/]),room:find([/room/,/помещ/,/кабин/]),smartroomId:find([/smart.?room.*id/,/id.*smart.?room/,/ид.*smart.?room/]),switchIp:find([/switch.*ip/,/коммутатор.*ip/]),switchPort:find([/port/,/порт/]),authenticationTime:find([/authentication.*time/,/auth.*time/,/last.*auth/,/время.*аутентификац/,/время.*авторизац/]),hostname:find([/host.?name/,/имя хоста/,/dns name/]),serialNumber:find([/serial/,/серийн/]),deviceId:find([/device.*id/,/id.*device/,/идентификатор.*устрой/]),deviceName:find([/device.*name/,/название.*устрой/,/наименование.*устрой/])};}
   function localMappingSummary(file){const mapped=Object.entries(file.mapping||{}).filter(([,value])=>value!==""&&value!==undefined).length;file.mappingSummary={summaryHtml:`<div class="bar-item"><div class="bar-label"><span>Сопоставлено полей</span><strong>${mapped}</strong></div><div class="bar-track"><div class="bar-fill" style="width:${Math.min(100,mapped/fieldList.length*100)}%"></div></div></div>`};file.columnDetection={detectorHtml:'<p class="muted">Колонки определены в браузере, потому что backend недоступен.</p>'};renderColumnDetectionSummary(file);}
   function normalizeAuthenticationTime(value){const text=String(value??"").trim(),serial=Number(text.replace(",","."));if(!text||!Number.isFinite(serial)||serial<1||serial>2958465)return text;return new Date(Date.UTC(1899,11,30)+Math.round(serial*86400000)).toISOString();}
   function columnLetter(index){let n=Number(index)+1,letters="";while(n>0){const mod=(n-1)%26;letters=String.fromCharCode(65+mod)+letters;n=Math.floor((n-1)/26);}return letters||String(Number(index)+1);}
@@ -968,19 +989,20 @@
     return result;
   }
   function learnLocalRulesFromDevices(rows=[],minCount=2){const threshold=Math.max(1,Number(minCount||2)),vendorCounts=new Map(),modelCounts=new Map(),count=(map,prefix,value)=>{if(!prefix||!value)return;const key=prefix+"\u0000"+value;map.set(key,(map.get(key)||0)+1);};for(const device of rows||[]){const mac=normalize(device.mac||device.macFormatted),vendor=String(device.vendor||"").trim(),model=String(device.model||"").trim();if(!mac)continue;for(const length of [6,8,10])if(vendor&&vendor!=="Unknown"&&vendor!=="Не определено")count(vendorCounts,mac.slice(0,length),vendor);if(isKnownModelValue(model))count(modelCounts,mac.slice(0,10),model);}const learn=(target,counts,required)=>{let learned=0;const best=new Map();counts.forEach((total,key)=>{const[prefix,value]=key.split("\u0000");if(total<required||target[prefix])return;const current=best.get(prefix);if(!current||total>current.total)best.set(prefix,{value,total});});best.forEach((item,prefix)=>{target[prefix]=item.value;learned++;});return learned;};return{vendors:learn(state.localVendorMappings,vendorCounts,threshold),models:learn(state.localModelMappings,modelCounts,1)};}
-  function localDeviceFromRow(file,row,rowIndex,fields){if(RecordValidation.isEmptyRow(row))return{skipped:true,reason:"EMPTY_ROW"};const pick=(field)=>{const index=file.mapping?.[field];return index===""||index===undefined?"":String(row[Number(index)]??"").trim();},rawMac=pick("mac"),mac=normalize(rawMac)||"",values={ip:fields.ip?pick("ip"):"",address:fields.address?pick("address"):"",room:fields.room?pick("room"):"",smartroomId:fields.smartroomId?pick("smartroomId"):"",switchIp:fields.switchIp?pick("switchIp"):"",switchPort:fields.switchPort?pick("switchPort"):"",authenticationTime:normalizeAuthenticationTime(pick("authenticationTime")),hostname:pick("hostname"),serialNumber:pick("serialNumber"),deviceId:pick("deviceId"),deviceName:pick("deviceName")},role=normalizeSourceRole(file.role);const identityProbe={mac,...values};if(!DeviceIdentity.candidates(identityProbe).some((candidate)=>!candidate.startsWith("internal-id:")))return{invalid:RecordValidation.invalidIdentity({row,rowNumber:rowIndex+2,source:file.name,sourceRole:role,rawMac,macColumn:file.mapping?.mac??null})};const explicitModel=pick("model"),model=fields.model?(isKnownModelValue(explicitModel)?explicitModel:(mac?localModel(mac):"")):"",vendor=fields.vendor?(pick("vendor")||localVendorFromText(model,pick("name"),row.join(" "))||(mac?localVendor(mac):"Unknown")):"Не определено";Object.assign(values,{vendor,model});const fieldSources=Object.fromEntries(Object.entries(values).filter(([,value])=>value!=="").map(([field])=>[field,file.name])),device={mac,macFormatted:formatMac(mac),oui:formatOuiValue(mac),...values,fieldSources,sourceFiles:[file.name],sourceRoles:[role],sourceRole:role,source:file.name,row:rowIndex+2,valid:true};if(model&&model!==explicitModel){device.modelSource="prefix";device.modelMatchedPrefix=mac.slice(0,10);}device.internalDeviceId=DeviceIdentity.stableId(device);device.identityKey=DeviceIdentity.key(device);device.matchConfidence=mac?"Exact":"High";return{device};}
+  function localDeviceFromRow(file,row,rowIndex,fields){if(RecordValidation.isEmptyRow(row))return{skipped:true,reason:"EMPTY_ROW"};const pick=(field)=>{const index=file.mapping?.[field];return index===""||index===undefined?"":String(row[Number(index)]??"").trim();},rawMac=pick("mac"),mac=normalize(rawMac)||"",secondaryMac=normalize(pick("secondaryMac"))||"",values={secondaryMac,ip:fields.ip?pick("ip"):"",address:fields.address?pick("address"):"",room:fields.room?pick("room"):"",smartroomId:fields.smartroomId?pick("smartroomId"):"",switchIp:fields.switchIp?pick("switchIp"):"",switchPort:fields.switchPort?pick("switchPort"):"",authenticationTime:normalizeAuthenticationTime(pick("authenticationTime")),hostname:pick("hostname"),serialNumber:pick("serialNumber"),deviceId:pick("deviceId"),deviceName:pick("deviceName")},role=normalizeSourceRole(file.role);const identityProbe={mac,...values};if(!DeviceIdentity.candidates(identityProbe).some((candidate)=>!candidate.startsWith("internal-id:")))return{invalid:RecordValidation.invalidIdentity({row,rowNumber:rowIndex+2,source:file.name,sourceRole:role,rawMac:rawMac||pick("secondaryMac"),macColumn:file.mapping?.mac??file.mapping?.secondaryMac??null})};const explicitModel=pick("model"),detectionMac=mac||secondaryMac,model=fields.model?(isKnownModelValue(explicitModel)?explicitModel:(detectionMac?localModel(detectionMac):"")):"",vendor=fields.vendor?(pick("vendor")||localVendorFromText(model,pick("name"),row.join(" "))||(detectionMac?localVendor(detectionMac):"Unknown")):"Не определено";Object.assign(values,{vendor,model});const fieldSources=Object.fromEntries(Object.entries(values).filter(([,value])=>value!=="").map(([field])=>[field,file.name])),device={mac:mac||secondaryMac,macFormatted:formatMac(mac||secondaryMac),oui:formatOuiValue(mac||secondaryMac),...values,fieldSources,sourceFiles:[file.name],sourceRoles:[role],sourceRole:role,source:file.name,row:rowIndex+2,valid:true};if(model&&model!==explicitModel){device.modelSource="prefix";device.modelMatchedPrefix=detectionMac.slice(0,10);}device.internalDeviceId=DeviceIdentity.stableId(device);device.identityKey=DeviceIdentity.key(device);device.matchConfidence=detectionMac?"Exact":"High";return{device};}
   function mergeAnalysisDevice(previous,incoming,{preferExisting=false}={}){
+    if(previous&&incoming){const previousMac=DeviceIdentity.normalizeMac(previous.mac||previous.macFormatted),incomingMacs=Array.from(new Set([DeviceIdentity.normalizeMac(incoming.mac||incoming.macFormatted),DeviceIdentity.normalizeMac(incoming.secondaryMac||incoming.secondary_mac)].filter(Boolean))),alternatives=incomingMacs.filter((value)=>value!==previousMac);if(alternatives.length)incoming={...incoming,secondaryMac:alternatives[0],alternateMacs:Array.from(new Set([...(previous.alternateMacs||[]),...alternatives]))};}
     const merged=previous?{...previous}:{};
-    const fieldSources={...(merged.fieldSources||{})},sourceFiles=Array.from(new Set([...(merged.sourceFiles||[]),merged.source,incoming?.source].filter(Boolean))),sourceRoles=Array.from(new Set([...(merged.sourceRoles||[]),incoming?.sourceRole].filter(Boolean))),conflicts=[...(merged.conflicts||[])];
+    const fieldSources={...(merged.fieldSources||{})},sourceFiles=Array.from(new Set([...(merged.sourceFiles||[]),merged.source,incoming?.source].filter(Boolean))),sourceRoles=Array.from(new Set([...(merged.sourceRoles||[]),incoming?.sourceRole].filter(Boolean))),conflicts=[...(merged.conflicts||[])],alternateMacs=Array.from(new Set([...(merged.alternateMacs||[]),...(incoming?.alternateMacs||[])].map(DeviceIdentity.normalizeMac).filter((value)=>value&&value!==DeviceIdentity.normalizeMac(merged.mac||incoming?.mac))));
     for(const[field,value]of Object.entries(incoming||{})){
-      if(["fieldSources","sourceFiles","sourceRoles","conflicts"].includes(field))continue;
+      if(["fieldSources","sourceFiles","sourceRoles","conflicts","alternateMacs"].includes(field))continue;
       if(value===""||value===undefined)continue;
       const hasExisting=merged[field]!==""&&merged[field]!==undefined&&merged[field]!==null;
       if(hasExisting&&String(merged[field])!==String(value)&&["vendor","model","ip","address","room","smartroomId","switchIp","switchPort","hostname","serialNumber","deviceId"].includes(field)){const conflict={field,selected:preferExisting?merged[field]:value,selectedSource:preferExisting?fieldSources[field]:incoming.source,alternative:preferExisting?value:merged[field],alternativeSource:preferExisting?incoming.source:fieldSources[field]};if(!conflicts.some((item)=>JSON.stringify(item)===JSON.stringify(conflict)))conflicts.push(conflict);}
       if(!preferExisting||!hasExisting)merged[field]=value;
       if((!preferExisting||!hasExisting)&&incoming.source)fieldSources[field]=incoming.source;
     }
-    merged.fieldSources=fieldSources;merged.sourceFiles=sourceFiles;merged.sourceRoles=sourceRoles;merged.conflicts=conflicts;merged.hasConflict=conflicts.length>0;merged.mac=merged.mac||"";merged.macFormatted=merged.macFormatted||"";merged.oui=merged.oui||"";merged.identityKey=DeviceIdentity.key(merged);merged.internalDeviceId=previous?.internalDeviceId||DeviceIdentity.stableId(merged);merged.source=sourceFiles.length===1?sourceFiles[0]:sourceFiles.join(" + ");
+    merged.fieldSources=fieldSources;merged.sourceFiles=sourceFiles;merged.sourceRoles=sourceRoles;merged.conflicts=conflicts;merged.hasConflict=conflicts.length>0;merged.alternateMacs=alternateMacs;merged.mac=merged.mac||"";merged.macFormatted=merged.macFormatted||"";merged.oui=merged.oui||"";merged.identityKey=DeviceIdentity.key(merged);merged.internalDeviceId=previous?.internalDeviceId||DeviceIdentity.stableId(merged);merged.source=sourceFiles.length===1?sourceFiles[0]:sourceFiles.join(" + ");
     return merged;
   }
   function resolveOrCreateAnalysisDevice(devices,index,incoming,strategy,diagnostics){
@@ -1251,7 +1273,7 @@
   function recordLocalMovementsFromIndex(previous,afterDevices=[],source="analysis",changedAt=new Date().toISOString()){
     if(!previous?.index)return recordLocalMovements([],afterDevices,source,changedAt);
     const entries=[],limit=MemoryGuard.limits.movementRows;
-    for(const device of afterDevices||[]){const mac=normalize(device.mac||device.macFormatted);if(!mac)continue;const encoded=previous.index.get(mac);if(encoded===undefined){if(entries.length<limit)entries.push({mac,type:"Добавлено",field:"-",before:"",after:device.macFormatted||formatMac(mac),beforeDevice:null,afterDevice:compactDashboardDevice(device)});continue;}previous.index.delete(mac);const before=JSON.parse(encoded),beforeDevice={mac};previous.fields.forEach((field,index)=>{beforeDevice[field]=before[index]||"";});for(let fieldIndex=0;fieldIndex<previous.fields.length&&entries.length<limit;fieldIndex++){const field=previous.fields[fieldIndex],oldValue=String(before[fieldIndex]??"").trim(),next=String(device[field]??"").trim();if(oldValue===next||oldValue&&!next)continue;entries.push({mac,type:"Изменено",field:labels[field]||field,before:oldValue,after:next,beforeDevice,afterDevice:compactDashboardDevice(device)});}}
+    for(const device of afterDevices||[]){const mac=normalize(device.mac||device.macFormatted);if(!mac)continue;const encoded=previous.index.get(mac);if(encoded===undefined){if(entries.length<limit)entries.push({mac,type:"Добавлено",field:"-",before:"",after:device.macFormatted||formatMac(mac),beforeDevice:null,afterDevice:compactDashboardDevice(device)});continue;}previous.index.delete(mac);const before=JSON.parse(encoded),beforeDevice={mac};previous.fields.forEach((field,index)=>{beforeDevice[field]=before[index]||"";});for(let fieldIndex=0;fieldIndex<previous.fields.length&&entries.length<limit;fieldIndex++){const field=previous.fields[fieldIndex],oldValue=String(before[fieldIndex]??"").trim(),next=String(device[field]??"").trim();if(oldValue===next||oldValue&&!next)continue;entries.push({mac,type:"Изменено",field,fieldLabel:labels[field]||field,before:oldValue,after:next,beforeDevice,afterDevice:compactDashboardDevice(device)});}}
     if(entries.length<limit)for(const [mac,encoded] of previous.index.entries()){const values=JSON.parse(encoded),beforeDevice={mac};previous.fields.forEach((field,index)=>{beforeDevice[field]=values[index]||"";});entries.push({mac,type:"Удалено",field:"-",before:formatMac(mac),after:"",beforeDevice,afterDevice:null});if(entries.length>=limit)break;}
     mergeDdioOverlayMovements(entries,limit);
     for(const item of entries){item.changedAt=changedAt;item.source=source;attachDdioHistoryHint(item);}
@@ -1271,7 +1293,7 @@
   function localComparisonBetweenDevices(beforeDevices=[], afterDevices=[], fields=["vendor","model","ip","address","room","smartroomId","switchIp","switchPort"],limit=MemoryGuard.limits.movementRows){
     const items=[],paired=DeviceIdentity.pairSets(Array.isArray(beforeDevices)?beforeDevices:[],Array.isArray(afterDevices)?afterDevices:[]);
     for(const device of paired.added){if(items.length>=limit)break;const mac=normalize(device?.mac||device?.macFormatted)||"";items.push({mac,type:"Добавлено",field:"-",before:"",after:device.macFormatted||formatMac(mac)||device.deviceId||device.serialNumber||"Устройство",beforeDevice:null,afterDevice:compactDashboardDevice(device)});}
-    for(const [previous,device] of paired.pairs){if(items.length>=limit)break;const mac=normalize(device?.mac||device?.macFormatted)||normalize(previous?.mac||previous?.macFormatted)||"";for(const field of fields){const oldValue=String(previous?.[field]??"").trim(),newValue=String(device?.[field]??"").trim();if(oldValue===newValue||oldValue&&!newValue)continue;items.push({mac,type:"Изменено",field:labels[field]||field,before:oldValue,after:newValue,beforeDevice:compactDashboardDevice(previous),afterDevice:compactDashboardDevice(device)});if(items.length>=limit)break;}}
+    for(const [previous,device] of paired.pairs){if(items.length>=limit)break;const mac=normalize(device?.mac||device?.macFormatted)||normalize(previous?.mac||previous?.macFormatted)||"";for(const field of fields){const oldValue=String(previous?.[field]??"").trim(),newValue=String(device?.[field]??"").trim();if(oldValue===newValue||oldValue&&!newValue)continue;items.push({mac,type:"Изменено",field,fieldLabel:labels[field]||field,before:oldValue,after:newValue,beforeDevice:compactDashboardDevice(previous),afterDevice:compactDashboardDevice(device)});if(items.length>=limit)break;}}
     if(items.length<limit)for(const device of paired.removed){if(items.length>=limit)break;const mac=normalize(device?.mac||device?.macFormatted)||"";items.push({mac,type:"Удалено",field:"-",before:device.macFormatted||formatMac(mac)||device.deviceId||device.serialNumber||"Устройство",after:"",beforeDevice:compactDashboardDevice(device),afterDevice:null});}
     return items;
   }
@@ -1747,14 +1769,17 @@
   async function analyze() {
     if(!state.files.length){toast("Сначала добавьте файл.");return;}
     if(state.ddioFile){const validation=DdioOverlay.validateMapping(state.ddioFile.mapping||{});if(!validation.valid){toast("DDIO: выберите MAC устройства + IP устройства либо полную пару резервации/аренды");renderDdioPanel();return;}}
-    await snapshotMutationPromise;
     const enrich=Object.fromEntries($$("[data-field]").map((input)=>[input.dataset.field,input.checked]));
     const strategy=syncEnrichmentStrategyUi($("#strategySelect").value),progress=$("#enrichmentProgress"),cancelButton=$("#cancelAnalyzeButton");
-    save({immediate:true});
-    let previousDevices=state.devices||[];
     const processId=beginProcess("Обогащение MAC-адресов","Подготовка основного файла и файлов обогащения",5);
     let enrichmentStage="validation";
     const setEnrichmentStage=(stage,value,detail)=>{enrichmentStage=stage;updateProcess(processId,value,detail);};
+    try{
+      setEnrichmentStage("previous-final-history",6,"Ожидание сохранения предыдущего Final");
+      await snapshotMutationPromise;
+      save({immediate:true});
+    }catch(error){progress.innerHTML='<p class="muted">Не удалось подготовить предыдущее финальное состояние: '+esc(error.message)+'</p>';failProcess(processId,error,{stage:enrichmentStage,source:state.files[0]?.name||""});toast(error.message);return;}
+    let previousDevices=state.devices||[];
     try{
       setEnrichmentStage("validation",10,"Запуск сервиса обогащения");
       const startProgress=await api("/enrichment/progress",{method:"POST",body:JSON.stringify({status:"starting"})});
@@ -1770,7 +1795,10 @@
     const source = state.files[0].name;
     const sourceCreatedAt = primaryFileCreatedAt();
     state.ddioOverlay={};state.ddioSummary=null;
-    await preserveCurrentBeforeAnalysis(source);
+    try{
+      setEnrichmentStage("previous-final-history",12,"Сохранение предыдущего Final перед новым обогащением");
+      await preserveCurrentBeforeAnalysis(source);
+    }catch(error){progress.innerHTML='<p class="muted">Не удалось сохранить предыдущий Final: '+esc(error.message)+'</p>';failProcess(processId,error,{stage:enrichmentStage,source});toast(error.message);cancelButton.disabled=true;enrichmentProgressControl.stopped=true;await enrichmentProgressPromise.catch(()=>{});currentEnrichmentJobId=null;enrichmentController=null;return;}
     try {
       setEnrichmentStage("parsing-normalization",30,"Сопоставление файлов и обработка MAC-адресов");
       if(analysisFileRecords().some((file)=>!file.fileToken)){
@@ -2485,9 +2513,9 @@
     const snapshots=finalDashboardSnapshots();
     return api("/analytics/panel",{method:"POST",body:JSON.stringify(state.resultSnapshotId?currentDevicePayload({snapshots}):{devices,snapshots})});
   }
-  async function renderBackendDashboard(){
+  async function renderBackendDashboard(prefetched=null){
     try{
-      const data=await api("/dashboard",{method:"POST",body:JSON.stringify(currentDevicePayload({snapshots:state.snapshots,movements:state.movementHistory,settings:dashboardSettings(),compactResult:Boolean(state.resultSnapshotId),resultPageSize:500}))});
+      const data=prefetched||await api("/dashboard",{method:"POST",body:JSON.stringify(currentDevicePayload({snapshots:state.snapshots,movements:state.movementHistory,settings:dashboardSettings(),compactResult:Boolean(state.resultSnapshotId),resultPageSize:500}))});
       if(data.metrics){
         $("#snapshotMetric").textContent=finalDashboardSnapshots().length||0;
         $("#uniqueMacMetric").textContent=data.metrics.uniqueMacs||0;
@@ -2677,6 +2705,9 @@
     analyticsRenderCache={signature,at:Date.now()};
     const revision=++analyticsRenderRevision;
     initializeAnalyticsExpanders();
+    applyLocalDashboard(dashboardSettings());
+    renderAnalysisDashboard();
+    await new Promise((resolve)=>requestAnimationFrame(resolve));
     if(browserOnlyMode&&state.resultBrowserSnapshotId&&BrowserSnapshots?.aggregate){
       try{
         const cache=await loadBrowserDashboardCache(dashboardSettings());
@@ -2690,7 +2721,7 @@
         }
       }catch(error){toast("Не удалось построить полный локальный dashboard: "+error.message);}
     }
-    applyLocalDashboard(dashboardSettings());try{await loadDashboardPayload();}catch(error){applyLocalDashboard(dashboardSettings());}if(revision!==analyticsRenderRevision)return;const devices=dashboardDevices();analyticsPanelPromise=loadAnalyticsPanel(devices);renderPrimaryCharts();renderBackendStatistics();renderTemporalStatistics();renderBackendCharts();renderBackendDashboard();renderBackendClusters(devices);renderBackendTopology(devices);renderQualityReportsHistory();refreshAnalyticsReport();
+    let dashboardPayload=null;try{dashboardPayload=await loadDashboardPayload();}catch(error){applyLocalDashboard(dashboardSettings());}if(revision!==analyticsRenderRevision)return;const devices=dashboardDevices();analyticsPanelPromise=loadAnalyticsPanel(devices);renderPrimaryCharts();renderBackendStatistics();renderTemporalStatistics();renderBackendCharts();renderBackendDashboard(dashboardPayload);renderBackendClusters(devices);renderBackendTopology(devices);renderQualityReportsHistory();refreshAnalyticsReport();
   }
   function historyQueryParams(query="", from="", to="", limit="500"){
     const params=new URLSearchParams({limit});

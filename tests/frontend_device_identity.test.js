@@ -30,4 +30,11 @@ const staleAliasPair = Identity.pairSets(
 assert.strictEqual(staleAliasPair.pairs.length, 1, "strong internal id must win over a stale weaker alias");
 assert.strictEqual(staleAliasPair.pairs[0][0].internalDeviceId, "stable-1");
 assert.strictEqual(staleAliasPair.added.length, 0, "alias disagreement must not become a false added device");
+const secondaryMacDevice = { mac: "AABBCCDDEEFF", secondaryMac: "00:11:22:33:44:55" };
+const primaryInterfaceDevice = { mac: "001122334455" };
+assert.strictEqual(
+  Identity.find(secondaryMacDevice, Identity.buildIndex([primaryInterfaceDevice])),
+  primaryInterfaceDevice,
+  "the second SmartRoom interface MAC must be a strong exact alias",
+);
 console.log("frontend_device_identity.test.js: ok");

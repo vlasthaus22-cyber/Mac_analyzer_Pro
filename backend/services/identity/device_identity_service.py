@@ -6,6 +6,7 @@ from typing import Any, Iterable
 
 
 CANONICAL_ALIASES = {
+    "secondaryMac": ("secondaryMac", "secondary_mac", "mac2", "additionalMac", "additional_mac"),
     "smartroomId": ("smartroomId", "smartroom_id", "Smartroom_ID"),
     "switchIp": ("switchIp", "switch_ip", "ip_switch"),
     "switchPort": ("switchPort", "switch_port", "port"),
@@ -17,10 +18,12 @@ CANONICAL_ALIASES = {
 
 STABLE_FIELDS = ("mac", "serialNumber", "deviceId", "hostname")
 MERGE_FIELDS = (
-    "mac", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp",
+    "mac", "secondaryMac", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp",
     "switchPort", "authenticationTime", "hostname", "serialNumber", "deviceId", "deviceName",
 )
-CONFLICT_FIELDS = tuple(field for field in MERGE_FIELDS if field != "authenticationTime")
+CONFLICT_FIELDS = tuple(
+    field for field in MERGE_FIELDS if field not in {"authenticationTime", "secondaryMac"}
+)
 
 MATCH_CONFIDENCE = {
     "internal-id": ("Exact", 1.0),
@@ -74,6 +77,10 @@ def canonical_value(device: dict[str, Any], field: str) -> str:
 
 def identity_candidates(device: dict[str, Any]) -> list[str]:
     mac = normalize_mac(device.get("mac") or device.get("macFormatted"))
+    secondary_macs = list(dict.fromkeys(filter(None, [
+        normalize_mac(canonical_value(device, "secondaryMac")),
+        *[normalize_mac(value) for value in (device.get("alternateMacs") or []) if value],
+    ])))
     serial = canonical_value(device, "serialNumber")
     device_id = canonical_value(device, "deviceId")
     hostname = canonical_value(device, "hostname")
@@ -83,6 +90,9 @@ def identity_candidates(device: dict[str, Any]) -> list[str]:
         candidates.append("internal-id:" + normalize_token(internal_id))
     if mac:
         candidates.append("mac:" + mac)
+    for secondary_mac in secondary_macs:
+        if secondary_mac != mac:
+            candidates.append("mac:" + secondary_mac)
     if serial:
         candidates.append("serial:" + serial)
     if device_id:
@@ -237,8 +247,14 @@ def merge_device_records(
     if normalized_role and normalized_role not in source_roles:
         source_roles.append(normalized_role)
 
+    alternate_macs = list(dict.fromkeys(
+        normalize_mac(value)
+        for value in [*(merged.get("alternateMacs") or []), *(incoming.get("alternateMacs") or [])]
+        if normalize_mac(value) and normalize_mac(value) != normalize_mac(merged.get("mac") or incoming.get("mac"))
+    ))
+
     for key, value in incoming.items():
-        if key in {"fieldSources", "conflicts", "sourceFiles", "sourceRoles"} or value in ("", None):
+        if key in {"fieldSources", "conflicts", "sourceFiles", "sourceRoles", "alternateMacs"} or value in ("", None):
             continue
         existing = merged.get(key)
         has_existing = existing not in ("", None)
@@ -264,6 +280,7 @@ def merge_device_records(
     merged["sourceRoles"] = source_roles
     merged["conflicts"] = conflicts
     merged["hasConflict"] = bool(conflicts)
+    merged["alternateMacs"] = alternate_macs
     merged.setdefault("mac", "")
     merged.setdefault("macFormatted", "")
     merged.setdefault("oui", "")

@@ -24,6 +24,12 @@
     device: "Устройство",
     "-": "Устройство",
   });
+  const canonicalFields = Object.freeze(
+    Object.fromEntries(Object.entries(fieldLabels).flatMap(([field, label]) => [
+      [String(field).toLowerCase(), field],
+      [String(label).toLowerCase(), field],
+    ])),
+  );
 
   function normalizeMac(value) {
     const normalized = String(value || "")
@@ -143,7 +149,8 @@
   }
 
   function normalizeMovement(item) {
-    const field = String(item?.field || item?.field_name || "device");
+    const rawField = String(item?.field || item?.field_name || "device");
+    const field = canonicalFields[rawField.trim().toLowerCase()] || rawField;
     const beforeDevice = compactDevice(item?.beforeDevice || item?.before_device);
     const afterDevice = compactDevice(item?.afterDevice || item?.after_device);
     return {
@@ -151,7 +158,7 @@
       event: String(item?.event || item?.type || item?.change_type || "Изменение поля"),
       date: item?.date || item?.changedAt || item?.changed_at || "",
       field,
-      fieldLabel: fieldLabels[field] || field,
+      fieldLabel: item?.fieldLabel || item?.field_label || fieldLabels[field] || field,
       before: item?.before ?? item?.from_value ?? item?.old_value ?? "",
       after: item?.after ?? item?.to_value ?? item?.new_value ?? "",
       source: item?.source || item?.source_file || "История изменений",
@@ -159,6 +166,48 @@
       beforeDevice,
       afterDevice,
     };
+  }
+
+  function repairMovement(item, appearances) {
+    const event = normalizeMovement(item);
+    const field = event.field;
+    if (!Object.prototype.hasOwnProperty.call(fieldLabels, field) || ["snapshot", "history", "device", "-"].includes(field)) return event;
+    const eventTime = Time.timestamp(event.date);
+    const ordered = (appearances || []).slice().sort(
+      (left, right) => (Time.timestamp(left.createdAt) ?? Number.MAX_SAFE_INTEGER) - (Time.timestamp(right.createdAt) ?? Number.MAX_SAFE_INTEGER),
+    );
+    const prior = ordered.filter((appearance) => {
+      const timestamp = Time.timestamp(appearance.createdAt);
+      return eventTime === null || (timestamp !== null && timestamp < eventTime);
+    });
+    const current = ordered.filter((appearance) => {
+      const timestamp = Time.timestamp(appearance.createdAt);
+      return eventTime === null || (timestamp !== null && timestamp <= eventTime);
+    });
+    const latestValue = (rows) => {
+      for (let index = rows.length - 1; index >= 0; index -= 1) {
+        const value = String(compactDevice(rows[index].device)?.[field] || "").trim();
+        if (value) return { value, device: compactDevice(rows[index].device) };
+      }
+      return null;
+    };
+    const beforeKnown = String(event.before || "").trim()
+      ? { value: String(event.before).trim(), device: event.beforeDevice }
+      : latestValue(prior);
+    const afterKnown = String(event.after || "").trim()
+      ? { value: String(event.after).trim(), device: event.afterDevice }
+      : latestValue(current);
+    if (beforeKnown) {
+      event.before = beforeKnown.value;
+      event.beforeDevice = { ...beforeKnown.device, ...event.beforeDevice, [field]: beforeKnown.value };
+    }
+    if (afterKnown) {
+      event.after = afterKnown.value;
+      event.afterDevice = { ...afterKnown.device, ...event.afterDevice, [field]: afterKnown.value };
+      event.device = event.afterDevice;
+    }
+    if (String(event.before || "").trim() && String(event.before || "").trim() === String(event.after || "").trim()) return null;
+    return event;
   }
 
   function normalizeHistory(item) {
@@ -242,17 +291,18 @@
   }
 
   function buildEvents(options = {}) {
+    const appearances = options.appearances || [];
     const events = [
-      ...(options.appearances || []).map(normalizeAppearance),
-      ...appearanceChanges(options.appearances || []),
+      ...appearances.map(normalizeAppearance),
+      ...appearanceChanges(appearances),
       ...(options.history || []).map(normalizeHistory),
-      ...(options.movements || []).map(normalizeMovement),
+      ...(options.movements || []).map((item) => repairMovement(item, appearances)),
       ...(options.events || []).map((item) => {
         if (item?.type === "snapshot") return normalizeAppearance(item);
         if (item?.type === "history") return normalizeHistory(item);
-        return normalizeMovement(item);
+        return repairMovement(item, appearances);
       }),
-    ];
+    ].filter(Boolean);
     const unique = new Map();
     for (const event of events) {
       const key = eventKey(event);

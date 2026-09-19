@@ -669,27 +669,39 @@
           if (resolution.status === "conflict") { if (stats) stats.conflicts = (stats.conflicts || 0) + 1; }
           const previous = record?.device;
           if (!previous && !allowNew) { if (stats) stats.skipped = (stats.skipped || 0) + 1; processNext(); return; }
+          let incoming = device;
+          if (previous) {
+            const previousMac = identityApi?.normalizeMac?.(previous.mac || previous.macFormatted) || "";
+            const incomingMacs = Array.from(new Set([
+              identityApi?.normalizeMac?.(device.mac || device.macFormatted),
+              identityApi?.normalizeMac?.(device.secondaryMac || device.secondary_mac),
+            ].filter(Boolean)));
+            const alternatives = incomingMacs.filter((value) => value !== previousMac);
+            if (alternatives.length) incoming = { ...device, secondaryMac: alternatives[0], alternateMacs: Array.from(new Set([...(previous.alternateMacs || []), ...alternatives])) };
+          }
           const merged = previous ? { ...previous } : {};
           const fieldSources = { ...(merged.fieldSources || {}) };
-          const sourceFiles = Array.from(new Set([...(merged.sourceFiles || []), merged.source, device.source].filter(Boolean)));
-          const sourceRoles = Array.from(new Set([...(merged.sourceRoles || []), device.sourceRole].filter(Boolean)));
+          const sourceFiles = Array.from(new Set([...(merged.sourceFiles || []), merged.source, incoming.source].filter(Boolean)));
+          const sourceRoles = Array.from(new Set([...(merged.sourceRoles || []), incoming.sourceRole].filter(Boolean)));
           const conflicts = [...(merged.conflicts || [])];
-          for (const [field, value] of Object.entries(device)) {
-            if (["fieldSources", "sourceFiles", "sourceRoles", "conflicts"].includes(field)) continue;
+          const alternateMacs = Array.from(new Set([...(merged.alternateMacs || []), ...(incoming.alternateMacs || [])].map((value) => identityApi?.normalizeMac?.(value)).filter((value) => value && value !== (identityApi?.normalizeMac?.(merged.mac || incoming.mac) || ""))));
+          for (const [field, value] of Object.entries(incoming)) {
+            if (["fieldSources", "sourceFiles", "sourceRoles", "conflicts", "alternateMacs"].includes(field)) continue;
             const hasExisting = merged[field] !== "" && merged[field] !== undefined && merged[field] !== null;
             if (hasExisting && value !== "" && value !== undefined && String(merged[field]) !== String(value)
               && ["vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId"].includes(field)) {
-              const conflict = { field, selected: preferExisting ? merged[field] : value, selectedSource: preferExisting ? fieldSources[field] : device.source, alternative: preferExisting ? value : merged[field], alternativeSource: preferExisting ? device.source : fieldSources[field] };
+              const conflict = { field, selected: preferExisting ? merged[field] : value, selectedSource: preferExisting ? fieldSources[field] : incoming.source, alternative: preferExisting ? value : merged[field], alternativeSource: preferExisting ? incoming.source : fieldSources[field] };
               if (!conflicts.some((item) => JSON.stringify(item) === JSON.stringify(conflict))) conflicts.push(conflict);
             }
             if (value !== "" && value !== undefined && (!preferExisting || !hasExisting)) merged[field] = value;
-            if (value !== "" && value !== undefined && (!preferExisting || !hasExisting) && device.source) fieldSources[field] = device.source;
+            if (value !== "" && value !== undefined && (!preferExisting || !hasExisting) && incoming.source) fieldSources[field] = incoming.source;
           }
           merged.fieldSources = fieldSources;
           merged.sourceFiles = sourceFiles;
           merged.sourceRoles = sourceRoles;
           merged.conflicts = conflicts.slice(-storageArrayLimits.conflicts);
           merged.hasConflict = conflicts.length > 0;
+          merged.alternateMacs = alternateMacs;
           if (resolution.status === "conflict") {
             conflicts.push({ field: "identity", selected: device.internalDeviceId || fallbackIdentity, selectedSource: device.source || "", alternative: "Неоднозначное сопоставление потоковых записей", alternativeSource: "identity-resolver", confidence: "Conflict", evidence: resolution.evidence || [] });
             merged.conflicts = conflicts.slice(-storageArrayLimits.conflicts);

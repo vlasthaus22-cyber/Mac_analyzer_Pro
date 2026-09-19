@@ -15,7 +15,7 @@ def test_ddio_third_export_is_display_only_and_bound_in_primary_frontend():
     assert 'id="ddioFileInput"' in html
     assert 'id="browseDdioFileButton"' in html
     assert 'id="ddioMappingGrid"' in html
-    assert '<script src="frontend/ddio-overlay.js?v=1064"></script>' in html
+    assert '<script src="frontend/ddio-overlay.js?v=1065"></script>' in html
     assert 'loadDdioFile(e.target.files,e.target)' in app
     assert all(field in ddio for field in ('reservationMac', 'reservationIp', 'leaseMac', 'leaseIp'))
     assert '[["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"]]' in app
@@ -1039,7 +1039,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=1064"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=1065"></script>' in html
     assert '<script src="frontend/xlsx-exporter.js?v=20260727.5"></script>' in html
     assert '<script src="frontend/full-xlsx-report.js?v=20260729.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
@@ -1766,7 +1766,7 @@ def test_oui_prefix_lengths_and_dashboard_render_locally():
         "byPrefix.set(prefix,value)",
         "for(const length of index.lengths)",
         "localRuleValue(mac,rules)",
-        "oui:formatOuiValue(mac)",
+        "oui:formatOuiValue(mac||secondaryMac)",
         'column==="oui"?formatOuiValue(item.mac||item.macFormatted||item.oui)',
         'if(key==="oui")return formatOuiValue(device.mac||device.macFormatted||device.oui);',
         "state.devices.forEach((device)=>{device.oui=formatOuiValue(device.mac||device.macFormatted||device.oui);});",
@@ -2453,7 +2453,8 @@ def test_autonomous_file_database_is_streamed_and_connected_to_workspace_saves()
     assert '$("#themeDialog")?.close();' in html
     for marker in (
         "function portableDatabasePayload()",
-        "async function persistPortableDatabase()",
+        "async function persistPortableDatabase(options={})",
+        "function isPortableFileSystemWriteError(error)",
         "async function restorePortableDatabaseHandle()",
         "await flushPortableDatabaseSave().catch(()=>{})",
         'if(!autonomousHtmlMode&&backendAvailable)',

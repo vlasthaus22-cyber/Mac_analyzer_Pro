@@ -56,7 +56,29 @@ def test_enrichment_preserves_device_authentication_time_column():
     assert serial["devices"][0]["authenticationTime"] == "2025-12-09T12:00:00Z"
 
 
+def test_smartroom_secondary_interface_mac_matches_one_primary_device():
+    result = enrich_files([
+        {
+            "name": "main.xlsx", "role": "primary",
+            "mapping": {"mac": 0, "ip": 1},
+            "rows": [["MAC", "IP"], ["00:11:22:33:44:55", ""]],
+        },
+        {
+            "name": "smartroom.xlsx", "role": "smartroom",
+            "mapping": {"mac": 0, "secondaryMac": 1, "smartroomId": 2, "room": 3},
+            "rows": [["MAC 1", "MAC 2", "Smartroom ID", "Room"], ["AA:BB:CC:DD:EE:FF", "00-11-22-33-44-55", "SR-101", "Переговорная 101"]],
+        },
+    ])
+    assert len(result["devices"]) == 1
+    device = result["devices"][0]
+    assert device["mac"] == "001122334455"
+    assert device["secondaryMac"] == "AABBCCDDEEFF"
+    assert device["smartroomId"] == "SR-101"
+    assert result["diagnostics"]["counts"]["smartroomMatched"] == 1
+
+
 if __name__ == "__main__":
     test_enrichment_primary_and_merge_strategies()
     test_enrichment_preserves_device_authentication_time_column()
+    test_smartroom_secondary_interface_mac_matches_one_primary_device()
     print("enrichment service test passed")

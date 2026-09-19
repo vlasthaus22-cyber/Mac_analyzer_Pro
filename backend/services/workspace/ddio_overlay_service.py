@@ -117,9 +117,13 @@ def apply_ddio_ip_fallback(
         # after the same IP normalization used by the DDIO index.
         if normalize_ip(device.get("ip")):
             continue
-        mac = normalize_mac(device.get("mac") or device.get("macFormatted"))
+        macs = list(dict.fromkeys(filter(None, (
+            normalize_mac(device.get("mac") or device.get("macFormatted")),
+            normalize_mac(device.get("secondaryMac") or device.get("secondary_mac") or device.get("mac2")),
+            *[normalize_mac(value) for value in (device.get("alternateMacs") or []) if value],
+        ))))
         device_id = str(device.get("deviceId") or device.get("device_id") or "").strip().casefold()
-        candidate = index.get(mac) or (index.get("device-id:" + device_id) if device_id else None)
+        candidate = next((index.get(mac) for mac in macs if index.get(mac)), None) or (index.get("device-id:" + device_id) if device_id else None)
         # Possible IPs are diagnostic alternatives, not a confirmed current IP.
         if not candidate or not candidate.get("ip"):
             continue

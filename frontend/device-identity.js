@@ -13,6 +13,14 @@
 
   function candidates(device = {}) {
     const mac = normalizeMac(device.mac || device.macFormatted);
+    const secondaryMacs = [
+      device.secondaryMac,
+      device.secondary_mac,
+      device.mac2,
+      device.additionalMac,
+      device.additional_mac,
+      ...(Array.isArray(device.alternateMacs) ? device.alternateMacs : []),
+    ].map(normalizeMac).filter((value, index, rows) => value && value !== mac && rows.indexOf(value) === index);
     const serial = token(device.serialNumber || device.serial_number || device.serial);
     const deviceId = token(device.deviceId || device.device_id || device.asset_id);
     const hostname = token(device.hostname || device.host_name);
@@ -20,6 +28,7 @@
     return [
       internalId && `internal-id:${internalId}`,
       mac && `mac:${mac}`,
+      ...secondaryMacs.map((value) => `mac:${value}`),
       serial && `serial:${serial}`,
       deviceId && `device:${deviceId}`,
       hostname && serial && `host-serial:${hostname}|${serial}`,

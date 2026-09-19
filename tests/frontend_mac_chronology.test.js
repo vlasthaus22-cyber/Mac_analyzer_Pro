@@ -121,6 +121,26 @@ const chronology = global.MacAnalyzerMacChronology;
     "a known older Final value must prevent a false empty-to-known change",
   );
 
+  const repairedLegacyMovement = chronology.buildEvents({
+    appearances,
+    movements: [{
+      mac: requested,
+      changedAt: "2026-07-02T08:00:00Z",
+      field: "Модель",
+      before: "",
+      after: "C3560",
+      source: "legacy movement",
+    }],
+  });
+  assert.ok(
+    !repairedLegacyMovement.some((item) => item.source === "legacy movement" && !item.before),
+    "legacy empty-to-current rows must be hydrated from the previous full Final",
+  );
+  assert.ok(
+    repairedLegacyMovement.some((item) => item.field === "model" && item.before === "C2960" && item.after === "C3560"),
+    "chronology must show the real previous and current model values",
+  );
+
   const fullChain = await chronology.getMacHistory({
     mac: requested,
     snapshots,

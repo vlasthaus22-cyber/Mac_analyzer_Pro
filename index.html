@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
   <meta name="application-build" content="2026.09.13.1">
-  <meta name="application-version" content="1.0.64">
+  <meta name="application-version" content="1.0.65">
   <link rel="stylesheet" href="styles.css?v=1064">
 </head>
 <body>
@@ -897,11 +897,11 @@
   <script src="frontend/file-readers.js?v=1064"></script>
   <script src="frontend/state-persistence.js?v=1062"></script>
   <script src="frontend/record-validation.js?v=1053"></script>
-  <script src="frontend/device-identity.js?v=1062"></script>
+  <script src="frontend/device-identity.js?v=1065"></script>
   <script src="frontend/enrichment-strategy.js?v=1050"></script>
-  <script src="frontend/browser-snapshot-store.js?v=1064"></script>
+  <script src="frontend/browser-snapshot-store.js?v=1065"></script>
   <script src="frontend/time-utils.js?v=1047"></script>
-  <script src="frontend/mac-chronology.js?v=1056"></script>
+  <script src="frontend/mac-chronology.js?v=1065"></script>
   <script src="frontend/local-analytics.js?v=20260729.3"></script>
   <script src="frontend/xlsx-exporter.js?v=20260727.5"></script>
   <script src="frontend/full-xlsx-report.js?v=20260729.1"></script>
@@ -909,7 +909,7 @@
   <script src="frontend/portable-database.js?v=20260810.1"></script>
   <script src="frontend/local-folder-store.js?v=1059"></script>
   <script src="frontend/workspace-file-lifecycle.js?v=20260722.7"></script>
-  <script src="frontend/ddio-overlay.js?v=1064"></script>
+  <script src="frontend/ddio-overlay.js?v=1065"></script>
   <script src="frontend/dashboard-change-tabs.js?v=20260803.1"></script>
   <script src="frontend/guide.js?v=20260722.7"></script>
   <script src="frontend/ui-feedback.js?v=1055"></script>
@@ -922,7 +922,7 @@
   <script src="frontend/room-location.js?v=1058"></script>
   <script src="frontend/smartroom-ui.js?v=1064"></script>
   <script src="frontend/table-sorter.js?v=1055"></script>
-  <script src="app.js?v=1064"></script>
+  <script src="app.js?v=1065"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;
@@ -959,6 +959,7 @@
       let fallbackProcessHideTimer = null;
       const fields = [
         ["mac", "MAC"],
+        ["secondaryMac", "MAC дополнительного интерфейса (SmartRoom)"],
         ["ip", "IP"],
         ["name", "Имя"],
         ["vendor", "Производитель"],
@@ -1288,6 +1289,7 @@
       function autoMap(headers) {
         const tests = {
           mac: /mac|address|адрес/i,
+          secondaryMac: /secondary.*mac|additional.*mac|mac.*(?:2|secondary|additional)|мак.*(?:2|дополн|втор)|дополн.*мак|втор.*интерфейс/i,
           ip: /^ip$|ip.?address|адрес/i,
           name: /name|host|имя|название/i,
           vendor: /vendor|производ/i,
@@ -1298,7 +1300,10 @@
           switchPort: /switch.*port|port.*switch|порт/i,
           authenticationTime: /authentication.*time|auth.*time|last.*auth|время.*аутентификац|время.*авторизац/i
         };
-        return Object.fromEntries(fields.map(([key]) => [key, headers.findIndex((header) => tests[key].test(header))]).map(([key, index]) => [key, index >= 0 ? index : ""]));
+        const mapping=Object.fromEntries(fields.map(([key]) => [key, headers.findIndex((header) => tests[key].test(header))]).map(([key, index]) => [key, index >= 0 ? index : ""]));
+        if(mapping.secondaryMac!==""&&mapping.mac===mapping.secondaryMac)mapping.mac=headers.findIndex((header,index)=>index!==mapping.secondaryMac&&/mac|мак/i.test(header));
+        if(mapping.mac<0)mapping.mac="";
+        return mapping;
       }
 
       function renderFallbackFileList() {
@@ -2369,7 +2374,9 @@
         for (const [fileIndex, file] of fallbackState.files.entries()) {
           fallbackUpdateProcess(processId, 10 + (fileIndex / fallbackState.files.length) * 55, `Файл ${fileIndex + 1} / ${fallbackState.files.length}: ${file.filename}`);
           for (const [index, row] of file.rows.entries()) {
-            const mac = normalizeMac(rowValue(file, row, "mac"));
+            const primaryMac = normalizeMac(rowValue(file, row, "mac"));
+            const secondaryMac = normalizeMac(rowValue(file, row, "secondaryMac"));
+            const mac = primaryMac || secondaryMac;
             if (!mac) {
               if (fileIndex === 0) fallbackState.invalid.push({ row: index + 2, source: file.filename, reason: "MAC не найден" });
               continue;
@@ -2377,6 +2384,7 @@
             const model = rowValue(file, row, "model") || fallbackModel(mac);
             const device = {
               mac,
+              secondaryMac,
               oui: fallbackFormatOui(mac),
               ip: rowValue(file, row, "ip"),
               name: rowValue(file, row, "name"),
@@ -2389,7 +2397,7 @@
               authenticationTime: fallbackAuthenticationTime(rowValue(file, row, "authenticationTime")),
               source: file.filename
             };
-            const existing = byMac.get(mac);
+            const existing = byMac.get(primaryMac) || byMac.get(secondaryMac);
             const role = file.role || (fileIndex ? "smartroom" : "primary");
             if (!existing && !(window.MacAnalyzerEnrichmentStrategy?.allowsCreation(role, strategy) ?? (fileIndex === 0))) continue;
             const merged = { ...(existing || {}) };
@@ -2401,7 +2409,9 @@
             merged.sourceFiles = Array.from(new Set([...(existing?.sourceFiles || []), existing?.source, file.filename].filter(Boolean)));
             merged.sourceRoles = Array.from(new Set([...(existing?.sourceRoles || []), file.role || (fileIndex ? "smartroom" : "primary")]));
             merged.source = merged.sourceFiles.join(" + ");
-            byMac.set(mac, merged);
+            byMac.set(merged.mac || mac, merged);
+            if(primaryMac)byMac.set(primaryMac,merged);
+            if(secondaryMac)byMac.set(secondaryMac,merged);
             if (index % 250 === 0) {
               const fileShare = file.rows.length ? index / file.rows.length : 1;
               fallbackUpdateProcess(processId, 10 + ((fileIndex + fileShare) / fallbackState.files.length) * 55, `${file.filename}: строка ${index + 1} / ${file.rows.length}`);
@@ -2411,7 +2421,7 @@
         }
         fallbackUpdateProcess(processId, 72, "Определение производителей, моделей и адресов");
         const createdAt = fallbackState.files[0]?.createdAt || new Date().toISOString();
-        fallbackState.devices = Array.from(byMac.values());
+        fallbackState.devices = Array.from(new Set(byMac.values()));
         applyFallbackDeviceHistory(fallbackState.devices);
         inferFallbackSwitchAddressMappings(fallbackState.devices, source);
         applyFallbackVendorModelMappings(fallbackState.devices);

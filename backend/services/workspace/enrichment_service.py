@@ -18,7 +18,7 @@ from .workspace_cache_service import WorkspaceFileCache, workspace_row_iterator
 
 
 ENRICH_FIELDS = [
-    "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp",
+    "secondaryMac", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp",
     "switchPort", "authenticationTime", "hostname", "serialNumber", "deviceId", "deviceName",
 ]
 
@@ -117,6 +117,7 @@ def row_to_device(row: list[Any], file_info: dict[str, Any], row_index: int, com
         return {"skipped": True, "reason": "EMPTY_ROW", "row": row_index + 2}
     raw_mac = read_mapped(row, mapping, "mac")
     mac = normalize_mac(raw_mac)
+    secondary_mac = normalize_mac(read_mapped(row, mapping, "secondaryMac"))
     role = normalize_source_role(file_info.get("role"))
     device = {
         "mac": mac,
@@ -128,6 +129,11 @@ def row_to_device(row: list[Any], file_info: dict[str, Any], row_index: int, com
     }
     for field in ENRICH_FIELDS:
         device[field] = read_mapped(row, mapping, field)
+    device["secondaryMac"] = secondary_mac
+    if not mac and secondary_mac:
+        device["mac"] = secondary_mac
+        device["macFormatted"] = format_mac(secondary_mac)
+        device["oui"] = secondary_mac[:6]
     device["authenticationTime"] = normalize_authentication_time(device.get("authenticationTime"))
     if not [candidate for candidate in identity_candidates(device) if not candidate.startswith("internal-id:")]:
         return invalid_identity_record(
@@ -145,9 +151,20 @@ def row_to_device(row: list[Any], file_info: dict[str, Any], row_index: int, com
 def merge_device(
     previous: dict[str, Any], current: dict[str, Any], *, prefer_existing: bool = False
 ) -> dict[str, Any]:
+    incoming = dict(current)
+    previous_mac = normalize_mac(previous.get("mac") or previous.get("macFormatted"))
+    if previous_mac:
+        incoming_macs = list(dict.fromkeys(filter(None, (
+            normalize_mac(current.get("mac") or current.get("macFormatted")),
+            normalize_mac(current.get("secondaryMac") or current.get("secondary_mac")),
+        ))))
+        alternatives = [candidate for candidate in incoming_macs if candidate != previous_mac]
+        if alternatives:
+            incoming["secondaryMac"] = alternatives[0]
+            incoming["alternateMacs"] = list(dict.fromkeys([*(previous.get("alternateMacs") or []), *alternatives]))
     return merge_device_records(
         previous,
-        current,
+        incoming,
         source=str(current.get("source") or ""),
         role=str(current.get("sourceRole") or ""),
         prefer_existing=prefer_existing,

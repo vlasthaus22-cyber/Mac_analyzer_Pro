@@ -6856,10 +6856,15 @@ class AppHandler(BaseHTTPRequestHandler):
                     ddio_raw_rows = len(inline_ddio_rows[1:] if inline_ddio_rows and isinstance(inline_ddio_rows[0], list) else inline_ddio_rows)
                 matched_ddio_keys: set[str] = set()
                 for item in valid:
-                    mac = normalize_mac(item.get("mac") or item.get("macFormatted"))
+                    macs = list(dict.fromkeys(filter(None, (
+                        normalize_mac(item.get("mac") or item.get("macFormatted")),
+                        normalize_mac(item.get("secondaryMac") or item.get("secondary_mac") or item.get("mac2")),
+                        *[normalize_mac(value) for value in (item.get("alternateMacs") or []) if value],
+                    ))))
                     device_id = as_text(item.get("deviceId") or item.get("device_id")).casefold()
-                    if mac and mac in ddio_index:
-                        matched_ddio_keys.add(mac)
+                    for mac in macs:
+                        if mac in ddio_index:
+                            matched_ddio_keys.add(mac)
                     if device_id and "device-id:" + device_id in ddio_index:
                         matched_ddio_keys.add("device-id:" + device_id)
                 diagnostic_counts.update({

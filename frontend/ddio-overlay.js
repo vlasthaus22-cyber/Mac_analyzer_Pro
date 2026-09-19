@@ -317,9 +317,20 @@
     let updated = 0;
     for (const device of devices || []) {
       if (normalizeIp(device?.ip)) continue;
-      const mac = normalizeMac(device?.mac || device?.macFormatted);
+      const macs = Array.from(
+        new Set(
+          [
+            normalizeMac(device?.mac || device?.macFormatted),
+            normalizeMac(device?.secondaryMac || device?.secondary_mac || device?.mac2),
+            ...(Array.isArray(device?.alternateMacs) ? device.alternateMacs.map(normalizeMac) : []),
+          ].filter(Boolean),
+        ),
+      );
       const deviceId = text(device?.deviceId || device?.device_id).toLowerCase();
-      const values = index.get(mac) || (deviceId ? index.get(deviceId) : null) || [];
+      const values =
+        macs.map((mac) => index.get(mac)).find((items) => items?.length) ||
+        (deviceId ? index.get(deviceId) : null) ||
+        [];
       if (!values.length) continue;
       device.ip = values.at(-1);
       device.ipSource = "ddio";

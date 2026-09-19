@@ -118,6 +118,40 @@ def test_main_mac_without_smartroom_ip_receives_confirmed_ddio_ip():
     assert main["possibleIps"] == ["192.0.2.55"]
 
 
+def test_main_matches_second_smartroom_interface_and_receives_ddio_ip():
+    enriched = enrich_files([
+        {
+            "name": "main.csv",
+            "role": "primary",
+            "mapping": {"mac": 0, "model": 1},
+            "rows": [["MAC", "Model"], ["00:11:22:33:44:55", "Codec"]],
+        },
+        {
+            "name": "smartroom.csv",
+            "role": "smartroom",
+            "mapping": {"mac": 0, "secondaryMac": 1, "smartroomId": 2, "ip": 3},
+            "rows": [
+                ["MAC", "MAC второго интерфейса", "Smartroom ID", "IP"],
+                ["AA:BB:CC:DD:EE:FF", "00-11-22-33-44-55", "SR-SECONDARY", ""],
+            ],
+        },
+    ])
+    assert len(enriched["devices"]) == 1
+    main = enriched["devices"][0]
+    assert main["mac"] == "001122334455"
+    assert main["smartroomId"] == "SR-SECONDARY"
+    assert main["secondaryMac"] == "AABBCCDDEEFF"
+    assert main["hasConflict"] is False
+
+    index = build_ddio_device_index(
+        [["00:11:22:33:44:55", "192.0.2.55"]],
+        {"leaseMac": 0, "leaseIp": 1},
+    )
+    assert apply_ddio_ip_fallback([main], index) == 1
+    assert main["ip"] == "192.0.2.55"
+    assert main["ipSource"] == "ddio"
+
+
 def test_previous_final_state_is_persistent_idempotent_and_does_not_lose_values():
     with isolated_server_database():
         previous = {

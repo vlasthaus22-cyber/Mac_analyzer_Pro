@@ -4,6 +4,7 @@ from collections import defaultdict
 
 
 FIELD_PATTERNS = {
+    "secondaryMac": r"(?:secondary|additional|second|2).*(?:mac|hardware)|(?:mac|hardware).*(?:secondary|additional|second|2)|(?:дополн|втор).*(?:mac|мак|интерфейс)|(?:mac|мак).*(?:дополн|втор|2)",
     "mac": r"mac|mac.?address|hardware|ethernet|client.?mac|mac.?Р°РґСЂРµСЃ",
     "vendor": r"vendor|manufacturer|brand|maker|producer|РїСЂРѕРёР·РІРѕРґРёС‚РµР»СЊ",
     "model": r"model|device|type|equipment|platform|РјРѕРґРµР»СЊ|СѓСЃС‚СЂРѕР№СЃС‚РІРѕ",
@@ -20,9 +21,10 @@ FIELD_PATTERNS = {
     "deviceName": r"device.?name|equipment.?name|asset.?name|РЅР°Р·РІР°РЅРёРµ.?СѓСЃС‚СЂРѕР№СЃС‚РІР°",
 }
 
-FIELD_ORDER = ["mac", "vendor", "model", "switchIp", "ip", "address", "room", "smartroomId", "switchPort", "authenticationTime", "hostname", "serialNumber", "deviceId", "deviceName"]
+FIELD_ORDER = ["secondaryMac", "mac", "vendor", "model", "switchIp", "ip", "address", "room", "smartroomId", "switchPort", "authenticationTime", "hostname", "serialNumber", "deviceId", "deviceName"]
 
 FIELD_LABELS = {
+    "secondaryMac": "secondary interface MAC address",
     "mac": "MAC address",
     "vendor": "vendor",
     "model": "model",
@@ -40,6 +42,7 @@ FIELD_LABELS = {
 }
 
 FIELD_KEYWORDS = {
+    "secondaryMac": {"mac", "hardware", "secondary", "additional", "second", "interface"},
     "mac": {"mac", "hardware", "ethernet", "device", "client", "id"},
     "vendor": {"vendor", "manufacturer", "brand", "maker", "producer"},
     "model": {"model", "device", "type", "equipment", "platform", "series"},
@@ -57,6 +60,7 @@ FIELD_KEYWORDS = {
 }
 
 NEGATIVE_KEYWORDS = {
+    "secondaryMac": {"ip", "switch", "port"},
     "ip": {"switch", "gateway", "router"},
     "switchIp": {"host", "client", "endpoint", "address"},
     "address": {"ip", "mac"},
@@ -159,6 +163,8 @@ def _profile(values):
 
 
 def _sample_score(field, profile, header_score):
+    if field == "secondaryMac":
+        return profile["mac"] if header_score else 0.0
     if field == "mac":
         return profile["mac"]
     if field == "ip":
@@ -190,6 +196,9 @@ def _semantic_boost(field, header, profile):
     if field == "mac" and profile["mac"] >= 0.8:
         boost += 0.22
         reasons.append("sample values look like MAC addresses")
+    elif field == "secondaryMac" and profile["mac"] >= 0.8 and ({"secondary", "additional", "second"} & words):
+        boost += 0.22
+        reasons.append("sample values look like a secondary interface MAC address")
     elif field in {"ip", "switchIp"} and profile["ip"] >= 0.8:
         boost += 0.18
         reasons.append("sample values look like IPv4 addresses")
