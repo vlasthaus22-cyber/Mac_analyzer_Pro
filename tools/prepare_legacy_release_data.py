@@ -137,6 +137,41 @@ def sanitize_database(database: Path) -> dict[str, int]:
     }
 
 
+def database_counts(database: Path) -> tuple[str, int, dict[str, int]]:
+    connection = sqlite3.connect(database)
+    try:
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        connection.execute("PRAGMA journal_mode=DELETE")
+        integrity = str(connection.execute("PRAGMA integrity_check").fetchone()[0])
+        tables = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM sqlite_master "
+                "WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            ).fetchone()[0]
+        )
+        available = {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        counts = {
+            table: int(connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0])
+            if table in available else 0
+            for table in (
+                "mac_history",
+                "vendor_model_history",
+                "snapshots",
+                "vendor_mappings",
+                "model_mappings",
+                "app_autosaves",
+            )
+        }
+        return integrity, tables, counts
+    finally:
+        connection.close()
+
+
 def prepare(
     legacy_archive: Path,
     package_root: Path,
@@ -158,6 +193,32 @@ def prepare(
         package_root / "config" / "mac_analyzer_settings.json"
     )
     database_security = sanitize_database(database)
+    legacy_integrity, legacy_tables, legacy_counts = database_counts(database)
+    if legacy_integrity != "ok":
+        raise RuntimeError(f"Legacy database integrity check failed: {legacy_integrity}")
+    if (
+        legacy_counts["mac_history"] < minimum_history_records
+        or legacy_counts["vendor_model_history"] < minimum_history_records
+    ):
+        raise RuntimeError(f"Legacy history was not preserved: {legacy_counts}")
+
+    # A legacy database may contain stale frontend autosaves whose snapshot
+    # metadata points at rows that no longer exist.  Starting the shipped app
+    # with that database makes the UI appear to contain data and then fail to
+    # load it.  Preserve the sanitized database byte-for-byte as an explicit
+    # import/backup source, while creating a coherent active database for the
+    # current schema.
+    legacy_backup = (
+        package_root
+        / "data"
+        / "backups"
+        / "legacy-v1.0.27"
+        / "mac_analyzer_web.db"
+    )
+    legacy_backup.parent.mkdir(parents=True, exist_ok=True)
+    if legacy_backup.exists():
+        legacy_backup.unlink()
+    shutil.move(str(database), str(legacy_backup))
 
     os.environ["MAC_ANALYZER_DATA_DIR"] = str(package_root / "data")
     os.environ["MAC_ANALYZER_DATABASE_PATH"] = str(database)
@@ -172,30 +233,7 @@ def prepare(
         except ValueError:
             pass
 
-    connection = sqlite3.connect(database)
-    try:
-        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-        connection.execute("PRAGMA journal_mode=DELETE")
-        integrity = str(connection.execute("PRAGMA integrity_check").fetchone()[0])
-        tables = int(
-            connection.execute(
-                "SELECT COUNT(*) FROM sqlite_master "
-                "WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-            ).fetchone()[0]
-        )
-        counts = {
-            table: int(connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0])
-            for table in (
-                "mac_history",
-                "vendor_model_history",
-                "snapshots",
-                "vendor_mappings",
-                "model_mappings",
-                "app_autosaves",
-            )
-        }
-    finally:
-        connection.close()
+    integrity, tables, active_counts = database_counts(database)
 
     caches = [
         path
@@ -205,12 +243,9 @@ def prepare(
     if caches:
         raise RuntimeError(f"Prepared package contains Python caches: {caches}")
     if integrity != "ok":
-        raise RuntimeError(f"Legacy database integrity check failed: {integrity}")
-    if (
-        counts["mac_history"] < minimum_history_records
-        or counts["vendor_model_history"] < minimum_history_records
-    ):
-        raise RuntimeError(f"Legacy history was not preserved: {counts}")
+        raise RuntimeError(f"Active database integrity check failed: {integrity}")
+    if active_counts["app_autosaves"]:
+        raise RuntimeError("Fresh active database unexpectedly contains an autosave")
 
     return {
         "legacyArchive": legacy_archive.name,
@@ -219,7 +254,13 @@ def prepare(
         "databaseBytes": database.stat().st_size,
         "databaseIntegrity": integrity,
         "databaseTables": tables,
-        **counts,
+        "legacyDatabase": str(legacy_backup),
+        "legacyDatabaseBytes": legacy_backup.stat().st_size,
+        "legacyDatabaseIntegrity": legacy_integrity,
+        "legacyDatabaseTables": legacy_tables,
+        **legacy_counts,
+        "activeSnapshots": active_counts["snapshots"],
+        "activeAutosaves": active_counts["app_autosaves"],
         "configSecretsRedacted": config_redacted,
         **database_security,
     }

@@ -1,13 +1,13 @@
 # MAC Analyzer Pro
 
-Полный комплект v1.0.66: `MAC-Analyzer-v1.0.66-Full.zip` в GitHub Releases.
+Полный комплект v1.0.67: `MAC-Analyzer-v1.0.67-Full.zip` в GitHub Releases.
 Он включает исходники, автономный HTML, Windows-приложение и сохранённые
 данные v1.0.27. Основной `START_MAC_ANALYZER.cmd` автоматически запускает
 `server.py` в пользовательской Python-консоли, ждёт готовности backend и открывает
 браузер без запроса прав администратора. Исправления аналитики, автоматического
 определения моделей, точного сравнения устройств, безопасного сохранения больших
 наборов и проверки всех устройств комнаты описаны в
-[`RELEASE_NOTES_v1.0.66.md`](RELEASE_NOTES_v1.0.66.md).
+[`RELEASE_NOTES_v1.0.67.md`](RELEASE_NOTES_v1.0.67.md).
 
 MAC Analyzer Pro is a web application for MAC inventory analysis, multi-file
 enrichment, OUI/vendor/model detection, history, comparisons, analytics,
@@ -306,8 +306,8 @@ source project, run:
 powershell -ExecutionPolicy Bypass -File scripts/build_everything_release.ps1
 ```
 
-To combine the current fixed program with the preserved working database,
-history, snapshots, mappings, imports, and backups from v1.0.27, run:
+To combine the current fixed program with the complete sanitized legacy
+database, history, mappings, imports, and backups from v1.0.27, run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/build_v1027_data_release.ps1
@@ -319,7 +319,12 @@ the complete data package `MAC-Analyzer-<version>-Full.zip`. The directory at
 the root of each ZIP uses the same short name.
 
 The migration works on an archive copy and removes saved API keys, passwords,
-webhooks, tokens, and engineering sessions before release packaging.
+webhooks, tokens, and engineering sessions before release packaging. The
+legacy database is preserved under `data/backups/legacy-v1.0.27`; the active
+database starts with the current schema and no orphaned snapshot references.
+The exact original complete archive is additionally stored under
+`Legacy-v1.0.27`. This prevents stale stress-test autosaves from hiding or
+inventing Final data while retaining every file of the earlier complete build.
 
 `mac_analyzer_standalone.html` is a legacy parity artifact and is not the main
 application. New functionality belongs in `index.html`, `app.js`, and

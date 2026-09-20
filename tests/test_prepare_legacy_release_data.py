@@ -60,7 +60,6 @@ def test_legacy_release_data_preserves_history_and_redacts_secrets():
             connection.commit()
         finally:
             connection.close()
-
         config = workspace / "legacy" / "config" / "mac_analyzer_settings.json"
         config.parent.mkdir(parents=True)
         config.write_text(
@@ -105,6 +104,9 @@ def test_legacy_release_data_preserves_history_and_redacts_secrets():
         assert report["databaseIntegrity"] == "ok"
         assert report["mac_history"] == 1
         assert report["vendor_model_history"] == 1
+        assert report["legacyDatabaseIntegrity"] == "ok"
+        assert report["activeSnapshots"] == 0
+        assert report["activeAutosaves"] == 0
         assert report["configSecretsRedacted"] == 1
         assert report["engineeringSessionsRemoved"] == 1
 
@@ -114,15 +116,31 @@ def test_legacy_release_data_preserves_history_and_redacts_secrets():
             )
         )
         assert sanitized["api_settings"]["api_key"] == ""
+        active_database = package_root / "data" / "databases" / "mac_analyzer_web.db"
         connection = sqlite3.connect(
-            f"file:{package_root / 'data/databases/mac_analyzer_web.db'}?mode=ro",
+            f"file:{active_database}?mode=ro",
             uri=True,
         )
+        try:
+            assert connection.execute("SELECT COUNT(*) FROM mac_history").fetchone()[0] == 0
+            assert connection.execute("SELECT COUNT(*) FROM engineering_sessions").fetchone()[0] == 0
+        finally:
+            connection.close()
+        legacy_backup = package_root / "data" / "backups" / "legacy-v1.0.27" / "mac_analyzer_web.db"
+        assert legacy_backup.is_file()
+        connection = sqlite3.connect(f"file:{legacy_backup}?mode=ro", uri=True)
         try:
             assert connection.execute("SELECT COUNT(*) FROM mac_history").fetchone()[0] == 1
             assert connection.execute("SELECT COUNT(*) FROM engineering_sessions").fetchone()[0] == 0
         finally:
             connection.close()
+
+
+def test_full_release_preserves_the_original_complete_legacy_archive():
+    script = (ROOT / "scripts" / "build_v1027_data_release.ps1").read_text(encoding="utf-8-sig")
+    assert 'Join-Path $package "Legacy-v1.0.27"' in script
+    assert '"MAC-Analyzer-Pro-v1.0.27-Complete.zip"' in script
+    assert 'legacyCompleteArchive = "Legacy-v1.0.27/MAC-Analyzer-Pro-v1.0.27-Complete.zip"' in script
 
 
 if __name__ == "__main__":

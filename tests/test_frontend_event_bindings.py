@@ -153,13 +153,16 @@ def test_large_second_xlsx_uses_indexeddb_without_blocking_render():
     assert 'function compactBrowserState(source)' in app
     assert 'StatePersistence.compactLocalState(source)' in app
     assert 'StatePersistence.compactIndexedState(state)' in app
-    assert 'serverBackedResult ? [] : list(source.devices)' in app
+    persistence = Path("frontend/state-persistence.js").read_text(encoding="utf-8")
+    assert 'const snapshotBackedResult = Boolean(' in persistence
+    assert 'devices: inlineResult ? resultRows : []' in persistence
+    assert 'resultPersistenceTruncated: !snapshotBackedResult && !inlineResult' in persistence
     assert 'preserveBrowserRows && !file.fileToken ? list(file.rows).slice(0, workspacePreviewRows) : []' in app
     assert 'localStorage.setItem(key,JSON.stringify(compactBrowserState(state)))' in app
     assert 'scheduleBrowserStateSave(savedAt,options.immediate?0:250);' in app
     assert 'async function flushBrowserStateSave()' in app
     assert 'async function restoreBrowserStateFromIndexedDb()' in app
-    assert 'restoreBrowserStateFromIndexedDb().then((restored)' in app
+    assert 'const restored=await restoreBrowserStateFromIndexedDb();' in app
     assert 'let pendingFileImports = [];' in app
     assert 'Чтение Excel в браузере...' in app
     assert 'if(pendingFileImports.length||!backendAvailable)return;' in app
@@ -1230,7 +1233,6 @@ def test_browser_export_fallback_when_backend_is_unavailable():
         "function localSpreadsheetXml(table)",
         "function localHtmlExport(table)",
         "function localExportData(type)",
-        'localExportData("spreadsheetml")',
         'localExportData("html")',
         'if(localExportData(type))finishProcess(processId,"Экспорт завершён в браузере: "+type,"warning")',
         'toast("Экспорт выполнен в браузере без backend.")',

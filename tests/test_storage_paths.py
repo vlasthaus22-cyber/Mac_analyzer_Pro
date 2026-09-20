@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 
 from storage_paths import build_storage_layout, initialize_storage, resolve_legacy_database
 
@@ -8,6 +9,8 @@ def test_storage_layout_creates_separate_directories_and_moves_known_files(tmp_p
 
     context = tempfile.TemporaryDirectory() if tmp_path is None else None
     root = Path(context.name) if context else Path(tmp_path)
+    previous_data = os.environ.pop("MAC_ANALYZER_DATA_DIR", None)
+    previous_database = os.environ.pop("MAC_ANALYZER_DATABASE_PATH", None)
     try:
         fixtures = {
             "mac_analyzer_web.db": b"database",
@@ -40,6 +43,10 @@ def test_storage_layout_creates_separate_directories_and_moves_known_files(tmp_p
         assert resolve_legacy_database(layout, "mac_history.db") == layout.legacy / "mac_history.db"
         assert not any((root / name).exists() for name in fixtures)
     finally:
+        if previous_data is not None:
+            os.environ["MAC_ANALYZER_DATA_DIR"] = previous_data
+        if previous_database is not None:
+            os.environ["MAC_ANALYZER_DATABASE_PATH"] = previous_database
         if context:
             context.cleanup()
 
@@ -49,6 +56,8 @@ def test_storage_layout_does_not_overwrite_existing_destination(tmp_path=None):
 
     context = tempfile.TemporaryDirectory() if tmp_path is None else None
     root = Path(context.name) if context else Path(tmp_path)
+    previous_data = os.environ.pop("MAC_ANALYZER_DATA_DIR", None)
+    previous_database = os.environ.pop("MAC_ANALYZER_DATABASE_PATH", None)
     try:
         layout = build_storage_layout(root)
         layout.databases.mkdir(parents=True, exist_ok=True)
@@ -61,5 +70,9 @@ def test_storage_layout_does_not_overwrite_existing_destination(tmp_path=None):
         assert (root / "mac_analyzer_web.db").read_bytes() == b"source"
         assert report["skipped"][0]["reason"] == "destination exists"
     finally:
+        if previous_data is not None:
+            os.environ["MAC_ANALYZER_DATA_DIR"] = previous_data
+        if previous_database is not None:
+            os.environ["MAC_ANALYZER_DATABASE_PATH"] = previous_database
         if context:
             context.cleanup()

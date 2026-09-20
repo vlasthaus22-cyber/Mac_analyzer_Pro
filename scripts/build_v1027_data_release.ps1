@@ -1,6 +1,6 @@
 param(
     [string]$OutputDirectory = "",
-    [string]$Version = "v1.0.66",
+    [string]$Version = "v1.0.67",
     [string]$LegacyArchive = "",
     [string]$PortablePackage = ""
 )
@@ -43,11 +43,16 @@ try {
         --legacy-archive $legacySource --package-root (Join-Path $package "Windows-Portable")
     if ($LASTEXITCODE -ne 0) { throw "v1.0.27 data preparation failed." }
     $legacyReport = $prepareOutput | ConvertFrom-Json
+    $legacyArchiveDirectory = Join-Path $package "Legacy-v1.0.27"
+    New-Item -ItemType Directory -Force -Path $legacyArchiveDirectory | Out-Null
+    Copy-Item -LiteralPath $legacySource -Destination (Join-Path $legacyArchiveDirectory "MAC-Analyzer-Pro-v1.0.27-Complete.zip") -Force
 
     @(
         ""
         "V1.0.27 DATA COMPATIBILITY"
-        "This package contains the preserved v1.0.27 working database, history, snapshots, mappings, imports, backups, and logs."
+        "This package contains the complete sanitized v1.0.27 database under Windows-Portable/data/backups/legacy-v1.0.27, together with history, mappings, imports, backups, and logs."
+        "The active database is initialized with the current schema and contains no orphaned snapshot metadata. Import the archived database from the Database screen only when legacy inspection is required."
+        "The original complete v1.0.27 archive is also preserved under Legacy-v1.0.27 without modification."
         "The program code, Windows runtime, autonomous HTML, tests, and tools are the current improved version."
         "Saved API keys, passwords, webhooks, tokens, and engineering sessions are removed from the release copy."
     ) | Add-Content -LiteralPath (Join-Path $package "README_FIRST.txt") -Encoding UTF8
@@ -65,7 +70,11 @@ try {
         trackedProjectFiles = $sourceInfo.trackedProjectFiles
         legacyDataSource = "MAC-Analyzer-Pro-v1.0.27-Complete.zip"
         legacyDatabaseIncluded = $true
+        legacyDatabaseLocation = "Windows-Portable/data/backups/legacy-v1.0.27/mac_analyzer_web.db"
+        legacyCompleteArchive = "Legacy-v1.0.27/MAC-Analyzer-Pro-v1.0.27-Complete.zip"
+        legacyCompleteArchiveBytes = (Get-Item -LiteralPath $legacySource).Length
         databaseIntegrity = $legacyReport.databaseIntegrity
+        legacyDatabaseIntegrity = $legacyReport.legacyDatabaseIntegrity
         databaseTables = $legacyReport.databaseTables
         macHistoryRecords = $legacyReport.mac_history
         vendorModelHistoryRecords = $legacyReport.vendor_model_history
@@ -114,6 +123,8 @@ try {
         trackedProjectFiles = $sourceInfo.trackedProjectFiles
         legacyDatabaseIncluded = $true
         databaseBytes = $legacyReport.databaseBytes
+        legacyDatabaseBytes = $legacyReport.legacyDatabaseBytes
+        legacyCompleteArchiveBytes = (Get-Item -LiteralPath $legacySource).Length
         databaseIntegrity = $legacyReport.databaseIntegrity
         macHistoryRecords = $legacyReport.mac_history
         vendorModelHistoryRecords = $legacyReport.vendor_model_history

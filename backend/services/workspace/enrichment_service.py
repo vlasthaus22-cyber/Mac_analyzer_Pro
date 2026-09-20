@@ -159,6 +159,15 @@ def merge_device(
             normalize_mac(current.get("secondaryMac") or current.get("secondary_mac")),
         ))))
         alternatives = [candidate for candidate in incoming_macs if candidate != previous_mac]
+        if previous_mac in incoming_macs:
+            # A SmartRoom row may expose the main-file MAC in its secondary
+            # interface column and another interface in the primary column.
+            # The successful secondary-interface match proves device identity;
+            # keep the main-file MAC canonical and retain the other interface
+            # as an alias instead of reporting a false MAC conflict.
+            incoming["mac"] = previous_mac
+            incoming["macFormatted"] = format_mac(previous_mac)
+            incoming["oui"] = previous_mac[:6]
         if alternatives:
             incoming["secondaryMac"] = alternatives[0]
             incoming["alternateMacs"] = list(dict.fromkeys([*(previous.get("alternateMacs") or []), *alternatives]))

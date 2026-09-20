@@ -47,7 +47,7 @@ try {
 
     foreach ($file in $files) {
         $module = "tests.$($file.BaseName)"
-        & $python -m $module
+        & $python -m tools.run_python_test_module $module
         if ($LASTEXITCODE -eq 0) {
             $passed++
         } else {

@@ -30,6 +30,7 @@
     };
     const compact = row => { const place = location(row); return ({
       mac: mac(row.mac || row.macFormatted || row.physical_address),
+      internalDeviceId: text(row.internalDeviceId || row.internal_device_id),
       smartroomId: text(row.smartroomId || row.smartroom_id || row.Smartroom_ID),
       room: place.room, tb: place.tb, city: place.city, site: place.site, floor: place.floor,
       locationPath: place.path, address: text(row.address || row.physicalAddress),
@@ -37,6 +38,7 @@
       ip: text(row.ip || row.deviceIp || row.device_ip), deviceId: text(row.deviceId || row.device_id), serialNumber: text(row.serialNumber || row.serial_number || row.serial), hostname: text(row.hostname || row.host_name), vendor: text(row.vendor || row.manufacturer), model: text(row.model),
       possibleIps: ips(row.Possible_IPs || row.possible_ips || row.possibleIps)
     }); };
+    const identity = row => row.internalDeviceId ? 'internal:' + row.internalDeviceId.toLowerCase() : row.deviceId ? 'device:' + row.deviceId.toLowerCase() : row.serialNumber ? 'serial:' + row.serialNumber.toUpperCase() : row.mac ? 'mac:' + row.mac : row.hostname ? 'host:' + row.hostname.toLowerCase() : '';
     const merge = (before, incoming) => { if (!before) return incoming; const result = { ...before }; for (const [field, value] of Object.entries(incoming)) { if (Array.isArray(value)) result[field] = Array.from(new Set([...(result[field] || []), ...value])); else if (text(value)) result[field] = value; } return result; };
     const key = row => row.smartroomId || ('UNASSIGNED:' + row.mac);
     function begin(id, options) { sessions.set(id, { options: options || {}, snapshots: [], current: new Map(), previous: new Map(), rooms: new Map(), macs: new Map(), criticalSwitchChanges: [], daily: new Map(), pending: null, skipped: 0, invalidMacRows: 0 }); }
@@ -52,9 +54,9 @@
           s.skipped += 1;
           continue;
         }
-        const identity = row.mac ? 'mac:' + row.mac : row.deviceId ? 'device:' + row.deviceId.toLowerCase() : row.serialNumber ? 'serial:' + row.serialNumber.toUpperCase() : row.hostname ? 'host:' + row.hostname.toLowerCase() : 'room:' + row.smartroomId + ':anonymous:' + (++s.pending.anonymous);
-        s.pending.next.set(identity, merge(s.pending.next.get(identity), row));
-        if (row.smartroomId) { const roomKey = key(row); if (!s.pending.byRoom.has(roomKey)) s.pending.byRoom.set(roomKey, new Map()); const roomDevices = s.pending.byRoom.get(roomKey); roomDevices.set(identity, merge(roomDevices.get(identity), row)); }
+        const identityKey = identity(row) || 'room:' + row.smartroomId + ':anonymous:' + (++s.pending.anonymous);
+        s.pending.next.set(identityKey, merge(s.pending.next.get(identityKey), row));
+        if (row.smartroomId) { const roomKey = key(row); if (!s.pending.byRoom.has(roomKey)) s.pending.byRoom.set(roomKey, new Map()); const roomDevices = s.pending.byRoom.get(roomKey); roomDevices.set(identityKey, merge(roomDevices.get(identityKey), row)); }
       }
     }
     function endSnapshot(id) {
@@ -89,8 +91,8 @@
       const rooms = [];
       for (const [roomKey, events] of s.rooms) {
         const latest = events.at(-1) || { devices: [] }; const prior = events.at(-2) || { devices: [] };
-        const latestMacs = new Set(latest.devices.map(item => item.mac).filter(Boolean));
-        const missing = prior.devices.filter(item => item.mac && !latestMacs.has(item.mac));
+        const latestIdentities = new Set(latest.devices.map(identity).filter(Boolean));
+        const missing = prior.devices.filter(item => { const value = identity(item); return value && !latestIdentities.has(value); });
         const place = latest.devices[0] || prior.devices[0] || {};
         rooms.push({ smartroomId: place.smartroomId || roomKey.replace(/^MAC:/, ''), room: place.room || '', tb: place.tb || '', city: place.city || '', site: place.site || '', floor: place.floor || '', locationPath: place.locationPath || '', address: place.address || '', devices: latest.devices, missing, history: events });
       }

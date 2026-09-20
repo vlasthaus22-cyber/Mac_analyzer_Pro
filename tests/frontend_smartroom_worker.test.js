@@ -156,6 +156,23 @@ require("../frontend/smartroom-worker.js");
   assert.strictEqual(serialReport.snapshots[0].total, 2, "serial numbers must keep distinct room devices without MAC");
   assert.strictEqual(serialReport.rooms[0].history[0].devices.length, 2);
 
+  const stableIdentityReport = await global.MacAnalyzerSmartroomWorker.build([
+    {
+      id: "stable-before",
+      createdAt: "2026-08-04T00:00:00Z",
+      devices: [{ internalDeviceId: "stable-codec", deviceId: "ROOM-CODEC-1", mac: "001122334455", smartroomId: "ROOM-STABLE", model: "Old" }],
+    },
+    {
+      id: "stable-after",
+      createdAt: "2026-09-04T00:00:00Z",
+      devices: [{ internalDeviceId: "stable-codec", deviceId: "ROOM-CODEC-1", mac: "AABBCCDDEEFF", smartroomId: "ROOM-STABLE", model: "New" }],
+    },
+  ]);
+  assert.strictEqual(stableIdentityReport.snapshotChanges[1].added, 0, "a changed MAC with a stable device ID is not a new device");
+  assert.strictEqual(stableIdentityReport.snapshotChanges[1].removed, 0, "a changed MAC with a stable device ID is not missing");
+  assert.strictEqual(stableIdentityReport.snapshotChanges[1].changes, 1);
+  assert.strictEqual(stableIdentityReport.rooms[0].missing.length, 0);
+
   const incompleteLocation = await global.MacAnalyzerSmartroomWorker.build([
     { id: "no-floor", createdAt: "2026-08-03T00:00:00Z", devices: [
       { mac: "001122334455", smartroomId: "NO-FLOOR", room: "ЦА, Москва, Кутузовский проспект, , Переговорная 1" },

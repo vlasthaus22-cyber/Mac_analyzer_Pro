@@ -703,20 +703,46 @@ def build_dashboard_payload(
         history_devices,
     )
     if use_snapshot_comparison:
-        current_by_mac = {_mac(device): device for device in devices if isinstance(device, dict) and _mac(device)}
-        modified_macs = {
-            item["mac"] for item in change_analysis.get("changes", [])
-            if item.get("type") == "modified"
+        # Snapshot comparison must use the same stable identity as the change
+        # analyser.  Keying status charts by MAC made a legitimate MAC
+        # replacement look like two missing devices even when Device ID or the
+        # persistent internal ID proved that it was one physical device.
+        current_by_identity = {
+            _device_identity(device): device
+            for device in devices
+            if isinstance(device, dict) and _device_identity(device)
         }
-        added_macs = {
-            item["mac"] for item in change_analysis.get("changes", [])
-            if item.get("type") == "added"
+        modified_identities = {
+            item.get("identity") for item in change_analysis.get("changes", [])
+            if item.get("type") == "modified" and item.get("identity")
         }
-        classified["changed"] = [current_by_mac[mac] for mac in sorted(modified_macs) if mac in current_by_mac]
-        classified["unchanged"] = [
-            device for mac, device in current_by_mac.items()
-            if mac not in modified_macs and mac not in added_macs
-        ]
+        added_identities = {
+            item.get("identity") for item in change_analysis.get("changes", [])
+            if item.get("type") == "added" and item.get("identity")
+        }
+        missing_by_identity: dict[str, dict[str, Any]] = {}
+        for item in change_analysis.get("changes", []):
+            identity = item.get("identity")
+            if item.get("type") != "removed" or not identity:
+                continue
+            previous = dict(item.get("beforeDevice") or {"mac": item.get("mac")})
+            previous["dashboardStatus"] = "missing"
+            missing_by_identity.setdefault(identity, previous)
+        classified = {
+            "all": [dict(device) for device in current_by_identity.values()],
+            "changed": [
+                {**current_by_identity[identity], "dashboardStatus": "changed"}
+                for identity in sorted(modified_identities)
+                if identity in current_by_identity
+            ],
+            "missing": list(missing_by_identity.values()),
+            "unchanged": [
+                {**device, "dashboardStatus": "unchanged"}
+                for identity, device in current_by_identity.items()
+                if identity not in modified_identities and identity not in added_identities
+            ],
+            "movements": comparison_movements,
+        }
     elif normalized["changeMode"] == "period":
         current_by_identity = {
             _device_identity(device): device

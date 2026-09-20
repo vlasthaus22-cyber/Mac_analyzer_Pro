@@ -354,6 +354,31 @@ def test_dashboard_uses_previous_and_current_final_snapshots_for_all_status_metr
     assert {item["mac"] for item in payload["devices"]} == {"AABBCC000001", "AABBCC000002"}
 
 
+def test_dashboard_does_not_mark_a_stable_device_missing_when_its_mac_changes():
+    before = {
+        "id": "mac-before", "createdAt": "2026-08-01T00:00:00Z", "devices": [
+            {"internalDeviceId": "stable-codec", "deviceId": "ROOM-CODEC-1", "mac": "001122334455", "vendor": "Cisco"},
+        ],
+    }
+    current = {
+        "id": "mac-after", "createdAt": "2026-09-01T00:00:00Z", "devices": [
+            {"internalDeviceId": "stable-codec", "deviceId": "ROOM-CODEC-1", "mac": "AABBCCDDEEFF", "vendor": "Cisco"},
+        ],
+    }
+    payload = build_dashboard_payload(
+        current["devices"],
+        [before, current],
+        {"changeMode": "snapshots"},
+        change_snapshots=[before, current],
+    )
+
+    assert payload["metrics"]["changed"] == 1
+    assert payload["metrics"]["missing"] == 0
+    assert payload["changeAnalysis"]["summary"]["added"] == 0
+    assert payload["changeAnalysis"]["summary"]["removed"] == 0
+    assert payload["statusCharts"]["missing"] == []
+
+
 def test_dashboard_reports_unique_macs_across_uploads_and_latest_count():
     snapshots = [
         {"id": "one", "name": "Анализ: one.xlsx", "createdAt": "2026-07-01T08:00:00Z", "devices": [
@@ -531,6 +556,7 @@ if __name__ == "__main__":
     test_dashboard_reports_rooms_where_every_device_changed()
     test_dashboard_period_compares_the_final_snapshots_at_its_boundaries()
     test_dashboard_uses_previous_and_current_final_snapshots_for_all_status_metrics()
+    test_dashboard_does_not_mark_a_stable_device_missing_when_its_mac_changes()
     test_dashboard_reports_unique_macs_across_uploads_and_latest_count()
     test_dashboard_tracks_smartroom_change_without_false_device_replacement()
     test_persistent_source_conflict_is_not_reported_as_device_change()
