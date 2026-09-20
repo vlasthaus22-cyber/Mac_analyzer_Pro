@@ -15,7 +15,7 @@ def test_ddio_third_export_is_display_only_and_bound_in_primary_frontend():
     assert 'id="ddioFileInput"' in html
     assert 'id="browseDdioFileButton"' in html
     assert 'id="ddioMappingGrid"' in html
-    assert '<script src="frontend/ddio-overlay.js?v=1065"></script>' in html
+    assert '<script src="frontend/ddio-overlay.js?v=1066"></script>' in html
     assert 'loadDdioFile(e.target.files,e.target)' in app
     assert all(field in ddio for field in ('reservationMac', 'reservationIp', 'leaseMac', 'leaseIp'))
     assert '[["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"]]' in app
@@ -1039,7 +1039,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=1065"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=1066"></script>' in html
     assert '<script src="frontend/xlsx-exporter.js?v=20260727.5"></script>' in html
     assert '<script src="frontend/full-xlsx-report.js?v=20260729.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
@@ -1521,8 +1521,8 @@ def test_clusters_topology_statistics_and_exports_have_local_fallbacks():
     assert 'if (vendorFilter && vendor !== vendorFilter) continue;' in local_analytics
     assert 'if (roomFilter && room !== roomFilter) continue;' in local_analytics
     assert 'if (!showUnknown && unknownVendors.has(vendor.toLowerCase())) continue;' in local_analytics
-    assert '$("#clusterChart").innerHTML=LocalAnalytics.renderClusters(details);' in app
-    assert '$("#topologyGraph").innerHTML=LocalAnalytics.renderTopology(details);' in app
+    assert 'scheduleAnalyticsSecondaryPanels(revision,dashboardDevices())' in app
+    assert 'void refreshBrowserDashboardFleet(cache);' in app
 
 
 def test_primary_analytics_charts_use_backend_payload():
@@ -1655,7 +1655,9 @@ def test_snapshot_select_options_use_backend_payload():
 def test_statistics_panels_use_backend_panel_payload():
     app = read_app_js()
 
-    assert 'const data=await api("/statistics/panel");' in app
+    assert 'function loadStatisticsPanel()' in app
+    assert 'statisticsPanelPromise=api("/statistics/panel")' in app
+    assert 'const data=await loadStatisticsPanel();' in app
     assert 'root.innerHTML=data.statisticsHtml' in app
     assert 'root.innerHTML=data.temporalHtml' in app
     assert 'root.innerHTML=data.backendChartsHtml' in app
@@ -2201,6 +2203,8 @@ def test_search_dashboard_smartroom_and_unified_exports_are_wired():
         "async function exportFullJson()", "FullJsonReport.createReport({",
         "function initializeAnalyticsExpanders()",
         "function renderDashboardAllChangedRooms()", "function showDashboardAllChangedRooms()",
+        "dashboardChangesVisibleLimit=100", "data-load-more-dashboard-changes",
+        "dashboardChangesVisibleLimit+=100",
         'data-dashboard-room="${esc(item.smartroomId||"")}"',
         "function normalizedRoomName(", "function synchronizeSmartroomIdentity(",
         "function inferSmartroomRoomMappings(", "function mergeDdioOverlayMovements(",

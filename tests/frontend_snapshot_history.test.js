@@ -148,6 +148,32 @@ assert.deepEqual(store.comparisonHistoryIds(null, "baseline", "current"), []);
   assert.equal(roomComparison.roomCoverage.rooms.find((item) => item.smartroomId === "SR-A").allChanged, false);
   assert.equal(roomComparison.roomCoverage.rooms.find((item) => item.smartroomId === "SR-B").allChanged, true);
 
+  await store.save({ id: "aggregate-cache", kind: "analysis", devices: [
+    { mac: "001122330001", vendor: "Cisco", model: "Room Kit", room: "101", ip: "192.0.2.1" },
+    { mac: "001122330002", vendor: "Poly", model: "Studio", room: "102", ip: "192.0.2.2" },
+  ] });
+  const firstAggregate = await store.aggregate("aggregate-cache", { limit: 8 });
+  assert.equal(firstAggregate.devices, 2);
+  const cacheDatabase = await new Promise((resolve, reject) => {
+    const request = indexedDB.open("mac-analyzer-browser-storage-v1", 11);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  const cachedMetadata = await new Promise((resolve, reject) => {
+    const transaction = cacheDatabase.transaction("snapshots", "readonly");
+    const request = transaction.objectStore("snapshots").get("aggregate-cache");
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  cacheDatabase.close();
+  assert.equal(cachedMetadata.analyticsAggregateVersion, 1);
+  assert.equal(cachedMetadata.analyticsAggregate.devices, 2);
+  assert.equal((await store.aggregate("aggregate-cache", { limit: 8 })).uniqueVendors, 2);
+  await store.save({ id: "aggregate-cache", kind: "analysis", devices: [
+    { mac: "001122330003", vendor: "Cisco", room: "103" },
+  ] });
+  assert.equal((await store.aggregate("aggregate-cache", { limit: 8 })).devices, 1, "rewriting a snapshot invalidates its aggregate cache");
+
   // A current row with a stable internal ID must not become a duplicate merely
   // because a stale secondary identifier still points to another old device.
   const identityJob = "identity-conflict-regression";

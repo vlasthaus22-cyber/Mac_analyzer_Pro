@@ -12,6 +12,11 @@ from backend.services.identity.device_identity_service import identity_key, pair
 from .chart_service import build_chart_payload
 
 
+DASHBOARD_FILTER_OPTION_LIMIT = 1000
+DASHBOARD_CHANGE_DETAIL_LIMIT = 5000
+DASHBOARD_ROOM_DETAIL_LIMIT = 5000
+
+
 def _text(value: Any) -> str:
     return "" if value is None else str(value).strip()
 
@@ -39,7 +44,7 @@ def normalize_dashboard_settings(settings: dict[str, Any] | None = None) -> dict
         "showUnknown": bool(settings.get("showUnknown", True)),
         "visibleCards": {
             key: bool(card_settings.get(key, True))
-            for key in ("total", "changed", "missing", "unchanged", "vendors", "rooms", "changedRooms", "allChangedRooms")
+            for key in ("total", "changed", "missing", "unchanged", "vendors", "rooms", "missingRoom", "changedRooms", "allChangedRooms")
         },
         "visibleCharts": {
             key: bool(chart_settings.get(key, True))
@@ -782,11 +787,31 @@ def build_dashboard_payload(
         {"label": label, "value": count}
         for label, count in Counter(_text(device.get("model")) or "Unknown" for device in missing_room_scope).most_common(normalized["chartLimit"])
     ]
-    vendors = sorted({_text(device.get("vendor")) for device in devices if _text(device.get("vendor"))})
-    rooms = sorted({_text(device.get("room")) for device in devices if _text(device.get("room"))})
+    all_vendors = sorted({_text(device.get("vendor")) for device in devices if _text(device.get("vendor"))})
+    all_rooms = sorted({_text(device.get("room")) for device in devices if _text(device.get("room"))})
+    vendors = all_vendors[:DASHBOARD_FILTER_OPTION_LIMIT]
+    rooms = all_rooms[:DASHBOARD_FILTER_OPTION_LIMIT]
+    if normalized["vendor"] and normalized["vendor"] not in vendors:
+        vendors.append(normalized["vendor"])
+    if normalized["room"] and normalized["room"] not in rooms:
+        rooms.append(normalized["room"])
+    change_details = change_analysis.get("changes", [])
+    room_details = change_analysis.get("roomCoverage", {}).get("rooms", [])
+    change_analysis["changeCountTotal"] = len(change_details)
+    change_analysis["changesTruncated"] = len(change_details) > DASHBOARD_CHANGE_DETAIL_LIMIT
+    change_analysis["changes"] = change_details[:DASHBOARD_CHANGE_DETAIL_LIMIT]
+    if isinstance(change_analysis.get("roomCoverage"), dict):
+        change_analysis["roomCoverage"]["roomCountTotal"] = len(room_details)
+        change_analysis["roomCoverage"]["roomsTruncated"] = len(room_details) > DASHBOARD_ROOM_DETAIL_LIMIT
+        change_analysis["roomCoverage"]["rooms"] = room_details[:DASHBOARD_ROOM_DETAIL_LIMIT]
     return {
         "settings": normalized,
         "filters": {"vendors": vendors, "rooms": rooms},
+        "filterCounts": {"vendors": len(all_vendors), "rooms": len(all_rooms)},
+        "filtersTruncated": {
+            "vendors": len(all_vendors) > DASHBOARD_FILTER_OPTION_LIMIT,
+            "rooms": len(all_rooms) > DASHBOARD_FILTER_OPTION_LIMIT,
+        },
         "filterOptionsHtml": {
             "vendors": dashboard_filter_options_html(vendors, normalized["vendor"], "Все производители"),
             "rooms": dashboard_filter_options_html(rooms, normalized["room"], "Все помещения"),

@@ -607,6 +607,7 @@ def init_database() -> None:
             CREATE INDEX IF NOT EXISTS idx_mac_history_oui ON mac_history(oui);
             CREATE INDEX IF NOT EXISTS idx_mac_history_switch_ip ON mac_history(switch_ip);
             CREATE INDEX IF NOT EXISTS idx_mac_history_recorded_at ON mac_history(recorded_at);
+            CREATE INDEX IF NOT EXISTS idx_mac_history_mac_recorded_at ON mac_history(mac, recorded_at DESC, id DESC);
             CREATE TABLE IF NOT EXISTS device_inventory (
                 mac TEXT PRIMARY KEY,
                 mac_formatted TEXT NOT NULL,
@@ -672,6 +673,7 @@ def init_database() -> None:
                 changed_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_mac_movements_mac ON mac_movements(mac);
+            CREATE INDEX IF NOT EXISTS idx_mac_movements_changed_at ON mac_movements(changed_at DESC, id DESC);
             CREATE TABLE IF NOT EXISTS vendor_model_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 mac TEXT NOT NULL,
@@ -7487,10 +7489,9 @@ class AppHandler(BaseHTTPRequestHandler):
                     invalid = []
                 self.json_response(build_dashboard_metrics_payload(devices, invalid, snapshots, settings))
             elif parsed.path == "/api/dashboard":
-                devices = resolve_payload_devices(payload)
                 snapshots = payload.get("snapshots", [])
                 settings = payload.get("settings", {})
-                if not isinstance(devices, list) or not isinstance(snapshots, list) or not isinstance(settings, dict):
+                if not isinstance(snapshots, list) or not isinstance(settings, dict):
                     self.error_response("devices, snapshots and settings are required")
                     return
                 client_movements = payload.get("movements", [])
@@ -7502,7 +7503,19 @@ class AppHandler(BaseHTTPRequestHandler):
                     as_text(payload.get("snapshotId") or payload.get("resultSnapshotId")),
                     settings,
                 )
-                database_movements, history_devices = dashboard_history_context(settings)
+                current_snapshot_id = as_text(payload.get("snapshotId") or payload.get("resultSnapshotId"))
+                current_snapshot = next((
+                    item for item in change_snapshots
+                    if as_text(item.get("id") or item.get("snapshotId")) == current_snapshot_id
+                ), None)
+                devices = current_snapshot.get("devices", []) if current_snapshot else resolve_payload_devices(payload)
+                if not isinstance(devices, list):
+                    self.error_response("devices must be an array")
+                    return
+                if len(change_snapshots) >= 2:
+                    database_movements, history_devices = [], []
+                else:
+                    database_movements, history_devices = dashboard_history_context(settings)
                 result = build_dashboard_payload(
                     devices,
                     snapshot_options,

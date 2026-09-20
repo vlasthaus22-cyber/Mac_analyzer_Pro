@@ -252,6 +252,8 @@
       deviceCount: Number(snapshot.deviceCount ?? devices.length),
       invalidCount: Number(snapshot.invalidCount ?? invalid.length),
     };
+    delete metadata.analyticsAggregate;
+    delete metadata.analyticsAggregateVersion;
     await removeSnapshot(snapshotId);
     await transaction(snapshotStore, "readwrite", (store) => store.put(metadata));
     try {
@@ -309,6 +311,8 @@
       browserStored: true,
       backendStored: false,
     };
+    delete metadata.analyticsAggregate;
+    delete metadata.analyticsAggregateVersion;
     await removeSnapshot(metadata.id);
     await transaction(snapshotStore, "readwrite", (store) => store.put(metadata));
     return metadata;
@@ -485,6 +489,8 @@
       lastMutationName: String(mutation.name || ""),
       lastMutationSource: String(mutation.source || ""),
     };
+    delete metadata.analyticsAggregate;
+    delete metadata.analyticsAggregateVersion;
     const database = await openDatabase();
     return new Promise((resolve, reject) => {
       const current = database.transaction([snapshotStore, snapshotChunkStore], "readwrite");
@@ -1211,6 +1217,8 @@
       deviceCount: 0,
       invalidCount: Array.isArray(invalid) ? invalid.length : 0,
     };
+    delete metadata.analyticsAggregate;
+    delete metadata.analyticsAggregateVersion;
     await transaction(snapshotStore, "readwrite", (store) => store.put(metadata));
     try {
       let chunkIndex = 0;
@@ -1384,7 +1392,40 @@
       && (!query || searchable.includes(query) || (queryMac && deviceMac.includes(queryMac)));
   }
 
+  function aggregateCacheable(options = {}) {
+    return !String(options.vendor || "").trim()
+      && !String(options.room || "").trim()
+      && !String(options.query || "").trim()
+      && options.showUnknown !== false;
+  }
+
+  function sliceAggregateRows(payload, limit) {
+    const result = { ...payload };
+    for (const key of ["vendors", "models", "rooms", "switches", "oui3", "oui4", "oui5", "missingRoomVendors", "missingRoomModels"]) {
+      result[key] = (payload?.[key] || []).slice(0, limit);
+    }
+    return result;
+  }
+
+  async function saveAggregateCache(metadata, payload) {
+    if (!metadata?.id || !payload) return false;
+    const cached = { ...payload };
+    delete cached.metadata;
+    const updated = { ...metadata, devices: [], invalid: [], analyticsAggregateVersion: 1, analyticsAggregate: cached };
+    await transaction(snapshotStore, "readwrite", (store) => store.put(updated));
+    return true;
+  }
+
   async function aggregate(id, options = {}) {
+    const requestedLimit = Math.max(8, Math.min(200, Number(options.limit || 50)));
+    const cacheable = aggregateCacheable(options);
+    const cachedMetadata = cacheable ? await loadSnapshotMetadata(id) : null;
+    if (cachedMetadata?.analyticsAggregateVersion === 1 && cachedMetadata.analyticsAggregate) {
+      return {
+        ...sliceAggregateRows(cachedMetadata.analyticsAggregate, requestedLimit),
+        metadata: { ...cachedMetadata, devices: [], invalid: [] },
+      };
+    }
     const vendors = new Map();
     const models = new Map();
     const rooms = new Map();
@@ -1442,8 +1483,8 @@
       }
     });
     if (!metadata) return null;
-    const limit = Math.max(8, Math.min(200, Number(options.limit || 50)));
-    return {
+    const limit = cacheable ? 200 : requestedLimit;
+    const result = {
       snapshotId: String(id || ""),
       devices,
       invalid: Number(metadata.invalidCount || 0),
@@ -1477,6 +1518,8 @@
       missingRoomModels: rankedRows(missingRoomModels, limit),
       metadata: { ...metadata, devices: [], invalid: [] },
     };
+    if (cacheable) await saveAggregateCache(metadata, result).catch(() => false);
+    return sliceAggregateRows(result, requestedLimit);
   }
 
   async function aggregateSeries(snapshots, options = {}) {

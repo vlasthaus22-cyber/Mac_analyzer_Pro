@@ -484,6 +484,40 @@ def test_dashboard_reports_missing_room_breakdown_and_room_address():
     assert room["allChanged"] is True
 
 
+def test_dashboard_bounds_large_filter_and_change_payloads_without_losing_kpis():
+    previous = [
+        {"mac": f"AABBCC{index:06X}", "room": f"Room {index}", "model": "Old"}
+        for index in range(5_050)
+    ]
+    current = [
+        {**device, "model": "New"}
+        for device in previous
+    ]
+    payload = build_dashboard_payload(
+        current,
+        [
+            {"id": "large-before", "createdAt": "2026-09-01T00:00:00Z", "devices": previous},
+            {"id": "large-after", "createdAt": "2026-09-02T00:00:00Z", "devices": current},
+        ],
+        {"changeMode": "snapshots"},
+    )
+
+    analysis = payload["changeAnalysis"]
+    assert payload["metrics"]["changed"] == 5_050
+    assert analysis["summary"]["modified"] == 5_050
+    assert analysis["summary"]["changedRooms"] == 5_050
+    assert analysis["changeCountTotal"] == 5_050
+    assert analysis["changesTruncated"] is True
+    assert len(analysis["changes"]) == 5_000
+    assert analysis["roomCoverage"]["allChangedRoomCount"] == 5_050
+    assert analysis["roomCoverage"]["roomCountTotal"] == 5_050
+    assert analysis["roomCoverage"]["roomsTruncated"] is True
+    assert len(analysis["roomCoverage"]["rooms"]) == 5_000
+    assert payload["filterCounts"]["rooms"] == 5_050
+    assert payload["filtersTruncated"]["rooms"] is True
+    assert len(payload["filters"]["rooms"]) == 1_000
+
+
 if __name__ == "__main__":
     test_dashboard_filters_metrics_and_export()
     test_dashboard_metrics_payload_counts_known_and_invalid_records()
@@ -502,4 +536,5 @@ if __name__ == "__main__":
     test_persistent_source_conflict_is_not_reported_as_device_change()
     test_contradictory_lower_priority_identity_does_not_inflate_change_count()
     test_dashboard_reports_missing_room_breakdown_and_room_address()
+    test_dashboard_bounds_large_filter_and_change_payloads_without_losing_kpis()
     print("dashboard service test passed")
