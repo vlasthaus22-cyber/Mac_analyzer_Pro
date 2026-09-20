@@ -11,8 +11,17 @@ from .xlsx_service import read_xls, read_xlsx
 def decode_text_table(content: bytes) -> str:
     if not content:
         raise ValueError("Файл пустой")
+    # UTF-8 is unambiguous when strict decoding succeeds. Scoring it together
+    # with single-byte encodings can prefer mojibake because one Cyrillic UTF-8
+    # character becomes two seemingly readable cp1251 characters.
+    try:
+        utf8_text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        utf8_text = ""
+    if utf8_text.replace("\x00", "").strip():
+        return utf8_text.replace("\x00", "")
     candidates: list[tuple[int, str]] = []
-    for encoding in ("utf-8-sig", "utf-16", "utf-16-le", "utf-16-be", "cp1251", "latin-1"):
+    for encoding in ("utf-16", "utf-16-le", "utf-16-be", "cp1251", "latin-1"):
         try:
             text = content.decode(encoding)
         except UnicodeDecodeError:

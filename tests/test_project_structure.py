@@ -76,6 +76,7 @@ def test_project_structure_and_maintenance_commands_exist():
         "frontend/xlsx-exporter.js",
         "frontend/full-xlsx-report.js",
         "frontend/portable-database.js",
+        "frontend/batch-enrichment.js",
         "frontend/workspace-file-lifecycle.js",
         "frontend/ddio-overlay.js",
         "frontend/dashboard-change-tabs.js",

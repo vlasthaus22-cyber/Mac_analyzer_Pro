@@ -296,10 +296,16 @@
     const name = String(filename || "");
     const yearFirst = name.match(/(?:^|\D)(20\d{2})[-_. ](0?[1-9]|1[0-2])[-_. ](0?[1-9]|[12]\d|3[01])(?:[T _-](\d{1,2})[-_.:](\d{2})(?:[-_.:](\d{2}))?)?(?:\D|$)/);
     const dayFirst = name.match(/(?:^|\D)(0?[1-9]|[12]\d|3[01])[-_. ](0?[1-9]|1[0-2])[-_. ](20\d{2})(?:[T _-](\d{1,2})[-_.:](\d{2})(?:[-_.:](\d{2}))?)?(?:\D|$)/);
+    const compactYearFirst = name.match(/(?:^|\D)(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?:[_-]?(\d{2})(\d{2})(\d{2})?)?(?:\D|$)/);
+    const compactDayFirst = name.match(/(?:^|\D)(0[1-9]|[12]\d|3[01])(0[1-9]|1[0-2])(20\d{2})(?:[_-]?(\d{2})(\d{2})(\d{2})?)?(?:\D|$)/);
     const parts = yearFirst
       ? { year: yearFirst[1], month: yearFirst[2], day: yearFirst[3], hour: yearFirst[4], minute: yearFirst[5], second: yearFirst[6] }
       : dayFirst
         ? { year: dayFirst[3], month: dayFirst[2], day: dayFirst[1], hour: dayFirst[4], minute: dayFirst[5], second: dayFirst[6] }
+        : compactYearFirst
+          ? { year: compactYearFirst[1], month: compactYearFirst[2], day: compactYearFirst[3], hour: compactYearFirst[4], minute: compactYearFirst[5], second: compactYearFirst[6] }
+          : compactDayFirst
+            ? { year: compactDayFirst[3], month: compactDayFirst[2], day: compactDayFirst[1], hour: compactDayFirst[4], minute: compactDayFirst[5], second: compactDayFirst[6] }
         : null;
     if (!parts) return "";
     const stamp = Date.UTC(

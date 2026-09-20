@@ -106,7 +106,8 @@ def test_navigation_tabs_are_hash_routable_and_safe():
     assert "function renderViewContent(name)" in app
     assert 'if(name==="history")renderHistory();' in app
     assert 'if(name==="analytics")renderAnalytics();' in app
-    assert 'if(name==="data"){renderServices();loadDatabaseHistoryManagement();}else if(name==="automation")renderServices();' in app
+    assert 'if(name==="data"){renderServices();loadDatabaseHistoryManagement();}' in app
+    assert 'else if(name==="automation"){renderServices();renderBatchPlan();}' in app
     assert "function activateView(name,{updateHash=true,render=true}={})" in app
     assert 'b.setAttribute("aria-selected",active?"true":"false")' in app
     assert "panel.hidden=!active" in app

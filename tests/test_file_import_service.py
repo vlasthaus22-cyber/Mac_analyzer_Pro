@@ -20,6 +20,10 @@ def test_read_table_supports_csv_tsv_and_json():
     assert json_data["headers"] == ["mac", "vendor", "room"]
     assert json_data["rows"] == [["112233000003", "Juniper", "101"]]
 
+    utf8_data = read_table("devices.csv", "MAC,Помещение\nAA:BB:CC:00:00:09,Переговорная 1\n".encode("utf-8"))
+    assert utf8_data["headers"][1] == "Помещение"
+    assert utf8_data["rows"][0][1] == "Переговорная 1"
+
 
 def test_read_table_handles_windows_csv_and_plain_text_fallbacks():
     cp1251 = "MAC;Производитель;Модель\nAA:BB:CC:00:00:05;Сигма;Точка\n".encode("cp1251")

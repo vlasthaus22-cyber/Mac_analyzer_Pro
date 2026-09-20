@@ -40,6 +40,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from backend.services.workspace.xlsx_service import read_xlsx
 from backend.services.workspace.file_import_service import read_table
+from backend.services.workspace.batch_folder_service import BatchFolderRegistry, scan_batch_folders
 from backend.services.detection.column_detector_service import detect as detect_columns
 from backend.services.exporting.export_manager_service import export_managed, supported_export_formats
 from backend.services.workspace.enrichment_service import (
@@ -209,6 +210,7 @@ BUILTIN_MODELS = {
 DEVICE_FIELDS = ("vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "authenticationTime", "hostname", "serialNumber", "deviceId", "deviceName")
 SIGNAL_STATE: dict[str, Any] = {"lastSignal": None, "lastSignalAt": None, "shutdownRequested": False}
 ENRICHMENT_JOBS: dict[str, dict[str, Any]] = {}
+BATCH_FOLDER_REGISTRY = BatchFolderRegistry()
 WORKSPACE_FILE_CACHE = WorkspaceFileCache(
     ttl_seconds=int(os.environ.get("MAC_ANALYZER_WORKSPACE_CACHE_TTL", "2592000")),
     max_entries=int(os.environ.get("MAC_ANALYZER_WORKSPACE_CACHE_FILES", "100")),
@@ -7176,6 +7178,29 @@ class AppHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/vendor-model-history/learn":
                 result = learn_vendor_model_mappings(int(payload.get("minCount", 2) or 2), as_text(payload.get("source")))
                 self.json_response({"ok": True, "learned": result})
+            elif parsed.path == "/api/batch/folders/scan":
+                paths = payload.get("paths") if isinstance(payload.get("paths"), dict) else {}
+                BATCH_FOLDER_REGISTRY.clear()
+                self.json_response({"ok": True, **scan_batch_folders(paths, BATCH_FOLDER_REGISTRY)})
+            elif parsed.path == "/api/batch/folders/import":
+                path = BATCH_FOLDER_REGISTRY.resolve(payload.get("token"))
+                table = read_table(path.name, path.read_bytes(), as_text(payload.get("sheet")) or None)
+                all_rows = table.get("rows") or []
+                file_token = WORKSPACE_FILE_CACHE.put(path.name, table)
+                preview_rows = all_rows[:100]
+                detection = detect_columns(table.get("headers") or [], preview_rows, ai=False)
+                self.json_response({
+                    "ok": True,
+                    "filename": path.name,
+                    "headers": table.get("headers") or [],
+                    "rows": preview_rows,
+                    "rowCount": len(all_rows),
+                    "sheet": table.get("sheet") or "",
+                    "fileToken": file_token,
+                    "mapping": detection.get("mapping") or {},
+                    "detection": detection,
+                    "compactResult": True,
+                })
             elif parsed.path == "/api/tasks":
                 name = as_text(payload.get("name"))
                 interval = int(payload.get("intervalMinutes", 0))

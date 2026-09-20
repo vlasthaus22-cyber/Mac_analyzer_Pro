@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
   <meta name="application-build" content="2026.09.13.1">
-  <meta name="application-version" content="1.0.67">
+  <meta name="application-version" content="1.0.68">
   <link rel="stylesheet" href="styles.css?v=1064">
 </head>
 <body>
@@ -632,6 +632,32 @@
 
       <section class="view" id="automationView" role="tabpanel">
         <section class="settings-grid">
+          <div class="tool-panel batch-enrichment-panel">
+            <div class="panel-head"><div><h2>Массовое обогащение</h2><p class="muted">Три папки формируют последовательность Main + SmartRoom + DDIO → Final.</p></div><span class="batch-mode-badge">CSV / XLSX / JSON</span></div>
+            <input id="batchPrimaryFolderInput" type="file" webkitdirectory directory multiple hidden>
+            <input id="batchSmartroomFolderInput" type="file" webkitdirectory directory multiple hidden>
+            <input id="batchDdioFolderInput" type="file" webkitdirectory directory multiple hidden>
+            <div class="batch-folder-grid">
+              <button class="batch-folder-button" id="batchPrimaryFolderButton" type="button"><span>△</span><strong>Основные файлы</strong><small id="batchPrimaryFolderStatus">Папка не выбрана</small></button>
+              <button class="batch-folder-button" id="batchSmartroomFolderButton" type="button"><span>△</span><strong>SmartRoom</strong><small id="batchSmartroomFolderStatus">Папка не выбрана</small></button>
+              <button class="batch-folder-button" id="batchDdioFolderButton" type="button"><span>△</span><strong>DDIO</strong><small id="batchDdioFolderStatus">Папка не выбрана</small></button>
+            </div>
+            <div class="batch-settings-grid">
+              <label>Сопоставление<select id="batchPairingMode"><option value="nearest">Ближайшие даты</option><option value="exact">Одинаковая календарная дата</option></select></label>
+              <label>Допуск, часов<input id="batchToleranceHours" type="number" min="0" max="720" value="24"></label>
+              <label>Стратегия Final<select id="batchEnrichmentStrategy"><option value="NO_EXPANSION">Не увеличивать количество устройств</option><option value="ALLOW_EXPANSION">Добавлять отсутствующие SmartRoom</option></select></label>
+            </div>
+            <p class="muted">Дата определяется по имени CSV/XLSX/JSON, затем по свойствам XLSX и дате файла. Каждый основной файл всегда создаёт отдельный Final. Назначения можно исправить перед запуском.</p>
+            <details class="advanced batch-python-folders">
+              <summary>Точные даты создания CSV через Python</summary>
+              <p class="muted">Если программа запущена через START_MAC_ANALYZER.cmd, укажите полные пути Windows. Backend просканирует их без загрузки всех файлов в браузер.</p>
+              <div class="batch-path-grid"><label>Основные файлы<input id="batchPrimaryPath" placeholder="C:\Выгрузки\Main"></label><label>SmartRoom<input id="batchSmartroomPath" placeholder="C:\Выгрузки\SmartRoom"></label><label>DDIO<input id="batchDdioPath" placeholder="C:\Выгрузки\DDIO"></label></div>
+              <button class="button secondary" id="batchScanPathsButton" type="button">Просканировать пути Python</button>
+            </details>
+            <div class="batch-actions"><button class="button secondary" id="batchBuildPlanButton" type="button">Сопоставить файлы</button><button class="button primary" id="batchRunButton" type="button" disabled>Запустить массовое обогащение</button><button class="button secondary" id="batchStopButton" type="button" disabled>Остановить после текущего</button></div>
+            <div id="batchEnrichmentSummary" class="bar-list compact"><p class="muted">Выберите три папки и постройте план.</p></div>
+            <div id="batchEnrichmentPlan" class="batch-plan"></div>
+          </div>
           <div class="tool-panel">
             <h2>Планировщик</h2>
             <div class="inline-form"><input id="taskNameInput" placeholder="Ежедневный анализ"><input id="taskIntervalInput" type="number" min="1" value="1440"><button class="button primary" id="addTaskButton">Создать</button></div>
@@ -689,6 +715,7 @@
           </div>
           <aside class="guide-callout"><strong>Быстрый поиск и сортировка</strong><p>Введите запрос — обработка начнётся после короткой паузы и отменит устаревший поиск. Нажмите заголовок любого обычного столбца для сортировки по возрастанию, нажмите повторно — по убыванию. С клавиатуры используйте Tab, затем Enter или пробел.</p></aside>
           <aside class="guide-callout"><strong>Smartroom и DDIO</strong><p>Вкладка «Помещения» использует Smartroom ID как ключ и выделяет пропавшие устройства красным. Смена IP коммутатора и IP устройства из DDIO отображаются в «Аналитике критических изменений» со знаком ❗. В «Хронологии помещения» доступна вся цепочка замен.</p><div class="guide-action-row"><button class="button secondary" type="button" data-guide-view="rooms">Открыть помещения</button><button class="button secondary" type="button" data-guide-view="analytics">Открыть критические изменения</button><button class="button secondary" type="button" data-guide-view="roomhistory">Открыть хронологию помещения</button></div></aside>
+          <aside class="guide-callout"><strong>Массовое обогащение</strong><p>В разделе «Автоматизация» выберите папки Main, SmartRoom и DDIO. Программа сопоставит CSV/XLSX/JSON по одинаковой или ближайшей дате, покажет цепочки △ + △ + △ → □ Final и позволит переназначить файлы до последовательного запуска.</p><div class="guide-action-row"><button class="button secondary" type="button" data-guide-view="automation">Открыть массовое обогащение</button></div></aside>
           <h3>Рабочий цикл</h3>
           <ol class="guide-flow">
             <li><span>1</span><div><strong>Загрузить</strong><p>Файл №1 — основной, файл №2 — SmartRoom и при необходимости файл №3 — DDIO.</p></div></li>
@@ -908,6 +935,7 @@
   <script src="frontend/full-json-report.js?v=20260729.1"></script>
   <script src="frontend/portable-database.js?v=20260810.1"></script>
   <script src="frontend/local-folder-store.js?v=1059"></script>
+  <script src="frontend/batch-enrichment.js?v=1068"></script>
   <script src="frontend/workspace-file-lifecycle.js?v=20260722.7"></script>
   <script src="frontend/ddio-overlay.js?v=1066"></script>
   <script src="frontend/dashboard-change-tabs.js?v=20260803.1"></script>

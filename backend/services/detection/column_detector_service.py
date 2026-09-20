@@ -11,7 +11,7 @@ FIELD_PATTERNS = {
     "switchIp": r"switch.*ip|ip.*switch|switch|gateway|node.?ip|РєРѕРјРјСѓС‚Р°С‚РѕСЂ",
     "ip": r"^ip$|ip.?address|host.?ip|client.?ip|endpoint|address.?ip|ip.?Р°РґСЂРµСЃ",
     "address": r"address|location|place|site|building|rack|street|Р°РґСЂРµСЃ|Р»РѕРєР°С†РёСЏ",
-    "room": r"room|office|cabinet|floor|auditorium|РїРѕРјРµС‰|РєР°Р±РёРЅРµС‚",
+    "room": r"\broom\b|office|cabinet|floor|auditorium|РїРѕРјРµС‰|РєР°Р±РёРЅРµС‚",
     "smartroomId": r"smart.?room.*id|id.*smart.?room|smartroom",
     "switchPort": r"switch.*port|port|interface|iface|ifname|if.?name|РїРѕСЂС‚",
     "authenticationTime": r"authentication.*time|auth.*time|last.*auth|время.*аутентификац|время.*авторизац",
@@ -21,7 +21,10 @@ FIELD_PATTERNS = {
     "deviceName": r"device.?name|equipment.?name|asset.?name|РЅР°Р·РІР°РЅРёРµ.?СѓСЃС‚СЂРѕР№СЃС‚РІР°",
 }
 
-FIELD_ORDER = ["secondaryMac", "mac", "vendor", "model", "switchIp", "ip", "address", "room", "smartroomId", "switchPort", "authenticationTime", "hostname", "serialNumber", "deviceId", "deviceName"]
+# Reserve explicit identifiers before broad descriptive fields. Otherwise
+# "Smartroom ID" is consumed by room and "Device ID" by model because both
+# broad patterns intentionally contain room/device for legacy exports.
+FIELD_ORDER = ["secondaryMac", "mac", "smartroomId", "deviceId", "deviceName", "vendor", "model", "switchIp", "ip", "address", "room", "switchPort", "authenticationTime", "hostname", "serialNumber"]
 
 FIELD_LABELS = {
     "secondaryMac": "secondary interface MAC address",
@@ -288,6 +291,11 @@ def _select_mapping(scores, ai=False):
         for candidate in candidates:
             if candidate["confidence"] < threshold:
                 break
+            if field in {"smartroomId", "deviceId", "deviceName"} and candidate["headerScore"] == 0:
+                # Stable identifiers must be named explicitly. Inferring them
+                # from arbitrary descriptive text steals Place/Room/Model
+                # columns and produces false cross-source identities.
+                continue
             if ai and field in {"vendor", "model", "room"} and candidate["headerScore"] == 0:
                 if candidate["confidence"] < 0.5:
                     continue

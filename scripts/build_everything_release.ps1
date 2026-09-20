@@ -1,6 +1,6 @@
 param(
     [string]$OutputDirectory = "",
-    [string]$Version = "v1.0.67",
+    [string]$Version = "v1.0.68",
     [string]$PortablePackage = "",
     [switch]$SkipCleanDatabase
 )

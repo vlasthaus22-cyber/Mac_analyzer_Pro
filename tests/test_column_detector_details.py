@@ -19,6 +19,17 @@ def test_column_detector_scores_conflicts_and_mapping():
     assert any(item["field"] == "model" for item in result["warnings"])
 
 
+def test_explicit_smartroom_and_device_ids_are_not_consumed_by_broad_fields():
+    result = detect(
+        ["MAC", "IP", "Smartroom ID", "Room", "Device ID"],
+        [["00:11:22:33:44:55", "192.0.2.1", "SR-001", "Переговорная 1", "DEV-001"]],
+    )
+    assert result["mapping"]["smartroomId"] == 2
+    assert result["mapping"]["room"] == 3
+    assert result["mapping"]["deviceId"] == 4
+
+
 if __name__ == "__main__":
     test_column_detector_scores_conflicts_and_mapping()
+    test_explicit_smartroom_and_device_ids_are_not_consumed_by_broad_fields()
     print("column detector details test passed")
