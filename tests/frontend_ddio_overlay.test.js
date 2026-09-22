@@ -92,6 +92,23 @@ const fallbackIndex = DDIO.buildPossibleIpIndex([["00:11:22:33:44:55", "192.168.
 assert.strictEqual(DDIO.applyIpFallback(fallbackDevices, fallbackIndex), 1);
 assert.strictEqual(fallbackDevices[0].ip, "192.168.1.60");
 assert.strictEqual(fallbackDevices[0].ipSource, "ddio");
+assert.strictEqual(fallbackDevices[0].ddioIpMatchedMac, "001122334455");
+
+const switchIndependentDevices = [
+  { mac: "001122334455", ip: "", switchIp: "" },
+  { mac: "001122334455", ip: "", switchIp: "10.99.0.200" },
+  { mac: "001122334455", ip: "", switchIp: "not-an-ip" },
+];
+assert.strictEqual(DDIO.applyIpFallback(switchIndependentDevices, fallbackIndex), 3);
+assert.deepStrictEqual(
+  switchIndependentDevices.map((device) => device.ip),
+  ["192.168.1.60", "192.168.1.60", "192.168.1.60"],
+);
+
+const deviceIdCollisionIndex = new Map([["dev-shared", ["192.168.99.10"]]]);
+const deviceIdCollision = { mac: "12:34:56:78:90:AB", deviceId: "DEV-SHARED", ip: "" };
+assert.strictEqual(DDIO.applyIpFallback([deviceIdCollision], deviceIdCollisionIndex), 0);
+assert.strictEqual(deviceIdCollision.ip, "");
 
 const wideRow = Array(14).fill("");
 wideRow[9] = "00:11:22:33:44:55";

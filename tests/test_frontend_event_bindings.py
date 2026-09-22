@@ -20,10 +20,16 @@ def test_ddio_third_export_is_display_only_and_bound_in_primary_frontend():
     assert all(field in ddio for field in ('reservationMac', 'reservationIp', 'leaseMac', 'leaseIp'))
     assert '[["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"]]' in app
     assert '[["deviceId","Device ID"],["mac","MAC устройства"]' not in app
-    assert 'const fallbackCount=DdioOverlay.applyIpFallback([device],ddio.index)' in app
+    assert 'const fallbackCount=fields.ip===false?0:DdioOverlay.applyIpFallback([device],ddio.index)' in app
     assert 'mappingOptionLabel(header,"letter")' in app
     assert 'headers = Array.from({ length: columnCount }' in Path("frontend/file-readers.js").read_text(encoding="utf-8")
     assert 'applyDdioOverlayToResults(body,columns)' in app
+
+
+def test_batch_progress_does_not_require_css_escape_browser_api():
+    app = Path("app.js").read_text(encoding="utf-8")
+    assert "CSS.escape" not in app
+    assert 'element.dataset.batchGroup===String(group.id)' in app
     assert 'ddioFile:ddioFilePayload(true)' in app
     assert 'state.ddioOverlay=serverResult.ddioOverlay||{}' in app
 

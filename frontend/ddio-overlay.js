@@ -327,15 +327,19 @@
         ),
       );
       const deviceId = text(device?.deviceId || device?.device_id).toLowerCase();
-      const values =
-        macs.map((mac) => index.get(mac)).find((items) => items?.length) ||
-        (deviceId ? index.get(deviceId) : null) ||
-        [];
+      // Device IP comes directly from an exact MAC match. switchIp is
+      // intentionally not read here. Device ID remains compatible only for
+      // records which genuinely have no MAC identity.
+      const matchedMac = macs.find((mac) => index.get(mac)?.length) || "";
+      const matchedIdentity = matchedMac || (!macs.length && deviceId ? deviceId : "");
+      const values = matchedIdentity ? index.get(matchedIdentity) || [] : [];
       if (!values.length) continue;
       device.ip = values.at(-1);
       device.ipSource = "ddio";
       device.fieldSources = { ...(device.fieldSources || {}), ip: "DDIO" };
       device.possibleIps = [...values];
+      device.ddioIpMatch = matchedMac ? "mac" : "device-id";
+      if (matchedMac) device.ddioIpMatchedMac = matchedMac;
       updated += 1;
     }
     return updated;

@@ -963,7 +963,7 @@
     const oldTokens=analysisFileRecords().map((file)=>file.fileToken).filter(Boolean);
     if(oldTokens.length&&backendAvailable)await api("/workspace/cache/discard",{method:"POST",body:JSON.stringify({tokens:oldTokens})}).catch(()=>{});
     state.files=[];state.ddioFile=null;state.ddioOverlay={};state.ddioSummary=null;state.importErrors=[];
-    const progress=(value,detail)=>{$("#batchEnrichmentSummary").dataset.detail=detail;const cycle=document.querySelector(`[data-batch-group="${CSS.escape(group.id)}"]`);if(cycle)cycle.dataset.progress=String(processPercent(value));};
+    const progress=(value,detail)=>{$("#batchEnrichmentSummary").dataset.detail=detail;const cycle=Array.from(document.querySelectorAll("[data-batch-group]")).find((element)=>element.dataset.batchGroup===String(group.id));if(cycle)cycle.dataset.progress=String(processPercent(value));};
     const primary=await batchFileRecord(group.primary,"primary",progress);state.files=[primary];
     if(group.smartroom){const smartroom=await batchFileRecord(group.smartroom,"smartroom",progress);state.files.push(smartroom);}
     if(group.ddio){const ddio=await batchFileRecord(group.ddio,"ddio",progress);ddio.mapping=DdioOverlay.detectMapping(ddio.headers||[]);const validation=DdioOverlay.validateMapping(ddio.mapping||{});if(!validation.valid)throw new Error(`DDIO «${ddio.name}»: не определены четыре колонки MAC/IP резервации и аренды`);state.ddioFile=ddio;}
@@ -1219,7 +1219,7 @@
       activeLocalDetectionContext=createLocalDetectionContext();
       applyLocalVendorModelMappings(devices);
       const ddio=await buildLocalDdioOverlay(switchTracker,(value,detail)=>onProgress(95+value*0.04,detail));
-      ddio.summary.ipFallbacks=DdioOverlay.applyIpFallback(devices,ddio.index);
+      ddio.summary.ipFallbacks=fields.ip===false?0:DdioOverlay.applyIpFallback(devices,ddio.index);
       state.ddioOverlay=ddio.overlay;state.ddioSummary=ddio.summary;
       if(BrowserSnapshots?.mergeDeviceHistoryRows)await BrowserSnapshots.mergeDeviceHistoryRows(devices,"current-file");
       onProgress(100,`Обработано устройств: ${devices.length.toLocaleString("ru-RU")}`);
@@ -1275,7 +1275,7 @@
       activeLocalDetectionContext=createLocalDetectionContext();
       await BrowserSnapshots.transformEnrichmentRows(jobId,(device)=>{
         let changed=false;const ip=normalizeIp(device.switchIp),addressItem=switchAddresses.get(ip),address=typeof addressItem==="string"?addressItem:addressItem?.address,vendor=localVendor(device.mac),model=localModel(device.mac);
-        const fallbackCount=DdioOverlay.applyIpFallback([device],ddio.index);if(fallbackCount){ddio.summary.ipFallbacks+=fallbackCount;changed=true;}
+        const fallbackCount=fields.ip===false?0:DdioOverlay.applyIpFallback([device],ddio.index);if(fallbackCount){ddio.summary.ipFallbacks+=fallbackCount;changed=true;}
         if(address&&!device.address){device.address=address;device.addressSource=addressItem?.source||"switch-address-mapping";if(addressItem?.confidence!==undefined)device.addressConfidence=Number(addressItem.confidence||0);device.fieldSources={...(device.fieldSources||{}),address:device.addressSource};changed=true;}
         const hadRoom=Boolean(normalizedRoomName(device.room));if(synchronizeSmartroomIdentity(device,smartroomRooms)){if(!hadRoom&&device.room)device.roomSource="smartroom_mapping";changed=true;}
         if((!device.vendor||device.vendor==="Unknown"||device.vendor==="Не определено")&&vendor!=="Unknown"){device.vendor=vendor;changed=true;}
@@ -1506,7 +1506,7 @@
     const fields=[["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"]];
     grid.innerHTML=fields.map(([field,title])=>`<label>${title}<select data-ddio-map="${field}">${ddioMappingOptions(file,file.mapping?.[field]??((field==="reservationIp"||field==="leaseIp")?file.mapping?.ip:""))}</select></label>`).join("");
     const hints=Number(state.ddioSummary?.newIpHints||Object.keys(state.ddioOverlay||{}).length),changes=Number(state.ddioSummary?.switchIpChanges||0),fallbacks=Number(state.ddioSummary?.ipFallbacks||0);
-    if(overlaySummary)overlaySummary.textContent=state.ddioSummary?`Смен коммутатора: ${changes} · подсказок IP: ${hints} · IP заполнено из DDIO: ${fallbacks}`:"Подсказки появятся после анализа.";
+    if(overlaySummary)overlaySummary.textContent=state.ddioSummary?`Смен коммутатора: ${changes} · подсказок IP: ${hints} · IP заполнено из DDIO по MAC: ${fallbacks}`:"IP устройства заполняется прямым совпадением MAC и не зависит от IP коммутатора.";
   }
   async function clearDdioFile(){
     const file=state.ddioFile;

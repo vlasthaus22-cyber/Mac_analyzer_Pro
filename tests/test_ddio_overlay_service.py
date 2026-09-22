@@ -160,6 +160,30 @@ def test_ddio_ip_fallback_matches_smartroom_secondary_interface_mac():
     assert devices[0]["fieldSources"]["ip"] == "DDIO"
 
 
+def test_ddio_ip_fallback_is_independent_of_switch_ip_and_prefers_mac_identity():
+    index = build_ddio_device_index(
+        [
+            ["00:11:22:33:44:55", "192.168.88.10", "DEV-SHARED"],
+            ["AA:BB:CC:DD:EE:FF", "192.168.88.99", "DEV-SHARED"],
+        ],
+        {"leaseMac": 0, "leaseIp": 1, "deviceId": 2},
+    )
+    devices = [
+        {"mac": "001122334455", "ip": "", "switchIp": ""},
+        {"mac": "001122334455", "ip": "", "switchIp": "10.99.0.200"},
+        {"mac": "001122334455", "ip": "", "switchIp": "not-an-ip"},
+    ]
+    assert apply_ddio_ip_fallback(devices, index) == 3
+    assert {device["ip"] for device in devices} == {"192.168.88.10"}
+    assert all(device["ddioIpMatchedMac"] == "001122334455" for device in devices)
+    assert all(device["ipSource"] == "ddio" for device in devices)
+
+    # A Device ID collision must not override a real, non-matching MAC.
+    conflicting = {"mac": "12:34:56:78:90:AB", "deviceId": "DEV-SHARED", "ip": ""}
+    assert apply_ddio_ip_fallback([conflicting], index) == 0
+    assert conflicting["ip"] == ""
+
+
 def test_enrichment_fills_blanks_without_overwriting_primary_values():
     enriched = enrich_files(
         [
@@ -190,5 +214,6 @@ if __name__ == "__main__":
     test_ddio_generic_device_mac_and_ip_fill_only_a_blank_ip()
     test_ddio_ip_fallback_replaces_non_ip_placeholders()
     test_ddio_ip_fallback_matches_smartroom_secondary_interface_mac()
+    test_ddio_ip_fallback_is_independent_of_switch_ip_and_prefers_mac_identity()
     test_enrichment_fills_blanks_without_overwriting_primary_values()
     print("DDIO overlay service test passed")

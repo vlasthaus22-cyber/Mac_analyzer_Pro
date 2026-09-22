@@ -399,6 +399,8 @@ def test_empty_primary_and_smartroom_ip_is_filled_from_four_column_ddio_mapping(
         assert device["ipSource"] == "ddio"
         assert device["fieldSources"]["ip"] == "DDIO"
         assert device["possibleIps"] == ["192.168.50.10", "192.168.50.11"]
+        assert device["ddioIpMatchedMac"] == "001122334455"
+        assert device["ddioIpMatch"] == "lease"
         assert result["ddioSummary"]["ipFallbacks"] == 1
     finally:
         for item in imported:

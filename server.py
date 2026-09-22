@@ -6803,7 +6803,6 @@ class AppHandler(BaseHTTPRequestHandler):
                             workspace_row_iterator(ddio_file, WORKSPACE_FILE_CACHE),
                             ddio_file.get("mapping") or {},
                         )
-                        ddio_ip_fallbacks = apply_ddio_ip_fallback(merged["devices"], ddio_index)
                     except ValueError as error:
                         update_enrichment_job(job["id"], {
                             "stage": "ddio", "status": "failed", "percent": 62,
@@ -6839,6 +6838,12 @@ class AppHandler(BaseHTTPRequestHandler):
                             "rows": device_index + 1, "totalRows": len(merged["devices"]),
                             "currentDevice": as_text(item.get("internalDeviceId")),
                         })
+                # Apply DDIO only after final identity/history enrichment so a
+                # restored secondary/alternative MAC can participate. This is
+                # a direct MAC -> device IP lookup and is independent of the
+                # device's switch IP or switch-change analytics.
+                if ddio_file and fields.get("ip", True) is not False:
+                    ddio_ip_fallbacks = apply_ddio_ip_fallback(valid, ddio_index)
                 switch_ip_changes = merge_switch_ip_changes_with_history(valid, context, merged.get("switchIpChanges") or [])
                 ddio_overlay: dict[str, dict[str, str]] = {}
                 if ddio_file:

@@ -109,7 +109,13 @@ def build_ddio_device_index(
 def apply_ddio_ip_fallback(
     devices: list[dict[str, Any]], index: dict[str, dict[str, Any]]
 ) -> int:
-    """Fill a missing device IP from DDIO while preserving provenance."""
+    """Fill a missing device IP from DDIO by MAC, never by switch IP.
+
+    Primary, secondary and previously confirmed alternative MAC addresses are
+    checked directly against the DDIO reservation/lease index. Device ID is a
+    compatibility fallback only for records that have no valid MAC at all.
+    ``switchIp`` is intentionally neither read nor compared here.
+    """
     updated = 0
     for device in devices:
         # Human-readable placeholders (for example ``Не определено`` or ``-``)
@@ -123,7 +129,9 @@ def apply_ddio_ip_fallback(
             *[normalize_mac(value) for value in (device.get("alternateMacs") or []) if value],
         ))))
         device_id = str(device.get("deviceId") or device.get("device_id") or "").strip().casefold()
-        candidate = next((index.get(mac) for mac in macs if index.get(mac)), None) or (index.get("device-id:" + device_id) if device_id else None)
+        matched_mac = next((mac for mac in macs if index.get(mac, {}).get("ip")), "")
+        matched_identity = matched_mac or ("device-id:" + device_id if not macs and device_id else "")
+        candidate = index.get(matched_identity) if matched_identity else None
         # Possible IPs are diagnostic alternatives, not a confirmed current IP.
         if not candidate or not candidate.get("ip"):
             continue
@@ -131,6 +139,9 @@ def apply_ddio_ip_fallback(
         device["ipSource"] = "ddio"
         device.setdefault("fieldSources", {})["ip"] = "DDIO"
         device["possibleIps"] = list(candidate.get("possibleIps") or [candidate["ip"]])
+        device["ddioIpMatch"] = candidate.get("match") or "mac/ip"
+        if matched_mac:
+            device["ddioIpMatchedMac"] = matched_mac
         updated += 1
     return updated
 
