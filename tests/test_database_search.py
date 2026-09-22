@@ -23,6 +23,10 @@ def test_database_search_across_sqlite_tables():
             "model": "Search Model",
             "ip": "198.51.100.20",
             "address": "Search Rack",
+            "hostname": "search-host-42",
+            "serialNumber": "SERIAL-SEARCH-42",
+            "deviceId": "DEVICE-SEARCH-42",
+            "deviceName": "Search Conference Panel",
         })
     ], "database-search-test")
     with db_connection() as conn:
@@ -37,6 +41,10 @@ def test_database_search_across_sqlite_tables():
 
     by_vendor = database_search("Search Vendor")
     assert any(item["type"] in {"device", "vendorModel"} and item["mac"] == MAC for item in by_vendor["results"])
+
+    for query in ("search-host-42", "SERIAL-SEARCH-42", "DEVICE-SEARCH-42", "Search Conference Panel"):
+        found = database_search(query)
+        assert any(item["type"] == "device" and item["mac"] == MAC for item in found["results"])
 
     by_ip_mapping = database_search("Search Building")
     assert any(item["type"] == "ipMapping" and item["title"] == "198.51.100.10" for item in by_ip_mapping["results"])

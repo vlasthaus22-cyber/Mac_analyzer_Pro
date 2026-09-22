@@ -37,6 +37,7 @@
   const DeviceIdentity = window.MacAnalyzerDeviceIdentity;
   const EnrichmentStrategy = window.MacAnalyzerEnrichmentStrategy;
   const BatchEnrichment = window.MacAnalyzerBatchEnrichment;
+  const TimeUtils = window.MacAnalyzerTime;
   const UiFeedback = window.MacAnalyzerUiFeedback;
   if(!MemoryGuard)throw new Error("Модуль frontend/memory-guard.js не загружен");
   if(!XlsxExporter)throw new Error("Модуль frontend/xlsx-exporter.js не загружен");
@@ -50,6 +51,7 @@
   if(!DeviceIdentity)throw new Error("Модуль frontend/device-identity.js не загружен");
   if(!EnrichmentStrategy)throw new Error("Модуль frontend/enrichment-strategy.js не загружен");
   if(!BatchEnrichment)throw new Error("Модуль frontend/batch-enrichment.js не загружен");
+  if(!TimeUtils)throw new Error("Модуль frontend/time-utils.js не загружен");
   if(!IeeeRegistry)throw new Error("Модуль frontend/ieee-vendor-registry.js не загружен");
   if(!DashboardChangeTabs)throw new Error("Модуль frontend/dashboard-change-tabs.js не загружен");
   if(!Guide)throw new Error("Модуль frontend/guide.js не загружен");
@@ -93,7 +95,7 @@
   state.enrichmentStrategy=EnrichmentStrategy.normalize(state.enrichmentStrategy);
   state.batchSettings=state.batchSettings&&typeof state.batchSettings==="object"?state.batchSettings:empty().batchSettings;
   state.batchSettings.pairingMode=state.batchSettings.pairingMode==="exact"?"exact":"nearest";
-  state.batchSettings.toleranceHours=Math.max(0,Math.min(720,Number(state.batchSettings.toleranceHours??24)||24));
+  {const configured=Number(state.batchSettings.toleranceHours??24);state.batchSettings.toleranceHours=Math.max(0,Math.min(720,Number.isFinite(configured)?configured:24));}
   state.batchSettings.enrichmentStrategy=EnrichmentStrategy.normalize(state.batchSettings.enrichmentStrategy);
   if($("#strategySelect"))$("#strategySelect").value=state.enrichmentStrategy;
   if($("#batchPairingMode"))$("#batchPairingMode").value=state.batchSettings.pairingMode;
@@ -914,7 +916,7 @@
         const described=await BatchEnrichment.describeFiles(batchFolderFiles[role],role,async(file)=>{const date=await resolveFileInfoDate(file);return{date,source:fileInfoDateSource(file)};});
         descriptors.push(...described);
       }
-      state.batchSettings={...state.batchSettings,pairingMode:$("#batchPairingMode")?.value||"nearest",toleranceHours:Number($("#batchToleranceHours")?.value||24),enrichmentStrategy:EnrichmentStrategy.normalize($("#batchEnrichmentStrategy")?.value||"NO_EXPANSION")};save({immediate:true});
+      state.batchSettings={...state.batchSettings,pairingMode:$("#batchPairingMode")?.value||"nearest",toleranceHours:Number($("#batchToleranceHours")?.value??24),enrichmentStrategy:EnrichmentStrategy.normalize($("#batchEnrichmentStrategy")?.value||"NO_EXPANSION")};save({immediate:true});
       batchPlan=BatchEnrichment.buildPlan(descriptors,{mode:state.batchSettings.pairingMode,toleranceHours:state.batchSettings.toleranceHours});
       batchPlan.groups.forEach((group)=>{group.status="pending";group.error="";});
       renderBatchPlan();toast(`Сформировано циклов Final: ${batchPlan.groups.length}. Проверьте назначения.`);return batchPlan;
@@ -928,7 +930,7 @@
     const token=UiFeedback?.start("Сканирование папок Python…"),button=$("#batchScanPathsButton");if(button)button.disabled=true;
     try{
       const result=await api("/batch/folders/scan",{method:"POST",body:JSON.stringify({paths})});
-      state.batchSettings={...state.batchSettings,pairingMode:$("#batchPairingMode")?.value||"nearest",toleranceHours:Number($("#batchToleranceHours")?.value||24),enrichmentStrategy:EnrichmentStrategy.normalize($("#batchEnrichmentStrategy")?.value||"NO_EXPANSION")};save({immediate:true});
+      state.batchSettings={...state.batchSettings,pairingMode:$("#batchPairingMode")?.value||"nearest",toleranceHours:Number($("#batchToleranceHours")?.value??24),enrichmentStrategy:EnrichmentStrategy.normalize($("#batchEnrichmentStrategy")?.value||"NO_EXPANSION")};save({immediate:true});
       batchPlan=BatchEnrichment.buildPlan(result.files||[],{mode:state.batchSettings.pairingMode,toleranceHours:state.batchSettings.toleranceHours});
       batchPlan.groups.forEach((group)=>{group.status="pending";group.error="";});
       for(const role of ["primary","smartroom","ddio"]){const info=result.folders?.[role]||{},status=$(role==="primary"?"#batchPrimaryFolderStatus":role==="smartroom"?"#batchSmartroomFolderStatus":"#batchDdioFolderStatus");if(status)status.textContent=`${info.path||"не указана"} · файлов: ${Number(info.files||0)}`;}
@@ -2325,7 +2327,7 @@
     return{total,vendors,models,rooms,roomOccupancy,coverage:{uniqueVendors:vendors.length,uniqueModels:models.length,address:{count:address,percent:percent(address)},room:{count:room,percent:percent(room)},ip:{count:ip,percent:percent(ip)},switch:{count:switchCount,percent:percent(switchCount)}},reportText:lines.join("\n")};
   }
   function renderAnalyticsReport(report,source="local"){const preview=$("#analyticsReportPreview"),status=$("#analyticsReportStatus"),occupancy=report?.roomOccupancy||{};if(preview)preview.textContent=report?.reportText||"Нет данных";if(status)status.textContent=`${report?.total||0} устройств · ${source==="backend"?"расчёт backend":"локальный расчёт"}`;if($("#roomOccupancyStatus"))$("#roomOccupancyStatus").textContent=`Распределено ${Number(occupancy.assignedDevices||0).toLocaleString("ru-RU")} из ${Number(report?.total||0).toLocaleString("ru-RU")} (${Number(occupancy.assignedPercent||0).toFixed(1)}%) · без помещения ${Number(occupancy.unassignedDevices||0).toLocaleString("ru-RU")} · среднее ${Number(occupancy.averageDevicesPerRoom||0).toFixed(1)}`;if($("#roomOccupancyChart"))$("#roomOccupancyChart").innerHTML=localChartHtml((occupancy.rooms||[]).slice(0,20).map((item)=>[`${item.label} · ${Number(item.percentOfAssigned||0).toFixed(1)}%`,item.count]),"Нет данных о помещениях.");return report;}
-  async function refreshAnalyticsReport(){const local=buildLocalAnalyticsReport(state.devices);renderAnalyticsReport(local,"local");try{const report=await api("/analytics/report",{method:"POST",body:JSON.stringify(currentDevicePayload())});return renderAnalyticsReport(report,"backend");}catch{return local;}}
+  async function refreshAnalyticsReport(preferSharedPanel=false){const local=buildLocalAnalyticsReport(state.devices);renderAnalyticsReport(local,"local");try{const panel=preferSharedPanel?await(analyticsPanelPromise||loadAnalyticsPanel()):null;const report=panel?.analyticsReport||await api("/analytics/report",{method:"POST",body:JSON.stringify(currentDevicePayload())});return renderAnalyticsReport(report,"backend");}catch{return local;}}
   async function exportAnalyticsReport(){try{const report=await api("/analytics/report",{method:"POST",body:JSON.stringify(currentDevicePayload({exportFormat:"txt"}))});if(!report.export)throw new Error("TXT export is empty");download(report.export.filename||"analytics_report.txt",report.export.content,report.export.mimeType||"text/plain");renderAnalyticsReport(report,"backend");toast("Аналитический отчёт экспортирован.");}catch{const report=renderAnalyticsReport(buildLocalAnalyticsReport(state.devices),"local");download(`analytics_report_${new Date().toISOString().slice(0,19).replace(/[-:T]/g,"")}.txt`,report.reportText,"text/plain");toast("Аналитический отчёт экспортирован локально.");}}
   function localAnalyticsPayload(devices=dashboardDevices()){const known=devices.filter((device)=>device.vendor&&device.vendor!=="Unknown").length,unknown=Math.max(0,devices.length-known),invalid=state.invalid.length;return{vendors:localChartHtml(localTally(devices,"vendor")),models:localChartHtml(localTally(devices,"model")),quality:localChartHtml([["Опознано",known],["Unknown",unknown],["Ошибки",invalid]].filter((item)=>item[1]>0),"Ошибок качества не найдено."),timeline:localChartHtml((state.snapshots||[]).slice(-8).map((snap)=>[String(snap.name||snap.createdAt||"snapshot").slice(0,24),(snap.devices||[]).length]),"Снимков пока нет.")};}
   function renderLocalAnalytics(devices=dashboardDevices()){const charts=localAnalyticsPayload(devices);$("#vendorChart").innerHTML=charts.vendors;$("#modelChart").innerHTML=charts.models;$("#qualityChart").innerHTML=charts.quality;$("#timelineChart").innerHTML=charts.timeline;}
@@ -2454,14 +2456,14 @@
       const baselineId=options.some((item)=>item.id===settings.baselineSnapshotId)&&settings.baselineSnapshotId!==comparisonId?settings.baselineSnapshotId:options[comparisonIndex-1].id;
       return{baselineId,comparisonId,dateFrom:settings.changeDateFrom||"",dateTo:settings.changeDateTo||""};
     }
-    const dated=options.map((item,index)=>({...item,index,time:Date.parse(item.date||item.savedAt||"")||0}));
-    const fromTime=settings.changeDateFrom?Date.parse(`${settings.changeDateFrom}T00:00:00`):-Infinity;
-    const toTime=settings.changeDateTo?Date.parse(`${settings.changeDateTo}T23:59:59`):Infinity;
+    const dated=options.map((item,index)=>({...item,index,time:TimeUtils.timestamp(item.date||item.savedAt||"")??0})).sort((left,right)=>left.time-right.time||left.index-right.index);
+    const fromTime=TimeUtils.utcDayStart(settings.changeDateFrom)??-Infinity;
+    const toTime=TimeUtils.utcDayEnd(settings.changeDateTo)??Infinity;
     let comparison=dated.filter((item)=>item.time<=toTime).at(-1)||dated.at(-1);
-    let baseline=dated.filter((item)=>item.time<fromTime&&item.index<comparison.index).at(-1);
-    if(!baseline)baseline=dated.filter((item)=>item.time>=fromTime&&item.time<=toTime&&item.index<comparison.index)[0];
-    if(!baseline)baseline=dated[Math.max(0,comparison.index-1)];
-    if(baseline.id===comparison.id){comparison=dated[Math.min(dated.length-1,baseline.index+1)]||comparison;}
+    const beforeComparison=dated.filter((item)=>item.id!==comparison.id&&item.time<=comparison.time);
+    const inRange=beforeComparison.filter((item)=>item.time>=fromTime&&item.time<=toTime);
+    let baseline=inRange[0]||beforeComparison.filter((item)=>item.time<fromTime).at(-1)||beforeComparison.at(-1);
+    if(!baseline)baseline=comparison;
     return{baselineId:baseline.id,comparisonId:comparison.id,dateFrom:settings.changeDateFrom||new Date(baseline.time||Date.now()).toISOString().slice(0,10),dateTo:settings.changeDateTo||new Date(comparison.time||Date.now()).toISOString().slice(0,10)};
   }
   function localDashboardFleet(){
@@ -2532,7 +2534,7 @@
       const fields=["mac","vendor","model","ip","address","room","smartroomId","switchIp","switchPort","hostname","serialNumber","deviceId","deviceName"];
       paired.pairs.forEach(([before,device])=>{fields.forEach((field)=>{const oldValue=field==="mac"?normalize(before.mac||before.macFormatted):String(before[field]||""),newValue=field==="mac"?normalize(device.mac||device.macFormatted):String(device[field]||"");if(oldValue===newValue||oldValue&&!newValue)return;row(normalize(device.mac||device.macFormatted)||normalize(before.mac||before.macFormatted),date,"modified",field,oldValue,newValue,source,before,device);});});
     }else{
-      let end=dateTo?new Date(`${dateTo}T23:59:59`):null,start=dateFrom?new Date(`${dateFrom}T00:00:00`):null;const validMovementDates=(state.movementHistory||[]).map((item)=>Date.parse(item.changedAt||item.changed_at||item.date_str||"")).filter(Number.isFinite);if(!end)end=new Date(validMovementDates.length?Math.max(...validMovementDates):Date.now());if(!start)start=new Date(end.getTime()-30*86400000);if(start>end){const oldStart=start;start=new Date(end);end=new Date(oldStart);end.setHours(23,59,59,999);}dateFrom=start.toISOString().slice(0,10);dateTo=end.toISOString().slice(0,10);
+      let end=dateTo?new Date(TimeUtils.utcDayEnd(dateTo)):null,start=dateFrom?new Date(TimeUtils.utcDayStart(dateFrom)):null;const validMovementDates=(state.movementHistory||[]).map((item)=>Date.parse(item.changedAt||item.changed_at||item.date_str||"")).filter(Number.isFinite);if(!end||Number.isNaN(end.valueOf()))end=new Date(validMovementDates.length?Math.max(...validMovementDates):Date.now());if(!start||Number.isNaN(start.valueOf()))start=new Date(end.getTime()-30*86400000);if(start>end){const oldStart=start;start=new Date(end);end=new Date(oldStart);end.setUTCHours(23,59,59,999);}dateFrom=start.toISOString().slice(0,10);dateTo=end.toISOString().slice(0,10);
       const localTypes={"добавлено":"added","удалено":"removed","отсутствует":"removed","изменено":"modified"},localFields=Object.fromEntries(Object.entries(labels).map(([key,value])=>[String(value).toLowerCase(),key]));
       (state.movementHistory||[]).forEach((item)=>{const date=String(item.changedAt||item.changed_at||item.date_str||""),parsed=date?new Date(date):null;if(!parsed||Number.isNaN(parsed.valueOf())||parsed<start||parsed>end)return;let type=String(item.type||item.change_type||"modified").toLowerCase();type=localTypes[type]||type;if(!["added","removed","modified"].includes(type))type="modified";const rawField=item.field||item.field_name||"device",field=localFields[String(rawField).toLowerCase()]||rawField;if(field==="identityConflict")return;row(normalize(item.mac||item.macFormatted),date,type,field,item.before??item.from_value??item.old_value,item.after??item.to_value??item.new_value,item.source||item.file_name||"history",item.beforeDevice,item.afterDevice);});
     }
@@ -2814,10 +2816,10 @@
       toast("Кластеры экспортированы локально.");
     }
   }
-  async function renderBackendTopology(devices=state.devices){
+  async function renderBackendTopology(devices=state.devices,preferSharedPanel=false){
     const root=$("#topologyGraph"); if(!root)return;
     try{
-      const data=await api("/topology",{method:"POST",body:JSON.stringify(state.resultSnapshotId?currentDevicePayload():{devices})});
+      const data=preferSharedPanel?await(analyticsPanelPromise||loadAnalyticsPanel(devices)):await api("/topology",{method:"POST",body:JSON.stringify(state.resultSnapshotId?currentDevicePayload():{devices})});
       root.innerHTML=data.topologyHtml||data.emptyTopologyHtml||'<p class="muted">Backend не нашёл связей топологии.</p>';
     }catch(error){
       root.innerHTML=LocalAnalytics.renderTopology(await collectLocalAnalytics(devices));
@@ -2871,7 +2873,7 @@
   function scheduleAnalyticsSecondaryPanels(revision,devices){
     const run=()=>{
       if(revision!==analyticsRenderRevision||!$("#analyticsView")?.classList.contains("active"))return;
-      analyticsPanelPromise=loadAnalyticsPanel(devices);renderPrimaryCharts();renderBackendStatistics();renderTemporalStatistics();renderBackendCharts();renderBackendClusters(devices);renderBackendTopology(devices);renderQualityReportsHistory();refreshAnalyticsReport();
+      analyticsPanelPromise=loadAnalyticsPanel(devices);renderPrimaryCharts();renderBackendStatistics();renderTemporalStatistics();renderBackendCharts();renderBackendClusters(devices);renderBackendTopology(devices,true);renderQualityReportsHistory();refreshAnalyticsReport(true);
     };
     if(typeof window.requestIdleCallback==="function")window.requestIdleCallback(run,{timeout:350});else setTimeout(run,60);
   }
@@ -2930,7 +2932,7 @@
     renderHistory();
   }
   function localHistoryItems(query="", from="", to=""){
-    const q=String(query||"").toLowerCase(),fromTime=from?Date.parse(from+"T00:00:00"):0,toTime=to?Date.parse(to+"T23:59:59"):Infinity;
+    const q=String(query||"").toLowerCase(),fromTime=TimeUtils.utcDayStart(from)??0,toTime=TimeUtils.utcDayEnd(to)??Infinity;
     return finalDashboardSnapshots().filter((snapshot)=>{const time=Date.parse(snapshot.createdAt||snapshot.date||"")||0,text=[snapshot.name,snapshot.source,(snapshot.devices||[]).map((device)=>[device.mac,device.macFormatted,device.vendor,device.model,device.ip,device.address,device.room,device.smartroomId,device.switchIp].join(" ")).join(" ")].join(" ").toLowerCase();return time>=fromTime&&time<=toTime&&(!q||text.includes(q));});
   }
   function localSnapshotHistoryRows(query="", from="", to=""){
@@ -2942,7 +2944,7 @@
   }
   async function localHistoryItemsAsync(query="",from="",to=""){
     if(!query)return localHistoryItems("",from,to);
-    const q=String(query).trim(),fromTime=from?Date.parse(from+"T00:00:00"):0,toTime=to?Date.parse(to+"T23:59:59"):Infinity,matched=[];
+    const q=String(query).trim(),fromTime=TimeUtils.utcDayStart(from)??0,toTime=TimeUtils.utcDayEnd(to)??Infinity,matched=[];
     for(const snapshot of finalDashboardSnapshots()){
       const time=Date.parse(snapshot.fileCreatedAt||snapshot.createdAt||snapshot.savedAt||"")||0;
       if(time<fromTime||time>toTime)continue;
@@ -2973,7 +2975,7 @@
   }
   function localMovementItems(query="", from="", to=""){
     const snapshots=localHistoryItems(query,from,to).slice().sort((a,b)=>(Date.parse(a.createdAt||"")||0)-(Date.parse(b.createdAt||"")||0));
-    const q=String(query||"").toLowerCase(),fromTime=from?Date.parse(from+"T00:00:00"):0,toTime=to?Date.parse(to+"T23:59:59"):Infinity;
+    const q=String(query||"").toLowerCase(),fromTime=TimeUtils.utcDayStart(from)??0,toTime=TimeUtils.utcDayEnd(to)??Infinity;
     const movements=(state.movementHistory||[]).filter((item)=>{const time=Date.parse(item.changedAt||"")||0,text=[item.mac,item.type,item.field,item.before,item.after,item.source].join(" ").toLowerCase();return time>=fromTime&&time<=toTime&&(!q||text.includes(q));});
     for(let index=1;index<snapshots.length;index++){
       const before=snapshots[index-1],after=snapshots[index],result=localComparisonPayload({baselineId:before.id,currentId:after.id,fields:["vendor","model","ip","address","room","smartroomId","switchIp","switchPort"]});
@@ -3842,7 +3844,7 @@
   $("#batchRunButton")?.addEventListener("click",runBatchEnrichment);
   $("#batchStopButton")?.addEventListener("click",()=>{batchRunStopRequested=true;toast("Массовое обогащение остановится после текущего Final.");});
   $("#batchPairingMode")?.addEventListener("change",()=>{state.batchSettings.pairingMode=$("#batchPairingMode").value==="exact"?"exact":"nearest";save();rebuildBatchPlanForSettings();});
-  $("#batchToleranceHours")?.addEventListener("change",()=>{state.batchSettings.toleranceHours=Math.max(0,Math.min(720,Number($("#batchToleranceHours").value||24)));save();rebuildBatchPlanForSettings();});
+  $("#batchToleranceHours")?.addEventListener("change",()=>{const value=Number($("#batchToleranceHours").value);state.batchSettings.toleranceHours=Math.max(0,Math.min(720,Number.isFinite(value)?value:24));save();rebuildBatchPlanForSettings();});
   $("#batchEnrichmentStrategy")?.addEventListener("change",()=>{state.batchSettings.enrichmentStrategy=EnrichmentStrategy.normalize($("#batchEnrichmentStrategy").value);save();});
   $("#batchEnrichmentPlan")?.addEventListener("change",(event)=>{const assignment=event.target.closest("[data-batch-assign]"),active=event.target.closest("[data-batch-active]");if(assignment&&batchPlan){BatchEnrichment.reassign(batchPlan,assignment.dataset.batchGroupId,assignment.dataset.batchAssign,assignment.value);renderBatchPlan();}else if(active&&batchPlan){const group=batchPlan.groups.find((item)=>item.id===active.dataset.batchActive);if(group){group.active=active.checked;group.status=active.checked?"pending":"skipped";renderBatchPlan();}}});
   $("#ddioMappingGrid")?.addEventListener("change",(event)=>{const select=event.target.closest("[data-ddio-map]");if(!select||!state.ddioFile)return;const mapping={...(state.ddioFile.mapping||{})};if((select.dataset.ddioMap==="reservationIp"||select.dataset.ddioMap==="leaseIp")&&mapping.ip!==""&&mapping.ip!==undefined){mapping.reservationIp=mapping.reservationIp??mapping.ip;mapping.leaseIp=mapping.leaseIp??mapping.ip;delete mapping.ip;}mapping[select.dataset.ddioMap]=select.value===""?"":Number(select.value);state.ddioFile.mapping=mapping;state.ddioOverlay={};state.ddioSummary=null;save({immediate:true});renderDdioPanel();renderResults();});

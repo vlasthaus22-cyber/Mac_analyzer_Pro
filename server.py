@@ -29,7 +29,7 @@ import urllib.error
 import urllib.request
 import uuid
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from http import HTTPStatus
@@ -67,7 +67,7 @@ from backend.services.workspace.single_file_service import analyze_single_file, 
 from backend.services.comparison.comparison_service import compare_devices, compare_many_devices, compare_many_snapshots, compare_snapshots, export_comparison
 from backend.services.analytics.chart_service import build_chart_payload, export_charts_json, export_charts_svg
 from backend.services.analytics.dashboard_service import build_dashboard_metrics_payload, build_dashboard_payload, export_dashboard_html, export_dashboard_png, normalize_dashboard_settings
-from backend.services.analytics.topology_service import build_topology, export_topology_html
+from backend.services.analytics.topology_service import build_compact_topology, build_topology, export_topology_html
 from backend.services.analytics.cluster_service import build_clusters, export_clusters_csv
 from backend.services.analytics.device_analytics_service import build_device_analytics, build_model_analytics, export_device_analytics_html
 from backend.services.integrations.external_api_service import external_api_provider_options, external_enrich_devices, normalize_external_api_settings, test_mac_vendor_api
@@ -89,6 +89,7 @@ from backend.services.detection.ieee_registry_service import lookup_ieee_vendor,
 from backend.services.detection.smartroom_service import normalized_room_name, smartroom_identity, synchronize_smartroom_device
 from backend.services.system.legacy_migration_service import migrate_legacy_sqlite
 from backend.services.system.parity_service import build_parity_report, build_parity_status
+from backend.services.system.snapshot_cache_service import SnapshotDeviceCache
 from backend.services.system.diagnostics_service import build_system_diagnostics
 from backend.services.system.database_import_service import inspect_and_merge_database
 from backend.services.system.engineering_service import (
@@ -100,6 +101,7 @@ from backend.services.system.engineering_service import (
 from backend.services.system.storage_paths import initialize_storage
 from backend.services.workspace.workspace_cache_service import WorkspaceCacheMiss, WorkspaceFileCache, prepare_workspace_files, resolve_workspace_files, workspace_row_iterator
 
+SNAPSHOT_DEVICE_CACHE = SnapshotDeviceCache()
 ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 STORAGE, STORAGE_MIGRATION_REPORT = initialize_storage(ROOT)
 DATABASE_PATH = STORAGE.database
@@ -870,6 +872,18 @@ def normalize_mac(value: Any) -> Optional[str]:
     elif len(cleaned) == 8:
         cleaned = "0000" + cleaned
     return cleaned if len(cleaned) == 12 else None
+
+
+def exact_mac_query(value: Any) -> Optional[str]:
+    """Normalize only text that is actually shaped like a complete MAC.
+
+    Generic words can contain twelve A-F characters; treating those words as
+    a MAC used to bypass the normal full-text search.
+    """
+    text = as_text(value).upper()
+    if not re.fullmatch(r"(?:[0-9A-F]{12}|(?:[0-9A-F]{2}[:-]){5}[0-9A-F]{2}|(?:[0-9A-F]{4}\.){2}[0-9A-F]{4})", text):
+        return None
+    return normalize_mac(text)
 
 
 def format_mac(mac: str) -> str:
@@ -1657,7 +1671,7 @@ def hydrate_snapshot_devices(snapshots: Any) -> list[dict[str, Any]]:
     placeholders = ",".join("?" for _ in missing_ids)
     with db_connection() as conn:
         rows = conn.execute(
-            f"SELECT id, devices_json, device_count FROM snapshots WHERE id IN ({placeholders})",
+            f"SELECT rowid AS snapshot_order, id, devices_json, device_count, signature, created_at, length(devices_json) AS payload_bytes FROM snapshots WHERE id IN ({placeholders})",
             missing_ids,
         ).fetchall()
     stored = {row["id"]: row for row in rows}
@@ -1665,10 +1679,17 @@ def hydrate_snapshot_devices(snapshots: Any) -> list[dict[str, Any]]:
         row = stored.get(as_text(item.get("id")))
         if row is None or item.get("devices"):
             continue
-        try:
-            item["devices"] = json.loads(row["devices_json"] or "[]")
-        except json.JSONDecodeError:
-            item["devices"] = []
+        version = (row["snapshot_order"], row["signature"], row["created_at"], row["device_count"], row["payload_bytes"])
+        cached = SNAPSHOT_DEVICE_CACHE.get(row["id"], version)
+        if cached is None:
+            try:
+                cached = json.loads(row["devices_json"] or "[]")
+            except json.JSONDecodeError:
+                cached = []
+            if not isinstance(cached, list):
+                cached = []
+            SNAPSHOT_DEVICE_CACHE.put(row["id"], version, cached, int(row["payload_bytes"] or 0))
+        item["devices"] = cached
         item["deviceCount"] = int(row["device_count"] or len(item["devices"]))
     return items
 
@@ -1752,12 +1773,18 @@ def dashboard_snapshot_context(
             if not text:
                 return None
             try:
-                return datetime.fromisoformat(text.replace("Z", "+00:00")).replace(tzinfo=None)
+                parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+                if parsed.tzinfo is not None:
+                    parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+                return parsed
             except ValueError:
                 return None
 
-        dated = [(item, option_time(item)) for item in options]
-        valid_dated = [(item, value) for item, value in dated if value is not None]
+        dated = [(item, option_time(item), index) for index, item in enumerate(options)]
+        valid_dated = sorted(
+            [(item, value, index) for item, value, index in dated if value is not None],
+            key=lambda entry: (entry[1], entry[2]),
+        )
         try:
             from_time = datetime.fromisoformat(as_text(normalized_settings.get("changeDateFrom"))) if normalized_settings.get("changeDateFrom") else None
         except ValueError:
@@ -1766,15 +1793,24 @@ def dashboard_snapshot_context(
             to_time = datetime.fromisoformat(as_text(normalized_settings.get("changeDateTo"))) + timedelta(days=1) if normalized_settings.get("changeDateTo") else None
         except ValueError:
             to_time = None
-        comparison_item = next((item for item, value in reversed(valid_dated) if to_time is None or value < to_time), None)
+        comparison_item = next((item for item, value, _index in reversed(valid_dated) if to_time is None or value < to_time), None)
         if comparison_item is None and options:
             comparison_item = options[-1]
-        comparison_index = options.index(comparison_item) if comparison_item in options else -1
-        baseline_item = next((item for item, value in reversed(valid_dated) if from_time is not None and value < from_time and options.index(item) < comparison_index), None)
-        if baseline_item is None:
-            baseline_item = next((item for item, value in valid_dated if (from_time is None or value >= from_time) and options.index(item) < comparison_index), None)
-        if baseline_item is None and comparison_index > 0:
-            baseline_item = options[comparison_index - 1]
+        comparison_time = option_time(comparison_item or {})
+        before_comparison = [
+            (item, value) for item, value, _index in valid_dated
+            if item is not comparison_item and (comparison_time is None or value <= comparison_time)
+        ]
+        in_range = [
+            (item, value) for item, value in before_comparison
+            if (from_time is None or value >= from_time) and (to_time is None or value < to_time)
+        ]
+        baseline_item = in_range[0][0] if in_range else None
+        if baseline_item is None and from_time is not None:
+            previous = [(item, value) for item, value in before_comparison if value < from_time]
+            baseline_item = previous[-1][0] if previous else None
+        if baseline_item is None and before_comparison:
+            baseline_item = before_comparison[-1][0]
         baseline_id = as_text((baseline_item or {}).get("id") or (baseline_item or {}).get("snapshotId"))
         comparison_id = as_text((comparison_item or {}).get("id") or (comparison_item or {}).get("snapshotId"))
         normalized_settings["baselineSnapshotId"] = baseline_id
@@ -1811,15 +1847,19 @@ def open_snapshot_payload(snapshot_id: str, snapshots: list[dict[str, Any]] | No
             "lastAnalysis": utc_now(),
         }
     with db_connection() as conn:
-        row = conn.execute("SELECT * FROM snapshots WHERE id = ?", (target_id,)).fetchone()
+        row = conn.execute("SELECT rowid AS snapshot_order, *, length(devices_json) AS payload_bytes FROM snapshots WHERE id = ?", (target_id,)).fetchone()
     if not row:
         raise LookupError("Снимок не найден")
-    try:
-        devices = json.loads(row["devices_json"] or "[]")
-    except json.JSONDecodeError:
-        devices = []
+    version = (row["snapshot_order"], row["signature"], row["created_at"], row["device_count"], row["payload_bytes"])
+    devices = SNAPSHOT_DEVICE_CACHE.get(row["id"], version)
+    if devices is None:
+        try:
+            devices = json.loads(row["devices_json"] or "[]")
+        except json.JSONDecodeError:
+            devices = []
     if not isinstance(devices, list):
         devices = []
+    SNAPSHOT_DEVICE_CACHE.put(row["id"], version, devices, int(row["payload_bytes"] or 0))
     return {
         "snapshot": {
             "id": row["id"],
@@ -3283,28 +3323,34 @@ def history_deleted_html(deleted: int, mac: str = "") -> str:
 def history_where_clause(query_text: str = "", date_from: str = "", date_to: str = "") -> tuple[str, list[Any]]:
     where: list[str] = []
     params: list[Any] = []
-    normalized_query = normalize_mac(query_text)
+    normalized_query = exact_mac_query(query_text)
     text_query = as_text(query_text)
     if text_query:
-        like_value = f"%{text_query}%"
-        query_parts = [
-            "mac LIKE ?",
-            "mac_formatted LIKE ?",
-            "oui LIKE ?",
-            "vendor LIKE ?",
-            "model LIKE ?",
-            "ip LIKE ?",
-            "address LIKE ?",
-            "room LIKE ?",
-            "switch_ip LIKE ?",
-            "switch_port LIKE ?",
-            "source LIKE ?",
-        ]
-        params.extend([like_value] * len(query_parts))
         if normalized_query:
-            query_parts.append("mac LIKE ?")
-            params.append(f"%{normalized_query}%")
-        where.append("(" + " OR ".join(query_parts) + ")")
+            where.append("mac = ?")
+            params.append(normalized_query)
+        else:
+            like_value = f"%{text_query}%"
+            query_parts = [
+                "mac LIKE ?",
+                "mac_formatted LIKE ?",
+                "oui LIKE ?",
+                "vendor LIKE ?",
+                "model LIKE ?",
+                "ip LIKE ?",
+                "address LIKE ?",
+                "room LIKE ?",
+                "smartroom_id LIKE ?",
+                "switch_ip LIKE ?",
+                "switch_port LIKE ?",
+                "hostname LIKE ?",
+                "serial_number LIKE ?",
+                "device_id LIKE ?",
+                "device_name LIKE ?",
+                "source LIKE ?",
+            ]
+            params.extend([like_value] * len(query_parts))
+            where.append("(" + " OR ".join(query_parts) + ")")
     if date_from:
         where.append("recorded_at >= ?")
         params.append(date_from + "T00:00:00")
@@ -3896,7 +3942,7 @@ def history_panel_payload(query_text: str = "", date_from: str = "", date_to: st
 
 def database_search(query_text: str = "", limit: int = 100) -> dict[str, Any]:
     text_query = as_text(query_text)
-    normalized_mac = normalize_mac(text_query)
+    normalized_mac = exact_mac_query(text_query)
     try:
         requested_limit = int(limit or 100)
     except (TypeError, ValueError):
@@ -3906,17 +3952,43 @@ def database_search(query_text: str = "", limit: int = 100) -> dict[str, Any]:
     mac_like = f"%{normalized_mac}%"
     results: list[dict[str, Any]] = []
     with db_connection() as conn:
-        if text_query:
+        if normalized_mac:
             history_rows = conn.execute(
                 """
-                SELECT mac, mac_formatted, vendor, model, ip, address, room, smartroom_id, switch_ip, switch_port, source, recorded_at
+                SELECT mac, mac_formatted, vendor, model, ip, address, room, smartroom_id, switch_ip, switch_port,
+                       hostname, serial_number, device_id, device_name, source, recorded_at
                 FROM mac_history
-                WHERE mac LIKE ? OR mac_formatted LIKE ? OR vendor LIKE ? OR model LIKE ? OR ip LIKE ?
-                   OR address LIKE ? OR room LIKE ? OR smartroom_id LIKE ? OR switch_ip LIKE ? OR switch_port LIKE ? OR source LIKE ?
+                WHERE mac = ?
                 ORDER BY recorded_at DESC, id DESC
                 LIMIT ?
                 """,
-                (mac_like, like_value, like_value, like_value, like_value, like_value, like_value, like_value, like_value, like_value, like_value, bounded_limit),
+                (normalized_mac, bounded_limit),
+            ).fetchall()
+            vendor_rows = conn.execute(
+                """
+                SELECT mac, oui, prefix, vendor, model, source, observed_at
+                FROM vendor_model_history
+                WHERE mac = ?
+                ORDER BY observed_at DESC, id DESC
+                LIMIT ?
+                """,
+                (normalized_mac, bounded_limit),
+            ).fetchall()
+            ip_rows = []
+        elif text_query:
+            history_rows = conn.execute(
+                """
+                SELECT mac, mac_formatted, vendor, model, ip, address, room, smartroom_id, switch_ip, switch_port,
+                       hostname, serial_number, device_id, device_name, source, recorded_at
+                FROM mac_history
+                WHERE mac LIKE ? OR mac_formatted LIKE ? OR vendor LIKE ? OR model LIKE ? OR ip LIKE ?
+                   OR address LIKE ? OR room LIKE ? OR smartroom_id LIKE ? OR switch_ip LIKE ? OR switch_port LIKE ?
+                   OR hostname LIKE ? OR serial_number LIKE ? OR device_id LIKE ? OR device_name LIKE ? OR source LIKE ?
+                ORDER BY recorded_at DESC, id DESC
+                LIMIT ?
+                """,
+                (mac_like, like_value, like_value, like_value, like_value, like_value, like_value, like_value, like_value,
+                 like_value, like_value, like_value, like_value, like_value, like_value, bounded_limit),
             ).fetchall()
             vendor_rows = conn.execute(
                 """
@@ -3941,7 +4013,8 @@ def database_search(query_text: str = "", limit: int = 100) -> dict[str, Any]:
         else:
             history_rows = conn.execute(
                 """
-                SELECT mac, mac_formatted, vendor, model, ip, address, room, smartroom_id, switch_ip, switch_port, source, recorded_at
+                SELECT mac, mac_formatted, vendor, model, ip, address, room, smartroom_id, switch_ip, switch_port,
+                       hostname, serial_number, device_id, device_name, source, recorded_at
                 FROM mac_history
                 ORDER BY recorded_at DESC, id DESC
                 LIMIT ?
@@ -3955,7 +4028,7 @@ def database_search(query_text: str = "", limit: int = 100) -> dict[str, Any]:
             "type": "device",
             "mac": row["mac"],
             "title": row["mac_formatted"] or format_mac(row["mac"]),
-            "subtitle": " · ".join(filter(None, [row["vendor"], row["model"], row["ip"], row["address"]])),
+            "subtitle": " · ".join(filter(None, [row["vendor"], row["model"], row["ip"], row["hostname"], row["serial_number"], row["device_id"], row["device_name"], row["address"]])),
             "source": row["source"],
             "updatedAt": row["recorded_at"],
         })
@@ -4256,7 +4329,10 @@ def delete_snapshots(source: str = "", before: str = "", ids: Optional[list[Any]
     where_sql = " WHERE " + " AND ".join(where) if where else ""
     with db_connection() as conn:
         count = conn.execute(f"SELECT COUNT(*) FROM snapshots{where_sql}", params).fetchone()[0]
+        deleted_ids = [row[0] for row in conn.execute(f"SELECT id FROM snapshots{where_sql}", params).fetchall()]
         conn.execute(f"DELETE FROM snapshots{where_sql}", params)
+    for snapshot_id in deleted_ids:
+        SNAPSHOT_DEVICE_CACHE.invalidate(as_text(snapshot_id))
     log_action("Delete snapshots", f"ids={len(selected_ids)}, source={source_filter or '*'}, before={before_filter or '*'}, deleted={count}")
     return int(count or 0)
 
@@ -4374,6 +4450,7 @@ def _save_statistics_snapshot_row(
         "ON CONFLICT(id) DO UPDATE SET name=excluded.name, source=excluded.source, device_count=excluded.device_count, devices_json=excluded.devices_json, created_at=excluded.created_at, signature=excluded.signature",
         (normalized_id, normalized_name, normalized_source, len(devices), payload, timestamp, signature),
     )
+    SNAPSHOT_DEVICE_CACHE.invalidate(normalized_id)
     snapshot_order = int(conn.execute("SELECT rowid FROM snapshots WHERE id = ?", (normalized_id,)).fetchone()[0])
     return {
         "id": normalized_id, "name": normalized_name, "source": normalized_source, "deviceCount": len(devices),
@@ -5175,6 +5252,8 @@ def analytics_panel_payload(devices: list[dict[str, Any]], snapshots: list[dict[
         key: (chart_map.get(key, {}).get("items") or [])
         for key in ("vendors", "models", "quality", "timeline")
     }
+    compact_topology = build_compact_topology(devices)
+    analytics_report = build_analytics_report(devices)
     return {
         "charts": chart_payload.get("charts", []),
         "primaryCharts": primary_charts,
@@ -5188,6 +5267,10 @@ def analytics_panel_payload(devices: list[dict[str, Any]], snapshots: list[dict[
         "clusterRowsHtml": cluster_rows_html(cluster_rows),
         "emptyClusterRowsHtml": cluster_rows_html([]),
         "clusterSummary": clusters.get("summary", {}),
+        "topologySummary": compact_topology.get("summary", {}),
+        "topologyHtml": topology_nodes_html(compact_topology.get("nodes", [])),
+        "emptyTopologyHtml": topology_nodes_html([]),
+        "analyticsReport": analytics_report,
     }
 
 

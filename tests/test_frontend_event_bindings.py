@@ -1435,7 +1435,7 @@ def test_quality_reports_are_backend_first():
     assert 'reports.map((report)=>' not in app
     assert 'panel.summaryText||"0 devices' not in app
     assert 'await renderQualityReportsHistory();' in app
-    assert 'renderQualityReportsHistory();refreshAnalyticsReport();' in app
+    assert 'renderQualityReportsHistory();refreshAnalyticsReport(true);' in app
     assert 'bars("#qualityInsights",insights)' not in app
     assert 'const duplicateCount=state.devices.length-new Set(state.devices.map((item)=>item.mac)).size' not in app
     assert 'Math.min(100,Math.max(5,issue.count/Math.max(1,summary.devices||1)*100))' not in app
@@ -1507,7 +1507,7 @@ def test_clusters_topology_statistics_and_exports_have_local_fallbacks():
     local_analytics = Path("frontend/local-analytics.js").read_text(encoding="utf-8")
 
     assert 'async function renderBackendClusters(devices=state.devices)' in app
-    assert 'async function renderBackendTopology(devices=state.devices)' in app
+    assert 'async function renderBackendTopology(devices=state.devices,preferSharedPanel=false)' in app
     assert 'root.innerHTML=data.clusterRowsHtml||data.emptyClusterRowsHtml' in app
     assert 'root.innerHTML=data.topologyHtml||data.emptyTopologyHtml' in app
     assert '<script src="frontend/local-analytics.js?v=20260729.3"></script>' in html
@@ -2108,7 +2108,7 @@ def test_pyqt_analytics_dialog_report_is_available_in_web_ui():
     for marker in (
         "function buildLocalAnalyticsReport(devices=state.devices)",
         "function renderAnalyticsReport(report,source=\"local\")",
-        "async function refreshAnalyticsReport()",
+        "async function refreshAnalyticsReport(preferSharedPanel=false)",
         "async function exportAnalyticsReport()",
         'api("/analytics/report"',
         'exportFormat:"txt"',

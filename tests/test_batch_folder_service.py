@@ -1,5 +1,7 @@
 import os
 import tempfile
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -9,6 +11,7 @@ from backend.services.workspace.batch_folder_service import (
     observation_date,
     scan_batch_folders,
 )
+import backend.services.workspace.batch_folder_service as batch_folder_service
 
 
 def test_csv_dates_are_resolved_from_separated_and_compact_filenames():
@@ -44,3 +47,34 @@ def test_three_folders_are_scanned_without_reading_file_contents():
         assert len(result["files"]) == 3
         assert {item["role"] for item in result["files"]} == {"primary", "smartroom", "ddio"}
         assert registry.resolve(result["files"][0]["backendToken"]).is_file()
+
+
+def test_batch_metadata_scan_uses_bounded_parallelism_and_keeps_order():
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        primary = root / "primary"
+        primary.mkdir()
+        for index in range(20):
+            (primary / f"main-{index:02d}.csv").write_text("MAC\n", encoding="utf-8")
+        original = batch_folder_service.observation_date
+        active = 0
+        peak = 0
+        lock = threading.Lock()
+
+        def delayed(path):
+            nonlocal active, peak
+            with lock:
+                active += 1
+                peak = max(peak, active)
+            time.sleep(0.005)
+            with lock:
+                active -= 1
+            return {"date": "2026-01-01T00:00:00Z", "source": "test"}
+
+        try:
+            batch_folder_service.observation_date = delayed
+            result = scan_batch_folders({"primary": str(primary)}, BatchFolderRegistry())
+        finally:
+            batch_folder_service.observation_date = original
+        assert 1 < peak <= 8
+        assert [item["name"] for item in result["files"]] == [f"main-{index:02d}.csv" for index in range(20)]

@@ -119,6 +119,24 @@ def test_snapshot_select_payload_prepares_ready_options():
 def test_large_snapshot_open_is_compact_for_browser():
     init_database()
     cleanup()
+    devices = [
+        {"mac": f"020000{index:06X}", "vendor": "Load Test", "ip": f"10.20.{index // 254}.{index % 254 + 1}"}
+        for index in range(5000)
+    ]
+    with db_connection() as conn:
+        conn.execute(
+            "INSERT INTO snapshots (id, name, source, device_count, devices_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (LARGE_SNAPSHOT, "Large", "memory-test.xlsx", len(devices), json.dumps(devices), "2026-01-03T00:00:00Z"),
+        )
+
+    compact = open_compact_snapshot_payload(LARGE_SNAPSHOT, [], 25)
+    assert compact["compactResult"] is True
+    assert compact["resultReference"]["snapshotId"] == LARGE_SNAPSHOT
+    assert compact["resultReference"]["deviceCount"] == 5000
+    assert compact["resultPage"]["pagination"]["total"] == 5000
+    assert len(compact["devices"]) == 25
+    assert len(json.dumps(compact, ensure_ascii=False)) < 150_000
+    cleanup()
 
 
 def test_dashboard_context_hydrates_only_previous_and_current_final_results():
@@ -156,24 +174,6 @@ def test_dashboard_context_hydrates_only_previous_and_current_final_results():
     assert settings["baselineSnapshotId"] == SNAPSHOTS[0]
     assert settings["comparisonSnapshotId"] == SNAPSHOTS[1]
     cleanup()
-    devices = [
-        {"mac": f"020000{index:06X}", "vendor": "Load Test", "ip": f"10.20.{index // 254}.{index % 254 + 1}"}
-        for index in range(5000)
-    ]
-    with db_connection() as conn:
-        conn.execute(
-            "INSERT INTO snapshots (id, name, source, device_count, devices_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (LARGE_SNAPSHOT, "Large", "memory-test.xlsx", len(devices), json.dumps(devices), "2026-01-03T00:00:00Z"),
-        )
-
-    compact = open_compact_snapshot_payload(LARGE_SNAPSHOT, [], 25)
-    assert compact["compactResult"] is True
-    assert compact["resultReference"]["snapshotId"] == LARGE_SNAPSHOT
-    assert compact["resultReference"]["deviceCount"] == 5000
-    assert compact["resultPage"]["pagination"]["total"] == 5000
-    assert len(compact["devices"]) == 25
-    assert len(json.dumps(compact, ensure_ascii=False)) < 150_000
-    cleanup()
 
 
 def test_compact_snapshot_supports_strong_identity_without_mac():
@@ -202,6 +202,23 @@ def test_compact_snapshot_supports_strong_identity_without_mac():
     cleanup()
 
 
+def test_dashboard_period_compares_first_and_last_final_inside_selected_range():
+    snapshots = [
+        {"id": "before", "name": "Анализ: before", "createdAt": "2026-06-30T23:30:00Z", "devices": [{"mac": "BEFORE"}]},
+        {"id": "first", "name": "Анализ: first", "createdAt": "2026-07-01T03:00:00+03:00", "devices": [{"mac": "FIRST"}]},
+        {"id": "last", "name": "Анализ: last", "createdAt": "2026-07-31T23:00:00Z", "devices": [{"mac": "LAST"}]},
+        {"id": "after", "name": "Анализ: after", "createdAt": "2026-08-01T00:00:00Z", "devices": [{"mac": "AFTER"}]},
+    ]
+    _options, hydrated, settings = dashboard_snapshot_context(
+        snapshots,
+        "",
+        {"changeMode": "period", "changeDateFrom": "2026-07-01", "changeDateTo": "2026-07-31"},
+    )
+    assert settings["baselineSnapshotId"] == "first"
+    assert settings["comparisonSnapshotId"] == "last"
+    assert [item["id"] for item in hydrated] == ["first", "last"]
+
+
 if __name__ == "__main__":
     test_database_snapshot_bulk_delete()
     test_database_summary_and_maintenance()
@@ -210,4 +227,5 @@ if __name__ == "__main__":
     test_large_snapshot_open_is_compact_for_browser()
     test_dashboard_context_hydrates_only_previous_and_current_final_results()
     test_compact_snapshot_supports_strong_identity_without_mac()
+    test_dashboard_period_compares_first_and_last_final_inside_selected_range()
     print("database snapshot management test passed")

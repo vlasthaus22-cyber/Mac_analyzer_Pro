@@ -15,6 +15,9 @@ def test_analytics_panel_payload_prepares_charts_and_clusters():
     assert panel["clusterRows"][0]["count"] == 2
     assert panel["clusterRows"][0]["percent"] == 100
     assert panel["clusterSummary"]["clusters"] >= 1
+    assert panel["topologySummary"]["linkedDevices"] == 3
+    assert panel["topologyHtml"]
+    assert panel["analyticsReport"]["total"] == 3
 
 
 if __name__ == "__main__":

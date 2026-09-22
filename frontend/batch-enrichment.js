@@ -32,13 +32,22 @@
     return [roleName(role), index, file?.webkitRelativePath || file?.name || "file", Number(file?.size || 0), Number(file?.lastModified || 0)].join(":");
   }
 
+  function toleranceHours(value) {
+    const parsed = Number(value ?? 24);
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : 24;
+  }
+
   async function describeFiles(files, role, dateResolver) {
     const normalizedRole = roleName(role);
     const accepted = Array.from(files || []).filter(isSupportedFile);
-    const result = [];
-    for (const [index, file] of accepted.entries()) {
-      const info = await dateResolver(file);
-      result.push({
+    const result = new Array(accepted.length);
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < accepted.length) {
+        const index = cursor++;
+        const file = accepted[index];
+        const info = await dateResolver(file);
+        result[index] = {
         id: descriptorId(file, normalizedRole, index),
         role: normalizedRole,
         name: String(file.name || ""),
@@ -46,26 +55,48 @@
         size: Number(file.size || 0),
         date: String(info?.date || ""),
         dateSource: String(info?.source || "file.lastModified"),
-        file,
-      });
-    }
+          file,
+        };
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(8, accepted.length) }, worker));
     return result.sort((left, right) => timestamp(left.date) - timestamp(right.date) || left.name.localeCompare(right.name, "ru"));
   }
 
-  function nearestUnused(anchor, candidates, used, options) {
+  function allowedPair(anchor, candidate, options) {
     const mode = options.mode === "exact" ? "exact" : "nearest";
-    const toleranceMs = Math.max(0, Number(options.toleranceHours || 24)) * 60 * 60 * 1000;
+    const toleranceMs = toleranceHours(options.toleranceHours) * 60 * 60 * 1000;
     const anchorTime = timestamp(anchor.date);
     const anchorDay = calendarDay(anchor.date);
-    return candidates
-      .filter((candidate) => !used.has(candidate.id))
-      .map((candidate) => ({
-        candidate,
-        distanceMs: Math.abs(timestamp(candidate.date) - anchorTime),
-        sameDay: calendarDay(candidate.date) === anchorDay,
-      }))
-      .filter((item) => mode === "exact" ? item.sameDay : item.distanceMs <= toleranceMs)
-      .sort((left, right) => left.distanceMs - right.distanceMs || left.candidate.name.localeCompare(right.candidate.name, "ru"))[0] || null;
+    const distanceMs = Math.abs(timestamp(candidate.date) - anchorTime);
+    const sameDay = calendarDay(candidate.date) === anchorDay;
+    return mode === "exact" ? sameDay : distanceMs <= toleranceMs
+      ? { distanceMs }
+      : null;
+  }
+
+  function closestAssignments(primaries, candidates, options) {
+    const pairs = [];
+    for (const primary of primaries) {
+      for (const candidate of candidates) {
+        const allowed = allowedPair(primary, candidate, options);
+        if (allowed) pairs.push({ primary, candidate, distanceMs: Math.abs(timestamp(candidate.date) - timestamp(primary.date)) });
+      }
+    }
+    pairs.sort((left, right) => left.distanceMs - right.distanceMs
+      || timestamp(left.primary.date) - timestamp(right.primary.date)
+      || left.primary.name.localeCompare(right.primary.name, "ru")
+      || left.candidate.name.localeCompare(right.candidate.name, "ru"));
+    const assignedPrimaries = new Set();
+    const assignedCandidates = new Set();
+    const matches = new Map();
+    for (const pair of pairs) {
+      if (assignedPrimaries.has(pair.primary.id) || assignedCandidates.has(pair.candidate.id)) continue;
+      assignedPrimaries.add(pair.primary.id);
+      assignedCandidates.add(pair.candidate.id);
+      matches.set(pair.primary.id, pair);
+    }
+    return { matches, assignedCandidates };
   }
 
   function buildPlan(descriptors, options = {}) {
@@ -73,13 +104,11 @@
     const primaries = items.filter((item) => item.role === "primary");
     const smartrooms = items.filter((item) => item.role === "smartroom");
     const ddios = items.filter((item) => item.role === "ddio");
-    const usedSmartrooms = new Set();
-    const usedDdios = new Set();
+    const smartroomAssignments = closestAssignments(primaries, smartrooms, options);
+    const ddioAssignments = closestAssignments(primaries, ddios, options);
     const groups = primaries.map((primary, index) => {
-      const smartroomMatch = nearestUnused(primary, smartrooms, usedSmartrooms, options);
-      const ddioMatch = nearestUnused(primary, ddios, usedDdios, options);
-      if (smartroomMatch) usedSmartrooms.add(smartroomMatch.candidate.id);
-      if (ddioMatch) usedDdios.add(ddioMatch.candidate.id);
+      const smartroomMatch = smartroomAssignments.matches.get(primary.id) || null;
+      const ddioMatch = ddioAssignments.matches.get(primary.id) || null;
       return {
         id: `batch-${index + 1}-${primary.id}`,
         order: index + 1,
@@ -95,12 +124,12 @@
     });
     return {
       mode: options.mode === "exact" ? "exact" : "nearest",
-      toleranceHours: Math.max(0, Number(options.toleranceHours || 24)),
+      toleranceHours: toleranceHours(options.toleranceHours),
       groups,
       files: items,
       unmatched: [
-        ...smartrooms.filter((item) => !usedSmartrooms.has(item.id)),
-        ...ddios.filter((item) => !usedDdios.has(item.id)),
+        ...smartrooms.filter((item) => !smartroomAssignments.assignedCandidates.has(item.id)),
+        ...ddios.filter((item) => !ddioAssignments.assignedCandidates.has(item.id)),
       ],
     };
   }

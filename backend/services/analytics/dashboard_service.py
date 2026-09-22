@@ -520,7 +520,8 @@ def filter_dashboard_devices(devices: list[dict[str, Any]], settings: dict[str, 
             searchable = " ".join(_text(device.get(key)) for key in (
                 "mac", "macFormatted", "mac_formatted", "vendor", "model", "ip", "address",
                 "room", "smartroomId", "smartroom_id", "switchIp", "switch_ip", "switchPort",
-                "switch_port", "source",
+                "switch_port", "hostname", "host_name", "serialNumber", "serial_number", "serial",
+                "deviceId", "device_id", "deviceName", "device_name", "source",
             )).casefold()
             normalized_query_mac = re.sub(r"[^0-9A-F]", "", normalized["query"].upper())
             normalized_device_mac = _mac(device)

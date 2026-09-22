@@ -28,7 +28,13 @@ def test_history_search_filters_and_statistics():
             "ip": "192.0.2.10",
             "address": "Floor 1",
             "room": "101",
+            "hostname": "history-alpha-host",
+            "serialNumber": "HISTORY-SERIAL-A",
+            "deviceId": "HISTORY-DEVICE-A",
+            "deviceName": "History Alpha Panel",
         }),
+    ], "history-search-test", recorded_at="2026-07-01T00:00:00Z")
+    save_history([
         enrich_device({
             "mac": mac_beta,
             "vendor": "Beta Systems",
@@ -37,7 +43,7 @@ def test_history_search_filters_and_statistics():
             "address": "Floor 2",
             "room": "202",
         }),
-    ], "history-search-test")
+    ], "history-search-test", recorded_at="2026-08-01T00:00:00Z")
 
     by_vendor = search_history_records("Alpha", limit="bad-limit")
     assert by_vendor["statistics"]["records"] == 1
@@ -52,6 +58,14 @@ def test_history_search_filters_and_statistics():
     by_mac_fragment = search_history_records("AA:BB:CC:EE:20:01")
     assert by_mac_fragment["statistics"]["records"] == 1
     assert by_mac_fragment["history"][0]["mac"] == mac_alpha
+
+    for query in ("history-alpha-host", "HISTORY-SERIAL-A", "HISTORY-DEVICE-A", "History Alpha Panel"):
+        result = search_history_records(query)
+        assert result["statistics"]["records"] == 1
+        assert result["history"][0]["mac"] == mac_alpha
+
+    july = search_history_records("", "2026-07-01", "2026-07-31")
+    assert [item["mac"] for item in july["history"]] == [mac_alpha]
 
     cleanup(mac_alpha, mac_beta)
 

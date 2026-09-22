@@ -42,6 +42,20 @@ async function main() {
   assert.equal(sameDaySeparate.groups[0].smartroom.id, "s1");
   assert.equal(sameDaySeparate.groups[1].smartroom.id, "s2");
 
+  const closestWins = Batch.buildPlan([
+    item("p1", "primary", "2026-01-04T00:00:00Z"),
+    item("p2", "primary", "2026-01-04T10:00:00Z"),
+    item("s1", "smartroom", "2026-01-04T09:00:00Z"),
+  ], { mode: "nearest", toleranceHours: 24 });
+  assert.equal(closestWins.groups[0].smartroom, null);
+  assert.equal(closestWins.groups[1].smartroom.id, "s1");
+
+  const zeroTolerance = Batch.buildPlan([
+    item("p1", "primary", "2026-01-05T08:00:00Z"),
+    item("s1", "smartroom", "2026-01-05T09:00:00Z"),
+  ], { mode: "nearest", toleranceHours: 0 });
+  assert.equal(zeroTolerance.groups[0].smartroom, null);
+
   Batch.reassign(sameDaySeparate, sameDaySeparate.groups[0].id, "smartroom", "s2");
   assert.equal(sameDaySeparate.groups[0].smartroom.id, "s2");
   assert.equal(sameDaySeparate.groups[1].smartroom, null);
@@ -51,6 +65,19 @@ async function main() {
   ], "primary", async () => ({ date: "2026-02-03T00:00:00.000Z", source: "filename" }));
   assert.equal(described[0].dateSource, "filename");
   assert.equal(described[0].relativePath, "main/devices_2026-02-03.csv");
+
+  let active = 0;
+  let peak = 0;
+  const many = Array.from({ length: 20 }, (_, index) => ({ name: `f-${index}.csv`, size: index, lastModified: index }));
+  const concurrent = await Batch.describeFiles(many, "primary", async (file) => {
+    active += 1;
+    peak = Math.max(peak, active);
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    active -= 1;
+    return { date: `2026-02-${String((Number(file.size) % 20) + 1).padStart(2, "0")}T00:00:00Z`, source: "test" };
+  });
+  assert.equal(concurrent.length, 20);
+  assert.equal(peak > 1 && peak <= 8, true);
   console.log("frontend batch enrichment test passed");
 }
 

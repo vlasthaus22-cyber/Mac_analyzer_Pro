@@ -80,6 +80,48 @@ def build_topology(devices: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def build_compact_topology(devices: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build an Analytics preview without copying complete device objects."""
+    switches: dict[str, dict[str, Any]] = {}
+    unassigned = 0
+    for device in devices:
+        if not isinstance(device, dict):
+            continue
+        switch_ip = _text(device.get("switchIp") or device.get("switch_ip"))
+        if not switch_ip:
+            unassigned += 1
+            continue
+        port = _text(device.get("switchPort") or device.get("switch_port")) or "Не указан"
+        room = _text(device.get("room"))
+        switch = switches.setdefault(switch_ip, {"switchIp": switch_ip, "deviceCount": 0, "rooms": set(), "ports": {}})
+        switch["deviceCount"] += 1
+        if room:
+            switch["rooms"].add(room)
+        switch["ports"][port] = switch["ports"].get(port, 0) + 1
+    nodes = []
+    for switch in sorted(switches.values(), key=lambda item: (-item["deviceCount"], item["switchIp"])):
+        ports = [
+            {"port": port, "deviceCount": count}
+            for port, count in sorted(switch["ports"].items(), key=lambda item: (item[0] == "Не указан", item[0]))
+        ]
+        nodes.append({
+            "switchIp": switch["switchIp"],
+            "deviceCount": switch["deviceCount"],
+            "rooms": sorted(switch["rooms"]),
+            "ports": ports,
+            "portCount": len(ports),
+        })
+    return {
+        "summary": {
+            "switches": len(nodes),
+            "ports": sum(node["portCount"] for node in nodes),
+            "linkedDevices": sum(node["deviceCount"] for node in nodes),
+            "unassignedDevices": unassigned,
+        },
+        "nodes": nodes,
+    }
+
+
 def export_topology_html(topology: dict[str, Any]) -> dict[str, str]:
     node_sections = []
     for node in topology.get("nodes", []):

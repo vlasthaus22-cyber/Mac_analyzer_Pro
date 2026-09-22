@@ -7,6 +7,7 @@ import re
 import threading
 import uuid
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -126,9 +127,11 @@ def scan_batch_folders(paths: dict[str, Any], registry: BatchFolderRegistry) -> 
             key=lambda item: str(item.relative_to(root)).casefold(),
         )
         folders[role] = {"path": str(root), "files": len(files)}
-        for index, path in enumerate(files):
+
+        def describe(entry: tuple[int, Path]) -> dict[str, Any]:
+            index, path = entry
             date_info = observation_date(path)
-            descriptors.append({
+            return {
                 "id": f"backend:{role}:{index}:{path.name}",
                 "backendToken": registry.register(path),
                 "role": role,
@@ -137,7 +140,11 @@ def scan_batch_folders(paths: dict[str, Any], registry: BatchFolderRegistry) -> 
                 "size": path.stat().st_size,
                 "date": date_info["date"],
                 "dateSource": date_info["source"],
-            })
+            }
+
+        if files:
+            with ThreadPoolExecutor(max_workers=min(8, len(files)), thread_name_prefix="batch-metadata") as executor:
+                descriptors.extend(executor.map(describe, enumerate(files)))
     if not any(item["role"] == "primary" for item in descriptors):
         raise ValueError("В папке основных файлов нет поддерживаемых CSV/XLSX/JSON")
     return {"folders": folders, "files": descriptors, "supportedExtensions": sorted(SUPPORTED_SUFFIXES)}
