@@ -77,6 +77,34 @@ NEGATIVE_KEYWORDS = {
     "authenticationTime": {"ip", "mac", "port", "name", "id"},
 }
 
+EXACT_HEADER_ALIASES = {
+    "mac": {"callingstarionid", "callingstationid", "mac", "macaddress", "macадрес"},
+    "switchIp": {"nasip", "switchip", "ipкоммутатора"},
+    "switchPort": {"nasportid", "switchport", "порткоммутатора"},
+    "authenticationTime": {"breceipttime", "receipttime", "времяаутентификацииустройства"},
+    "vendor": {"производитель"},
+    "model": {"модель"},
+    "address": {"адреслокации", "адрескомнаты"},
+    "room": {"названиекомнаты", "наименованиелокации"},
+    "smartroomId": {"smartroomidлокации", "idкомнаты", "smartroomid"},
+}
+
+
+def _normalized_header_key(value):
+    return re.sub(r"[^0-9a-zа-я]", "", str(value).strip().lower().replace("ё", "е"))
+
+
+def _apply_exact_aliases(headers, mapping):
+    names = _normalize_headers(headers)
+    by_key = {_normalized_header_key(name): index for index, name in enumerate(names)}
+    result = dict(mapping)
+    for field, candidates in EXACT_HEADER_ALIASES.items():
+        for candidate in candidates:
+            if candidate in by_key:
+                result[field] = by_key[candidate]
+                break
+    return result
+
 
 def _normalize_headers(headers):
     normalized = []
@@ -396,6 +424,7 @@ def detect(headers, rows=None, ai=False):
     rows = rows or []
     scores = _build_scores(headers, rows, ai=ai)
     mapping, conflicts, warnings = _select_mapping(scores, ai=ai)
+    mapping = _apply_exact_aliases(headers, mapping)
 
     result = {**mapping}
     result.update({

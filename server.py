@@ -75,6 +75,7 @@ from backend.services.integrations.notification_service import build_analysis_ev
 from backend.services.integrations.scheduler_service import prepare_queue_files, queue_summary, run_file_queue
 from backend.services.analytics.data_quality_service import analyze_data_quality
 from backend.services.analytics.analytics_report_service import build_analytics_report, export_analytics_report_txt
+from backend.services.analytics.presence_churn_service import build_presence_churn
 from backend.services.detection.vendor_detector_service import detect_model, detect_vendor, normalize_detector_settings
 from backend.services.detection.detection_index_service import (
     build_similarity_index,
@@ -6925,8 +6926,9 @@ class AppHandler(BaseHTTPRequestHandler):
                 # restored secondary/alternative MAC can participate. This is
                 # a direct MAC -> device IP lookup and is independent of the
                 # device's switch IP or switch-change analytics.
-                if ddio_file and fields.get("ip", True) is not False:
-                    ddio_ip_fallbacks = apply_ddio_ip_fallback(valid, ddio_index)
+                # DDIO blank-IP recovery is independent from SmartRoom field
+                # selection and switch-IP change analytics. It never replaces
+                # an existing IP and requires an exact MAC identity.
                 switch_ip_changes = merge_switch_ip_changes_with_history(valid, context, merged.get("switchIpChanges") or [])
                 ddio_overlay: dict[str, dict[str, str]] = {}
                 if ddio_file:
@@ -6939,6 +6941,13 @@ class AppHandler(BaseHTTPRequestHandler):
                     if fields.get(field, True) is False:
                         for item in valid:
                             item[field] = "Не определено" if field == "vendor" else ""
+                # The IP selected from DDIO is a dedicated blank-value
+                # recovery step, not SmartRoom IP enrichment.  Apply it after
+                # the optional SmartRoom-field mask so disabling the
+                # SmartRoom IP column cannot disable or erase the exact
+                # MAC -> DDIO device-IP match.
+                if ddio_file:
+                    ddio_ip_fallbacks = apply_ddio_ip_fallback(valid, ddio_index)
                 diagnostics = merged.setdefault("diagnostics", {"strategy": strategy, "counts": {}})
                 diagnostics["strategy"] = strategy
                 diagnostic_counts = diagnostics.setdefault("counts", {})
@@ -7539,6 +7548,16 @@ class AppHandler(BaseHTTPRequestHandler):
                     self.json_response(analytics_panel_payload(resolve_payload_devices(payload), payload.get("snapshots", [])))
                 except ValueError as error:
                     self.error_response(str(error))
+            elif parsed.path == "/api/analytics/presence-churn":
+                snapshots = payload.get("snapshots", [])
+                if not isinstance(snapshots, list):
+                    self.error_response("snapshots must be an array")
+                    return
+                self.json_response(build_presence_churn(
+                    hydrate_snapshot_devices(snapshots),
+                    as_text(payload.get("query")),
+                    int(payload.get("limit") or 500),
+                ))
             elif parsed.path == "/api/analytics/report":
                 try:
                     report = build_analytics_report(resolve_payload_devices(payload))

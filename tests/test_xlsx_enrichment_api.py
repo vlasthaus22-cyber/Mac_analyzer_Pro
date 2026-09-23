@@ -383,7 +383,9 @@ def test_empty_primary_and_smartroom_ip_is_filled_from_four_column_ddio_mapping(
                     "mapping": {"reservationMac": 0, "reservationIp": 1, "leaseMac": 2, "leaseIp": 3},
                 },
                 "strategy": "primary",
-                "fields": {"ip": True, "room": True, "smartroomId": True},
+                # DDIO blank-IP recovery is intentionally independent from the
+                # SmartRoom IP field toggle.
+                "fields": {"ip": False, "room": True, "smartroomId": True},
                 "source": "main-empty-ip.xlsx",
                 "saveHistory": False,
                 "saveSnapshot": False,

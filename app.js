@@ -15,6 +15,7 @@
   const StatePersistence = window.MacAnalyzerStatePersistence;
   const BrowserSnapshots = window.MacAnalyzerBrowserSnapshots;
   const MacChronology = window.MacAnalyzerMacChronology;
+  const PresenceChurn = window.MacAnalyzerPresenceChurn;
   const XlsxExporter = window.MacAnalyzerXlsxExporter;
   const FullXlsxReport = window.MacAnalyzerFullXlsxReport;
   const FullJsonReport = window.MacAnalyzerFullJsonReport;
@@ -35,6 +36,7 @@
   const SmartroomUI = window.MacAnalyzerSmartroomUI;
   const RecordValidation = window.MacAnalyzerRecordValidation;
   const DeviceIdentity = window.MacAnalyzerDeviceIdentity;
+  const ColumnPresets = window.MacAnalyzerColumnPresets;
   const EnrichmentStrategy = window.MacAnalyzerEnrichmentStrategy;
   const BatchEnrichment = window.MacAnalyzerBatchEnrichment;
   const TimeUtils = window.MacAnalyzerTime;
@@ -45,10 +47,12 @@
   if(!FullJsonReport)throw new Error("Модуль frontend/full-json-report.js не загружен");
   if(!LocalAnalytics)throw new Error("Модуль frontend/local-analytics.js не загружен");
   if(!MacChronology)throw new Error("Модуль frontend/mac-chronology.js не загружен");
+  if(!PresenceChurn)throw new Error("Модуль frontend/presence-churn.js не загружен");
   if(!WorkspaceFileLifecycle)throw new Error("Модуль frontend/workspace-file-lifecycle.js не загружен");
   if(!DdioOverlay)throw new Error("Модуль frontend/ddio-overlay.js не загружен");
   if(!RecordValidation)throw new Error("Модуль frontend/record-validation.js не загружен");
   if(!DeviceIdentity)throw new Error("Модуль frontend/device-identity.js не загружен");
+  if(!ColumnPresets)throw new Error("Модуль frontend/column-presets.js не загружен");
   if(!EnrichmentStrategy)throw new Error("Модуль frontend/enrichment-strategy.js не загружен");
   if(!BatchEnrichment)throw new Error("Модуль frontend/batch-enrichment.js не загружен");
   if(!TimeUtils)throw new Error("Модуль frontend/time-utils.js не загружен");
@@ -70,7 +74,7 @@
   const engineeringPermissionList=["delete:history","delete:snapshots","delete:mappings","delete:tasks","delete:ip-mappings","delete:api-cache","write:settings","write:migration"];
   const engineeringPermissionLabels={"delete:history":"Удаление истории","delete:snapshots":"Удаление снимков","delete:mappings":"Удаление справочников","delete:tasks":"Управление задачами","delete:ip-mappings":"Удаление IP-маппинга","delete:api-cache":"Очистка API-кэша","write:settings":"Изменение настроек","write:migration":"Миграция Python/SQLite"};
   const engineeringOnlyViews=new Set(["single","compare","data","automation","settings"]);
-  const empty = () => ({files:[],ddioFile:null,ddioOverlay:{},ddioSummary:null,devices:[],invalid:[],snapshots:[],movementHistory:[],importErrors:[],ipMappings:[],smartroomMappings:{},localVendorMappings:{},localModelMappings:{},dashboardFleetCache:null,activeMappingFileId:"",mappingDisplayMode:"name",enrichmentStrategy:"NO_EXPANSION",batchSettings:{pairingMode:"nearest",toleranceHours:24,enrichmentStrategy:"NO_EXPANSION"},theme:"light",engineeringMode:false,engineeringToken:"",engineeringExpiresAt:"",engineeringPermissions:[],ouiLength:3,ouiStyle:"plain",vendorDetectorSettings:{enabled:true,useOui3:true,useMac5:true,useText:true,useInference:true,confidenceThreshold:0.6},historyEnrichmentSettings:{enabled:true,priorityHistory:true,useOuiMatch:true,useMac5Match:true},externalApiSettings:{enabled:false,provider:"macvendors",endpoint:"",rateLimit:25,cacheTtlDays:30,onlyUnknown:true},dashboardSettings:{query:"",vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true,missingRoom:true,changedRooms:true,allChangedRooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true},autoRefresh:true,refreshInterval:60,changeMode:"snapshots",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},customColumns:[],customColumnMappings:{},columnWidths:{...defaultColumnWidths},visibleColumns:["macFormatted","oui","vendor","model","ip","address","room","smartroomId","switchIp","switchPort","authenticationTime","hostname","serialNumber","deviceId","deviceName","source"],columnOrder:["macFormatted","oui","vendor","model","ip","address","room","smartroomId","switchIp","switchPort","authenticationTime","hostname","serialNumber","deviceId","deviceName","source"],resultSnapshotId:"",resultBrowserSnapshotId:"",resultBrowserSnapshotDirty:false,resultDeviceCount:0,resultInvalidCount:0,resultSummary:null,lastAnalysis:null});
+  const empty = () => ({files:[],ddioFile:null,ddioOverlay:{},ddioSummary:null,devices:[],invalid:[],snapshots:[],movementHistory:[],importErrors:[],ipMappings:[],smartroomMappings:{},localVendorMappings:{},localModelMappings:{},dashboardFleetCache:null,activeMappingFileId:"",mappingDisplayMode:"name",enrichmentStrategy:"NO_EXPANSION",batchSettings:{pairingMode:"nearest",toleranceHours:24,enrichmentStrategy:"NO_EXPANSION"},theme:"light",engineeringMode:false,engineeringToken:"",engineeringExpiresAt:"",engineeringPermissions:[],ouiLength:3,ouiStyle:"plain",vendorDetectorSettings:{enabled:true,useOui3:true,useMac5:true,useText:true,useInference:true,confidenceThreshold:0.6},historyEnrichmentSettings:{enabled:true,priorityHistory:true,useOuiMatch:true,useMac5Match:true},externalApiSettings:{enabled:false,provider:"macvendors",endpoint:"",rateLimit:25,cacheTtlDays:30,onlyUnknown:true},dashboardSettings:{query:"",vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true,missingRoom:true,changedRooms:true,allChangedRooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true,presenceChurn:true},autoRefresh:true,refreshInterval:60,changeMode:"snapshots",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},customColumns:[],customColumnMappings:{},columnWidths:{...defaultColumnWidths},visibleColumns:["macFormatted","oui","vendor","model","ip","address","room","smartroomId","switchIp","switchPort","authenticationTime","hostname","serialNumber","deviceId","deviceName","source"],columnOrder:["macFormatted","oui","vendor","model","ip","address","room","smartroomId","switchIp","switchPort","authenticationTime","hostname","serialNumber","deviceId","deviceName","source"],resultSnapshotId:"",resultBrowserSnapshotId:"",resultBrowserSnapshotDirty:false,resultDeviceCount:0,resultInvalidCount:0,resultSummary:null,lastAnalysis:null});
   let state;
   try { const old = JSON.parse(localStorage.getItem(key)); state = {...empty(),...old}; } catch { state = empty(); }
   state.importErrors=[];
@@ -202,6 +206,11 @@
     const name=String(error?.name||""),message=String(error?.message||error||"").toLowerCase();
     return ["NoModificationAllowedError","NotAllowedError","InvalidStateError","NotFoundError"].includes(name)||/could not be modified|read.?only|write protected|not writable|permission denied|нет разрешения/.test(message);
   }
+  async function browserArchiveRecords(){const db=await openBrowserStateDb();return new Promise((resolve,reject)=>{const tx=db.transaction(browserStateStoreName,"readonly"),request=tx.objectStore(browserStateStoreName).getAll();request.onsuccess=()=>resolve((request.result||[]).filter((item)=>String(item.id||"").startsWith("archive:")));request.onerror=()=>reject(request.error||new Error("Не удалось прочитать архивы"));tx.oncomplete=()=>db.close();});}
+  async function writeBrowserArchive(name){const db=await openBrowserStateDb(),id="archive:"+crypto.randomUUID(),record={id,name:String(name||"").trim()||`Архив ${new Date().toLocaleString("ru-RU")}`,createdAt:new Date().toISOString(),state:compactBrowserState(state)};return new Promise((resolve,reject)=>{const tx=db.transaction(browserStateStoreName,"readwrite");tx.objectStore(browserStateStoreName).put(record);tx.oncomplete=()=>{db.close();resolve(record);};tx.onerror=()=>{const error=tx.error;db.close();reject(error||new Error("Не удалось создать архив"));};});}
+  async function deleteBrowserArchive(id){const db=await openBrowserStateDb();return new Promise((resolve,reject)=>{const tx=db.transaction(browserStateStoreName,"readwrite");tx.objectStore(browserStateStoreName).delete(String(id));tx.oncomplete=()=>{db.close();resolve(true);};tx.onerror=()=>{const error=tx.error;db.close();reject(error||new Error("Не удалось удалить архив"));};});}
+  async function renderArchiveList(){const root=$("#archiveList");if(!root)return;try{const records=(await browserArchiveRecords()).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));root.innerHTML=records.length?records.map((item)=>`<div class="mapping-row"><span><strong>${esc(item.name)}</strong><small>${esc(new Date(item.createdAt).toLocaleString("ru-RU"))} · Final: ${Number(item.state?.snapshots?.length||0)}</small></span><span><button class="button secondary" type="button" data-load-archive="${esc(item.id)}">Загрузить</button> <button class="button secondary" type="button" data-delete-archive="${esc(item.id)}">Удалить</button></span></div>`).join(""):'<p class="muted">Сохранённых архивов нет.</p>';}catch(error){root.innerHTML=`<p class="muted">Архивы недоступны: ${esc(error.message)}</p>`;}}
+  async function loadBrowserArchive(id){const records=await browserArchiveRecords(),record=records.find((item)=>item.id===id);if(!record)throw new Error("Архив не найден");state=normalizeRestoredState(record.state||{});save({immediate:true});await flushBrowserStateSave();location.reload();}
   function detachUnwritablePortableDatabase(error){
     if(portableDatabaseSaveTimer){clearTimeout(portableDatabaseSaveTimer);portableDatabaseSaveTimer=null;}
     portableDatabaseHandle=null;
@@ -548,7 +557,7 @@
   let historyPanelPromise = null;
   let analyticsPanelPromise = null;
   let analyticsRenderRevision=0,movementRenderRevision=0,dashboardDetailRenderRevision=0,dashboardChangesVisibleLimit=100,analyticsRenderCache={signature:"",at:0},historyRenderCache={signature:"",at:0};
-  let statisticsPanelPromise=null,statisticsPanelPromiseKey="",browserFleetRefreshPromise=null,browserFleetRefreshKey="";
+  let statisticsPanelPromise=null,statisticsPanelPromiseKey="",browserFleetRefreshPromise=null,browserFleetRefreshKey="",presenceChurnCache={key:"",data:{snapshotCount:0,total:0,items:[]}};
   let contextTableRow = null;
   let resultColumnResize = null;
   let enhancedMovementIds = [];
@@ -558,7 +567,8 @@
   let mappingRenderVersion = 0;
   let pendingFileImports = [];
   const batchFolderFiles={primary:[],smartroom:[],ddio:[]};
-  let batchPlan=null,batchRunStopRequested=false,batchRunActive=false;
+  let batchPlan=null,batchRunStopRequested=false,batchRunActive=false,batchMappingReviewContext=null;
+  const batchMappingOverrides=new Map();
   const sourceFilesById = new Map();
   const workspacePreviewDataRows = 100;
   function releaseTransientAnalysisMemory(){
@@ -903,7 +913,7 @@
     root.innerHTML=(batchPlan.groups||[]).map((group,index)=>{
       const status=group.status||"pending",statusText={pending:"Ожидает",running:"Выполняется",complete:"Готово",error:"Ошибка",skipped:"Пропущено"}[status]||status;
       const source=(item,title)=>`<div class="batch-source"><span>△</span><strong>${esc(title)}</strong><small title="${esc(item?.relativePath||item?.name||"")}">${esc(batchFileCaption(item))}</small></div>`;
-      return `<article class="batch-cycle ${esc(status)}" data-batch-group="${esc(group.id)}"><div class="batch-cycle-head"><label><input type="checkbox" data-batch-active="${esc(group.id)}" ${group.active!==false?"checked":""} ${batchRunActive?"disabled":""}> Цикл ${index+1}</label><strong>${esc(statusText)}${group.error?" · "+esc(group.error):""}</strong></div><div class="batch-flow"><div class="batch-triangles">${source(group.primary,"Основной")}${source(group.smartroom,"SmartRoom")}${source(group.ddio,"DDIO")}</div><span class="batch-arrow">→</span><div class="batch-final"><strong>□ Final ${index+1}</strong><small>${esc(formatDisplayDateTime(group.primary?.date))}</small></div></div><div class="batch-assignment"><label>Файл SmartRoom<select data-batch-assign="smartroom" data-batch-group-id="${esc(group.id)}" ${batchRunActive?"disabled":""}>${batchAssignmentOptions("smartroom",group.smartroom?.id||"")}</select></label><label>Файл DDIO<select data-batch-assign="ddio" data-batch-group-id="${esc(group.id)}" ${batchRunActive?"disabled":""}>${batchAssignmentOptions("ddio",group.ddio?.id||"")}</select></label></div></article>`;
+      return `<article class="batch-cycle ${esc(status)}" data-batch-group="${esc(group.id)}"><div class="batch-cycle-head"><label><input type="checkbox" data-batch-active="${esc(group.id)}" ${group.active!==false?"checked":""} ${batchRunActive?"disabled":""}> Цикл ${index+1}</label><strong>${esc(statusText)}${group.error?" · "+esc(group.error):""}</strong></div><div class="batch-flow"><div class="batch-triangles">${source(group.primary,"Основной")}${source(group.smartroom,"SmartRoom")}${source(group.ddio,"DDIO")}</div><span class="batch-arrow">→</span><div class="batch-final"><strong>□ Final ${index+1}</strong><small>${esc(formatDisplayDateTime(group.primary?.date))}</small></div></div><div class="batch-assignment"><label>Файл SmartRoom<select data-batch-assign="smartroom" data-batch-group-id="${esc(group.id)}" ${batchRunActive?"disabled":""}>${batchAssignmentOptions("smartroom",group.smartroom?.id||"")}</select></label><label>Файл DDIO<select data-batch-assign="ddio" data-batch-group-id="${esc(group.id)}" ${batchRunActive?"disabled":""}>${batchAssignmentOptions("ddio",group.ddio?.id||"")}</select></label><button class="button secondary" type="button" data-batch-review-mapping="${esc(group.id)}" ${batchRunActive?"disabled":""}>${group.mappingChecked?"Колонки проверены":"Проверить колонки"}</button></div></article>`;
     }).join("")+(batchPlan.unmatched?.length?`<div class="batch-unmatched"><strong>Не назначены:</strong> ${batchPlan.unmatched.map((item)=>esc(item.name)).join(", ")}</div>`:"");
     if(run){run.disabled=batchRunActive||!active.length;run.textContent=batchRunActive?"Массовое обогащение выполняется…":"Запустить массовое обогащение";}if(stop)stop.disabled=!batchRunActive;
   }
@@ -951,6 +961,7 @@
       onProgress(10,"Backend читает "+item.name);
       const data=await api("/batch/folders/import",{method:"POST",body:JSON.stringify({token:item.backendToken})}),headers=(data.headers||[]).map((name,index)=>({name:String(name||headerName(index)),index}));
       const record={id:crypto.randomUUID(),name:item.name,sheet:data.sheet||"",rows:[data.headers||[],...(data.rows||[])],headers,mapping:{...defaultColumnMapping(),...(data.mapping||{})},createdAt:item.date,fileDateSource:item.dateSource,sourceBytes:Number(item.size||0),fileToken:data.fileToken||"",rowCount:Number(data.rowCount||0),rowsComplete:false,role,columnDetection:data.detection||{}};
+      record.mapping=role==="ddio"?ColumnPresets.mappingForRole(record.headers,"ddio"):ColumnPresets.mappingForRole(record.headers,role,record.mapping);
       localMappingSummary(record);onProgress(100,"Файл прочитан backend");return record;
     }
     if(!item.file)throw new Error(`Исходный файл «${item.name}» недоступен`);
@@ -958,6 +969,7 @@
     if(backendAvailable)try{record=await backendFileRecord(item.file,item.date,onProgress);}catch(error){if(!networkUnavailable(error))throw error;setBackendStatus(false,"Backend недоступен · массовое обогащение продолжено в браузере");}
     if(!record)record=await clientFileRecord(item.file,item.date,onProgress);
     record.role=role;record.createdAt=item.date;record.fileDateSource=item.dateSource;
+    record.mapping=role==="ddio"?ColumnPresets.mappingForRole(record.headers,"ddio"):ColumnPresets.mappingForRole(record.headers,role,record.mapping||localAutoMapping(record.headers,role));
     await rememberSourceFile(record,item.file);return record;
   }
   async function prepareBatchGroup(group,groupIndex,totalGroups){
@@ -966,14 +978,24 @@
     if(oldTokens.length&&backendAvailable)await api("/workspace/cache/discard",{method:"POST",body:JSON.stringify({tokens:oldTokens})}).catch(()=>{});
     state.files=[];state.ddioFile=null;state.ddioOverlay={};state.ddioSummary=null;state.importErrors=[];
     const progress=(value,detail)=>{$("#batchEnrichmentSummary").dataset.detail=detail;const cycle=Array.from(document.querySelectorAll("[data-batch-group]")).find((element)=>element.dataset.batchGroup===String(group.id));if(cycle)cycle.dataset.progress=String(processPercent(value));};
-    const primary=await batchFileRecord(group.primary,"primary",progress);state.files=[primary];
-    if(group.smartroom){const smartroom=await batchFileRecord(group.smartroom,"smartroom",progress);state.files.push(smartroom);}
-    if(group.ddio){const ddio=await batchFileRecord(group.ddio,"ddio",progress);ddio.mapping=DdioOverlay.detectMapping(ddio.headers||[]);const validation=DdioOverlay.validateMapping(ddio.mapping||{});if(!validation.valid)throw new Error(`DDIO «${ddio.name}»: не определены четыре колонки MAC/IP резервации и аренды`);state.ddioFile=ddio;}
+    const overrides=batchMappingOverrides.get(String(group.id))||{};
+    const primary=await batchFileRecord(group.primary,"primary",progress);if(overrides.primary)primary.mapping={...primary.mapping,...overrides.primary};state.files=[primary];
+    if(group.smartroom){const smartroom=await batchFileRecord(group.smartroom,"smartroom",progress);if(overrides.smartroom)smartroom.mapping={...smartroom.mapping,...overrides.smartroom};state.files.push(smartroom);}
+    if(group.ddio){const ddio=await batchFileRecord(group.ddio,"ddio",progress);ddio.mapping={...DdioOverlay.detectMapping(ddio.headers||[]),...ColumnPresets.mappingForRole(ddio.headers||[],"ddio"),...(overrides.ddio||{})};const validation=DdioOverlay.validateMapping(ddio.mapping||{});if(!validation.valid)throw new Error(`DDIO «${ddio.name}»: не определены четыре колонки MAC/IP резервации и аренды`);state.ddioFile=ddio;}
     state.files=normalizeFileRoles(state.files);state.activeMappingFileId=primary.id;
     state.batchSettings.enrichmentStrategy=EnrichmentStrategy.normalize($("#batchEnrichmentStrategy")?.value||state.batchSettings.enrichmentStrategy);state.enrichmentStrategy=state.batchSettings.enrichmentStrategy;syncEnrichmentStrategyUi(state.enrichmentStrategy);
     save({immediate:true});renderFiles();renderMapping();renderDdioPanel();
     return{groupIndex,totalGroups};
   }
+  function batchMappingFields(role){return role==="ddio"?[["reservationMac","MAC резервации"],["reservationIp","IP резервации"],["leaseMac","MAC аренды"],["leaseIp","IP аренды"]]:fieldList;}
+  function batchMappingSection(file,role){if(!file)return"";const options=(selected)=>['<option value="">Не использовать</option>',...(file.headers||[]).map((header)=>`<option value="${header.index}"${Number(selected)===Number(header.index)&&selected!==""?" selected":""}>${esc(mappingOptionLabel(header))}</option>`)].join("");return `<fieldset data-batch-mapping-role="${role}"><legend>${role==="primary"?"Основной файл":role==="smartroom"?"SmartRoom":"DDIO"} · ${esc(file.name)}</legend><div class="mapping-grid">${batchMappingFields(role).map(([field,label])=>`<label>${esc(label)}<select data-batch-map="${field}">${options(file.mapping?.[field])}</select></label>`).join("")}</div></fieldset>`;}
+  async function reviewBatchMappings(groupId){
+    if(batchRunActive)return;const group=batchPlan?.groups?.find((item)=>String(item.id)===String(groupId));if(!group)return;
+    const token=UiFeedback?.start("Чтение заголовков файлов…");
+    try{await prepareBatchGroup(group,0,batchPlan.groups.length);batchMappingReviewContext={group,files:{primary:state.files.find((file)=>file.role==="primary"),smartroom:state.files.find((file)=>file.role==="smartroom"),ddio:state.ddioFile}};$("#batchMappingReviewBody").innerHTML=[batchMappingSection(batchMappingReviewContext.files.primary,"primary"),batchMappingSection(batchMappingReviewContext.files.smartroom,"smartroom"),batchMappingSection(batchMappingReviewContext.files.ddio,"ddio")].join("");$("#batchMappingReviewDialog").showModal();}
+    catch(error){UiFeedback?.showError(error);toast("Не удалось проверить колонки: "+error.message);}finally{UiFeedback?.stop(token);}
+  }
+  function applyBatchMappingReview(){if(!batchMappingReviewContext)return;const result={};$$('[data-batch-mapping-role]').forEach((section)=>{const mapping={};section.querySelectorAll('[data-batch-map]').forEach((select)=>{mapping[select.dataset.batchMap]=select.value===""?"":Number(select.value);});result[section.dataset.batchMappingRole]=mapping;});batchMappingOverrides.set(String(batchMappingReviewContext.group.id),result);batchMappingReviewContext.group.mappingChecked=true;batchMappingReviewContext=null;$("#batchMappingReviewDialog").close();renderBatchPlan();toast("Сопоставление колонок сохранено для этого цикла.");}
   async function runBatchEnrichment(){
     if(batchRunActive)return;if(!batchPlan)await buildBatchPlan();
     const groups=(batchPlan?.groups||[]).filter((group)=>group.active!==false);if(!groups.length){toast("В плане нет активных циклов.");return;}
@@ -1001,7 +1023,7 @@
   const fileReaders=window.MacAnalyzerFileReaders;
   if(!fileReaders)throw new Error("Модуль frontend/file-readers.js не загружен");
   const {readClientTextFile,clientDelimiter,clientTableRows,clientJsonTable,clientZipEntries,clientXlsxTable,clientReadTable}=fileReaders;
-  function localAutoMapping(headers){const find=(patterns,excluded=new Set())=>{const index=headers.findIndex((header,column)=>!excluded.has(column)&&patterns.some(pattern=>pattern.test(String(header).toLowerCase())));return index>=0?index:"";},secondaryPatterns=[/secondary.*mac/,/additional.*mac/,/mac.*(?:2|secondary|additional)/,/мак.*(?:2|дополн|втор)/,/дополн.*мак/,/втор.*интерфейс/],secondaryMac=find(secondaryPatterns),mac=find([/mac/,/мак/],new Set(secondaryMac===""?[]:[secondaryMac]));return{mac,secondaryMac,vendor:find([/vendor/,/производ/,/вендор/]),model:find([/model/,/модель/]),ip:find([/^ip/,/ip address/,/адрес ip/]),address:find([/address/,/адрес/]),room:find([/room/,/помещ/,/кабин/]),smartroomId:find([/smart.?room.*id/,/id.*smart.?room/,/ид.*smart.?room/]),switchIp:find([/switch.*ip/,/коммутатор.*ip/]),switchPort:find([/port/,/порт/]),authenticationTime:find([/authentication.*time/,/auth.*time/,/last.*auth/,/время.*аутентификац/,/время.*авторизац/]),hostname:find([/host.?name/,/имя хоста/,/dns name/]),serialNumber:find([/serial/,/серийн/]),deviceId:find([/device.*id/,/id.*device/,/идентификатор.*устрой/]),deviceName:find([/device.*name/,/название.*устрой/,/наименование.*устрой/])};}
+  function localAutoMapping(headers){const role=arguments[1]||"primary",names=ColumnPresets.headerNames(headers),find=(patterns,excluded=new Set())=>{const index=names.findIndex((header,column)=>!excluded.has(column)&&patterns.some(pattern=>pattern.test(String(header).toLowerCase())));return index>=0?index:"";},secondaryPatterns=[/secondary.*mac/,/additional.*mac/,/mac.*(?:2|secondary|additional)/,/мак.*(?:2|дополн|втор)/,/дополн.*мак/,/втор.*интерфейс/],secondaryMac=find(secondaryPatterns),mac=find([/mac/,/мак/,/callingstari?onid/],new Set(secondaryMac===""?[]:[secondaryMac])),generic={mac,secondaryMac,vendor:find([/vendor/,/производ/,/вендор/]),model:find([/model/,/модель/]),ip:find([/^ip$/,/^ip[ _-]*(?:address|адрес)$/,/адрес ip/]),address:find([/address/,/адрес/]),room:find([/room/,/помещ/,/кабин/,/название комнаты/,/наименование локации/]),smartroomId:find([/smart.?room.*id/,/id.*smart.?room/,/ид.*smart.?room/,/id комнаты/]),switchIp:find([/switch.*ip/,/коммутатор.*ip/,/^nasip$/]),switchPort:find([/port/,/порт/,/^nasportid$/]),authenticationTime:find([/authentication.*time/,/auth.*time/,/last.*auth/,/receipt.*time/,/время.*аутентификац/,/время.*авторизац/]),hostname:find([/host.?name/,/имя хоста/,/dns name/]),serialNumber:find([/serial/,/серийн/]),deviceId:find([/device.*id/,/id.*device/,/идентификатор.*устрой/]),deviceName:find([/device.*name/,/название.*устрой/,/наименование.*устрой/])};return ColumnPresets.mappingForRole(names,role,generic);}
   function localMappingSummary(file){const mapped=Object.entries(file.mapping||{}).filter(([,value])=>value!==""&&value!==undefined).length;file.mappingSummary={summaryHtml:`<div class="bar-item"><div class="bar-label"><span>Сопоставлено полей</span><strong>${mapped}</strong></div><div class="bar-track"><div class="bar-fill" style="width:${Math.min(100,mapped/fieldList.length*100)}%"></div></div></div>`};file.columnDetection={detectorHtml:'<p class="muted">Колонки определены в браузере, потому что backend недоступен.</p>'};renderColumnDetectionSummary(file);}
   function normalizeAuthenticationTime(value){const text=String(value??"").trim(),serial=Number(text.replace(",","."));if(!text||!Number.isFinite(serial)||serial<1||serial>2958465)return text;return new Date(Date.UTC(1899,11,30)+Math.round(serial*86400000)).toISOString();}
   function columnLetter(index){let n=Number(index)+1,letters="";while(n>0){const mod=(n-1)%26;letters=String.fromCharCode(65+mod)+letters;n=Math.floor((n-1)/26);}return letters||String(Number(index)+1);}
@@ -1221,7 +1243,10 @@
       activeLocalDetectionContext=createLocalDetectionContext();
       applyLocalVendorModelMappings(devices);
       const ddio=await buildLocalDdioOverlay(switchTracker,(value,detail)=>onProgress(95+value*0.04,detail));
-      ddio.summary.ipFallbacks=fields.ip===false?0:DdioOverlay.applyIpFallback(devices,ddio.index);
+      // DDIO fills only a blank device IP by an exact MAC match. This is a
+      // source-recovery rule and is deliberately independent from both the
+      // SmartRoom IP checkbox and switch-IP change diagnostics.
+      ddio.summary.ipFallbacks=DdioOverlay.applyIpFallback(devices,ddio.index);
       state.ddioOverlay=ddio.overlay;state.ddioSummary=ddio.summary;
       if(BrowserSnapshots?.mergeDeviceHistoryRows)await BrowserSnapshots.mergeDeviceHistoryRows(devices,"current-file");
       onProgress(100,`Обработано устройств: ${devices.length.toLocaleString("ru-RU")}`);
@@ -1277,7 +1302,7 @@
       activeLocalDetectionContext=createLocalDetectionContext();
       await BrowserSnapshots.transformEnrichmentRows(jobId,(device)=>{
         let changed=false;const ip=normalizeIp(device.switchIp),addressItem=switchAddresses.get(ip),address=typeof addressItem==="string"?addressItem:addressItem?.address,vendor=localVendor(device.mac),model=localModel(device.mac);
-        const fallbackCount=fields.ip===false?0:DdioOverlay.applyIpFallback([device],ddio.index);if(fallbackCount){ddio.summary.ipFallbacks+=fallbackCount;changed=true;}
+        const fallbackCount=DdioOverlay.applyIpFallback([device],ddio.index);if(fallbackCount){ddio.summary.ipFallbacks+=fallbackCount;changed=true;}
         if(address&&!device.address){device.address=address;device.addressSource=addressItem?.source||"switch-address-mapping";if(addressItem?.confidence!==undefined)device.addressConfidence=Number(addressItem.confidence||0);device.fieldSources={...(device.fieldSources||{}),address:device.addressSource};changed=true;}
         const hadRoom=Boolean(normalizedRoomName(device.room));if(synchronizeSmartroomIdentity(device,smartroomRooms)){if(!hadRoom&&device.room)device.roomSource="smartroom_mapping";changed=true;}
         if((!device.vendor||device.vendor==="Unknown"||device.vendor==="Не определено")&&vendor!=="Unknown"){device.vendor=vendor;changed=true;}
@@ -2394,7 +2419,7 @@
     }
   }
   function normalizeDashboardSettings(settings={}){
-    const defaults={query:"",vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true,missingRoom:true,changedRooms:true,allChangedRooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true},autoRefresh:true,refreshInterval:60,changeMode:"snapshots",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},source=settings&&typeof settings==="object"?settings:{};
+    const defaults={query:"",vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true,missingRoom:true,changedRooms:true,allChangedRooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true,presenceChurn:true},autoRefresh:true,refreshInterval:60,changeMode:"snapshots",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},source=settings&&typeof settings==="object"?settings:{};
     const changeMode=source.changeMode==="period"?"period":"snapshots";
     return{...defaults,...source,changeMode,visibleCards:{...defaults.visibleCards,...(source.visibleCards||{})},visibleCharts:{...defaults.visibleCharts,...(source.visibleCharts||{})},autoRefresh:source.autoRefresh!==false,refreshInterval:Math.max(10,Math.min(300,Number(source.refreshInterval||60)))};
   }
@@ -2870,17 +2895,40 @@
       head.append(actions);
     });
   }
+  function presenceChurnKey(){return finalDashboardSnapshots().map((snapshot,index)=>`${dashboardSnapshotId(snapshot,index)}:${snapshot.deviceCount??(snapshot.devices||[]).length}`).join("|");}
+  async function calculatePresenceChurn(){
+    const snapshots=finalDashboardSnapshots(),key=presenceChurnKey();if(presenceChurnCache.key===key)return presenceChurnCache.data;
+    let data=null;
+    if(snapshots.some((snapshot)=>snapshot.browserStored)&&BrowserSnapshots?.streamSnapshot){
+      const tracker=PresenceChurn.createTracker();
+      for(const snapshot of snapshots){
+        if((snapshot.devices||[]).length){tracker.observe(snapshot,snapshot.devices);continue;}
+        if(!snapshot.browserStored)continue;
+        const rows=[];await BrowserSnapshots.streamSnapshot(dashboardSnapshotId(snapshot,0),async(kind,chunk)=>{if(kind==="devices")for(const device of chunk)rows.push(compactDashboardDevice(device));});tracker.observe(snapshot,rows);
+      }
+      data=tracker.result({limit:500});
+    }else if(backendAvailable){data=await api("/analytics/presence-churn",{method:"POST",body:JSON.stringify({snapshots,limit:500})});}
+    else data=PresenceChurn.analyze(snapshots,{limit:500});
+    presenceChurnCache={key,data:data||{snapshotCount:snapshots.length,total:0,items:[]}};return presenceChurnCache.data;
+  }
+  function renderPresenceChurn(data){
+    const items=data?.items||[],chart=$("#presenceChurnChart"),summary=$("#presenceChurnSummary");if(summary)summary.textContent=`${Number(data?.total||0).toLocaleString("ru-RU")} MAC · ${Number(data?.snapshotCount||0).toLocaleString("ru-RU")} финальных выгрузок`;if(chart)chart.innerHTML=localChartHtml(items.slice(0,12).map((item)=>[item.macFormatted||formatMac(item.mac),Number(item.transitionCount||0)]),"MAC с повторным исчезновением и возвращением не найдены.");
+  }
+  function renderPresenceChurnDialog(){const data=presenceChurnCache.data||{},query=String($("#presenceChurnSearch")?.value||"").trim().toLowerCase(),rows=(data.items||[]).filter((item)=>!query||Object.values(item).join(" ").toLowerCase().includes(query));$("#presenceChurnBody").innerHTML=rows.length?rows.map((item)=>`<tr><td><button class="link-button" type="button" data-mac="${esc(item.mac)}">${esc(item.macFormatted||formatMac(item.mac))}</button></td><td>${esc(item.vendor||"—")}</td><td>${esc(item.model||"—")}</td><td>${esc(item.ip||"—")}</td><td>${esc(item.room||item.smartroomId||"—")}</td><td>${Number(item.presentCount||0)}</td><td>${Number(item.disappearances||0)}</td><td>${Number(item.reappearances||0)}</td><td><strong>${Number(item.transitionCount||0)}</strong></td></tr>`).join(""):'<tr><td colspan="9" class="empty-state">MAC с повторным исчезновением и возвращением не найдены.</td></tr>';}
+  async function refreshPresenceChurn(){try{renderPresenceChurn(await calculatePresenceChurn());}catch(error){if($("#presenceChurnChart"))$("#presenceChurnChart").innerHTML=`<p class="muted">Не удалось рассчитать: ${esc(error.message)}</p>`;}}
+  async function openPresenceChurn(){await refreshPresenceChurn();renderPresenceChurnDialog();$("#presenceChurnDialog")?.showModal();}
   function scheduleAnalyticsSecondaryPanels(revision,devices){
     const run=()=>{
       if(revision!==analyticsRenderRevision||!$("#analyticsView")?.classList.contains("active"))return;
-      analyticsPanelPromise=loadAnalyticsPanel(devices);renderPrimaryCharts();renderBackendStatistics();renderTemporalStatistics();renderBackendCharts();renderBackendClusters(devices);renderBackendTopology(devices,true);renderQualityReportsHistory();refreshAnalyticsReport(true);
+      analyticsPanelPromise=loadAnalyticsPanel(devices);renderPrimaryCharts();renderBackendStatistics();renderTemporalStatistics();renderBackendCharts();renderBackendClusters(devices);renderBackendTopology(devices,true);renderQualityReportsHistory();refreshAnalyticsReport(true);refreshPresenceChurn();
     };
     if(typeof window.requestIdleCallback==="function")window.requestIdleCallback(run,{timeout:350});else setTimeout(run,60);
   }
   async function renderAnalytics(){
+    const options=arguments[0]||{};
+    const force=options===true||options?.force===true;
     const signature=[state.resultBrowserSnapshotId,state.resultSnapshotId,currentDeviceCount(),state.lastAnalysis,JSON.stringify(dashboardSettings())].join("|");
-    if(analyticsRenderCache.signature===signature&&Date.now()-analyticsRenderCache.at<30000)return;
-    analyticsRenderCache={signature,at:Date.now()};
+    if(!force&&analyticsRenderCache.signature===signature&&Date.now()-analyticsRenderCache.at<30000){void refreshPresenceChurn();return;}
     const revision=++analyticsRenderRevision;
     initializeAnalyticsExpanders();
     applyLocalDashboard(dashboardSettings());
@@ -2892,11 +2940,13 @@
         if(revision===analyticsRenderRevision&&renderBrowserDashboardCache(cache)){
           applyDashboardVisibility(state.dashboardSettings);
           void refreshBrowserDashboardFleet(cache);
+          scheduleAnalyticsSecondaryPanels(revision,dashboardDevices());
+          analyticsRenderCache={signature,at:Date.now()};
           return;
         }
-      }catch(error){toast("Не удалось построить полный локальный dashboard: "+error.message);}
+      }catch(error){analyticsRenderCache={signature:"",at:0};toast("Не удалось построить полный локальный dashboard: "+error.message);}
     }
-    try{await loadDashboardPayload();}catch(error){applyLocalDashboard(dashboardSettings());}if(revision!==analyticsRenderRevision)return;scheduleAnalyticsSecondaryPanels(revision,dashboardDevices());
+    try{await loadDashboardPayload();}catch(error){applyLocalDashboard(dashboardSettings());analyticsRenderCache={signature:"",at:0};}if(revision!==analyticsRenderRevision)return;analyticsRenderCache={signature,at:Date.now()};scheduleAnalyticsSecondaryPanels(revision,dashboardDevices());
   }
   function historyQueryParams(query="", from="", to="", limit="500"){
     const params=new URLSearchParams({limit});
@@ -2926,10 +2976,14 @@
     if(!query){$("#globalSearchInput")?.focus();return;}
     const mac=normalize(query);
     if(mac){await showDevice(mac);return;}
-    const historyInput=$("#historySearchInput");
-    if(historyInput)historyInput.value=query;
-    view("history");
-    renderHistory();
+    const body=$("#globalSearchResults"),status=$("#globalSearchStatus");body.innerHTML='<tr><td colspan="5" class="empty-state">Поиск по накопленному реестру…</td></tr>';$("#globalSearchDialog")?.showModal();
+    let rows=[];
+    try{
+      if(backendAvailable){const data=await api("/database/search?query="+encodeURIComponent(query)+"&limit=500"),unique=new Map();for(const item of data.results||[]){if(!["device","vendorModel"].includes(item.type))continue;const itemMac=normalize(item.mac);if(!itemMac)continue;const previous=unique.get(itemMac);if(previous&&previous.type==="device"&&item.type!=="device")continue;unique.set(itemMac,{type:item.type,mac:itemMac,macFormatted:formatMac(itemMac),vendorModel:item.subtitle||item.title,ip:"",room:"",source:item.source});}rows=[...unique.values()].slice(0,100);}
+      if(!rows.length&&BrowserSnapshots?.streamDeviceHistory){const needle=query.toLowerCase(),seen=new Set();await BrowserSnapshots.streamDeviceHistory(async(chunk)=>{for(const item of chunk){if(rows.length>=100)break;const text=Object.values(item||{}).join(" ").toLowerCase(),itemMac=normalize(item.mac);if(!itemMac||seen.has(itemMac)||!text.includes(needle))continue;seen.add(itemMac);rows.push({mac:itemMac,macFormatted:formatMac(itemMac),vendorModel:[item.vendor,item.model].filter(Boolean).join(" · "),ip:item.ip||"",room:[item.room,item.address].filter(Boolean).join(" · "),source:item.source||"IndexedDB"});}});}
+      status.textContent=`Найдено: ${rows.length.toLocaleString("ru-RU")} · поиск выполнен по всем сохранённым Final.`;
+      body.innerHTML=rows.length?rows.map((item)=>`<tr><td><button class="link-button" type="button" data-global-search-mac="${esc(item.mac)}">${esc(item.macFormatted||formatMac(item.mac))}</button></td><td>${esc(item.vendorModel||"—")}</td><td>${esc(item.ip||"—")}</td><td>${esc(item.room||"—")}</td><td>${esc(item.source||"—")}</td></tr>`).join(""):'<tr><td colspan="5" class="empty-state">Во всех сохранённых выгрузках ничего не найдено.</td></tr>';
+    }catch(error){body.innerHTML=`<tr><td colspan="5" class="empty-state">Поиск не выполнен: ${esc(error.message)}</td></tr>`;}
   }
   function localHistoryItems(query="", from="", to=""){
     const q=String(query||"").toLowerCase(),fromTime=TimeUtils.utcDayStart(from)??0,toTime=TimeUtils.utcDayEnd(to)??Infinity;
@@ -3716,7 +3770,7 @@
   function viewContentSignature(name){return[name,resultStateRevision,state.resultSnapshotId,state.resultBrowserSnapshotId,currentDeviceCount(),state.files?.length||0,state.snapshots?.length||0,state.lastAnalysis||""].join("|");}
   function normalizeViewName(name){if(name==="iphistory")return"analytics";return Object.prototype.hasOwnProperty.call(viewConfig,name)?name:"workspace";}
   function viewFromHash(){return normalizeViewName((location.hash||"").replace(/^#/,""));}
-  function renderViewContent(name){if(name==="workspace"){renderFiles();renderMapping();renderMetrics();renderResults();return Promise.resolve();}if(name==="data"){renderServices();loadDatabaseHistoryManagement();}else if(name==="automation"){renderServices();renderBatchPlan();}if(name==="settings")renderParityStatus();if(name==="analytics")renderAnalytics();if(name==="history")renderHistory();const smartroomTask=["analytics","rooms","roomhistory"].includes(name)?SmartroomUI?.render(name):null;if(name==="single")renderSingleMappingGrid();if(name==="compare")renderSnapshots();if(name==="guide"){Guide.syncMode(engineeringSessionActive(),state.engineeringExpiresAt,document);if(!$("#systemDiagnosticsSummary")?.dataset.loaded)runSystemDiagnostics();}return Promise.resolve(smartroomTask);}
+  function renderViewContent(name){if(name==="workspace"){renderFiles();renderMapping();renderMetrics();renderResults();return Promise.resolve();}if(name==="data"){renderServices();loadDatabaseHistoryManagement();}else if(name==="automation"){renderServices();renderBatchPlan();}if(name==="settings"){renderParityStatus();renderArchiveList();}if(name==="analytics")renderAnalytics();if(name==="history")renderHistory();const smartroomTask=["analytics","rooms","roomhistory"].includes(name)?SmartroomUI?.render(name):null;if(name==="single")renderSingleMappingGrid();if(name==="compare")renderSnapshots();if(name==="guide"){Guide.syncMode(engineeringSessionActive(),state.engineeringExpiresAt,document);if(!$("#systemDiagnosticsSummary")?.dataset.loaded)runSystemDiagnostics();}return Promise.resolve(smartroomTask);}
   let viewRenderRevision=0;
   function scheduleViewContent(name){const revision=++viewRenderRevision,signature=viewContentSignature(name);if(renderedViewSignatures.get(name)===signature)return;const token=UiFeedback?.start("Открытие вкладки…");(window.requestAnimationFrame||((callback)=>setTimeout(callback,0)))(()=>{if(revision!==viewRenderRevision||activeViewName()!==name){UiFeedback?.stop(token);return;}renderViewContent(name).then(()=>{if(revision===viewRenderRevision&&activeViewName()===name)renderedViewSignatures.set(name,viewContentSignature(name));}).catch((error)=>{UiFeedback?.showError(error);toast(error.message);}).finally(()=>UiFeedback?.stop(token));});}
   function activateView(name,{updateHash=true,render=true}={}){name=normalizeViewName(name);if(!engineeringSessionActive()&&engineeringOnlyViews.has(name))name="history";LazyTabs?.activate(name);$$(".nav-item").forEach((b)=>{const active=b.dataset.view===name;b.classList.toggle("active",active);b.setAttribute("aria-selected",active?"true":"false");});$$(".view").forEach((panel)=>{const active=panel.id===name+"View";panel.classList.toggle("active",active);panel.hidden=!active;});const title=viewConfig[name];$("#viewTitle").textContent=title[0];$("#viewSubtitle").textContent=title[1];if(updateHash&&location.hash!=="#"+name)history.pushState(null,"","#"+name);if(render)scheduleViewContent(name);return name;}
@@ -3847,6 +3901,10 @@
   $("#batchToleranceHours")?.addEventListener("change",()=>{const value=Number($("#batchToleranceHours").value);state.batchSettings.toleranceHours=Math.max(0,Math.min(720,Number.isFinite(value)?value:24));save();rebuildBatchPlanForSettings();});
   $("#batchEnrichmentStrategy")?.addEventListener("change",()=>{state.batchSettings.enrichmentStrategy=EnrichmentStrategy.normalize($("#batchEnrichmentStrategy").value);save();});
   $("#batchEnrichmentPlan")?.addEventListener("change",(event)=>{const assignment=event.target.closest("[data-batch-assign]"),active=event.target.closest("[data-batch-active]");if(assignment&&batchPlan){BatchEnrichment.reassign(batchPlan,assignment.dataset.batchGroupId,assignment.dataset.batchAssign,assignment.value);renderBatchPlan();}else if(active&&batchPlan){const group=batchPlan.groups.find((item)=>item.id===active.dataset.batchActive);if(group){group.active=active.checked;group.status=active.checked?"pending":"skipped";renderBatchPlan();}}});
+  $("#batchEnrichmentPlan")?.addEventListener("click",(event)=>{const button=event.target.closest("[data-batch-review-mapping]");if(button)reviewBatchMappings(button.dataset.batchReviewMapping);});
+  $("#applyBatchMappingReviewButton")?.addEventListener("click",applyBatchMappingReview);
+  $("#cancelBatchMappingReviewButton")?.addEventListener("click",()=>{$("#batchMappingReviewDialog")?.close();batchMappingReviewContext=null;});
+  $("#closeBatchMappingReviewDialog")?.addEventListener("click",()=>{$("#batchMappingReviewDialog")?.close();batchMappingReviewContext=null;});
   $("#ddioMappingGrid")?.addEventListener("change",(event)=>{const select=event.target.closest("[data-ddio-map]");if(!select||!state.ddioFile)return;const mapping={...(state.ddioFile.mapping||{})};if((select.dataset.ddioMap==="reservationIp"||select.dataset.ddioMap==="leaseIp")&&mapping.ip!==""&&mapping.ip!==undefined){mapping.reservationIp=mapping.reservationIp??mapping.ip;mapping.leaseIp=mapping.leaseIp??mapping.ip;delete mapping.ip;}mapping[select.dataset.ddioMap]=select.value===""?"":Number(select.value);state.ddioFile.mapping=mapping;state.ddioOverlay={};state.ddioSummary=null;save({immediate:true});renderDdioPanel();renderResults();});
   $("#reconnectBackendButton")?.addEventListener("click",async()=>{try{await checkBackendConnection();await syncFromBackend();toast("Backend и SQLite подключены.");}catch{toast("Backend не отвечает на http://127.0.0.1:8080");}});
   $("#fileList").addEventListener("click",(e)=>{const id=e.target.dataset.removeFile,row=e.target.closest("[data-file-id]");if(id){state.files=state.files.filter((f)=>f.id!==id);state.ddioOverlay={};state.ddioSummary=null;sourceFilesById.delete(id);pruneStoredSourceFiles();ensureMappingSelection();save();renderAll();return;}if(row){state.activeMappingFileId=row.dataset.fileId;save();renderFiles();renderMapping();}});
@@ -3931,6 +3989,8 @@
   $("#exportFullJsonButton").addEventListener("click",async()=>{try{await exportFullJson();}catch(error){UiFeedback?.showError(error);toast(error.message||"Не удалось сформировать полный JSON.");}});
   $("#exportPdfButton").addEventListener("click",async()=>{try{await exportManagedBinary("pdf");}catch(error){toast(error.message);}});
   $("#globalSearchForm").addEventListener("submit",(event)=>{event.preventDefault();runGlobalSearch();});
+  $("#closeGlobalSearchDialog")?.addEventListener("click",()=>$("#globalSearchDialog")?.close());
+  $("#globalSearchResults")?.addEventListener("click",(event)=>{const button=event.target.closest("[data-global-search-mac]");if(button)showDevice(button.dataset.globalSearchMac);});
   $("#exportMenu").addEventListener("click",(event)=>{const action=event.target.closest("[data-export-action]")?.dataset.exportAction;if(!action)return;event.preventDefault();const target=document.getElementById(action);if(target)target.click();$("#exportMenu").removeAttribute("open");});
   $("#comparisonFilters").addEventListener("click",(e)=>{const filter=e.target.dataset.comparisonFilter;if(!filter)return;$$("[data-comparison-filter]").forEach((button)=>button.classList.toggle("active-filter",button.dataset.comparisonFilter===filter));const types={added:"Добавлено",removed:"Удалено",modified:"Изменено"};$$("#comparisonBody tr").forEach((row)=>{const type=row.children[1]?.textContent;row.hidden=filter!=="all"&&type!==types[filter];});});
   $("#historyBody").addEventListener("click",async(e)=>{
@@ -4001,6 +4061,8 @@
   $("#exportParityReportButton").addEventListener("click",exportParityReport);
   $("#clearAllButton").addEventListener("click",()=>{if(confirm("Очистить текущие файлы и результаты? История сохранится.")){state.files=[];state.ddioFile=null;state.ddioOverlay={};state.ddioSummary=null;state.devices=[];state.invalid=[];sourceFilesById.clear();pruneStoredSourceFiles();clearResultReference();state.lastAnalysis=null;save();renderAll();}});
   $("#saveBackupButton").addEventListener("click",async()=>{try{const backup=await api("/backup/export",{method:"POST",body:JSON.stringify({state:compactAnalysisAutosaveState()})});download(backup.filename||"mac-analyzer-backup.json",backup.content||"{}","application/json");}catch(error){if(networkUnavailable(error))await createPortableDatabase();else toast(error.message);}});
+  $("#createArchiveButton")?.addEventListener("click",async()=>{try{await writeBrowserArchive($("#archiveNameInput")?.value);if($("#archiveNameInput"))$("#archiveNameInput").value="";await renderArchiveList();toast("Архив состояния создан.");}catch(error){toast(error.message);}});
+  $("#archiveList")?.addEventListener("click",async(event)=>{const load=event.target.closest("[data-load-archive]"),remove=event.target.closest("[data-delete-archive]");try{if(load)await loadBrowserArchive(load.dataset.loadArchive);if(remove&&confirm("Удалить выбранный архив? Текущая база и Final не будут удалены.")){await deleteBrowserArchive(remove.dataset.deleteArchive);await renderArchiveList();toast("Архив удалён.");}}catch(error){toast(error.message);}});
   $("#saveAutosaveButton").addEventListener("click",async()=>{try{await persistAutosave("manual");toast("Autosave saved to SQLite.");}catch(error){if(!networkUnavailable(error))return toast(error.message);save({immediate:true});await flushBrowserStateSave();await flushPortableDatabaseSave().catch(()=>{});toast("Автосохранение выполнено локально.");}});
   $("#restoreAutosaveButton").addEventListener("click",async()=>{try{await restoreAutosave();toast("Autosave restored.");}catch(error){if(!networkUnavailable(error))return toast(error.message);const restored=await restoreBrowserStateFromIndexedDb();if(restored){renderAll();toast("Локальное автосохранение восстановлено.");}else toast("Локальное автосохранение отсутствует.");}});
   $("#deleteAutosaveButton").addEventListener("click",async()=>{try{await deleteAutosave();toast("Autosave deleted.");renderServices();}catch(error){if(!networkUnavailable(error))return toast(error.message);localStorage.removeItem(key);localStorage.removeItem(browserStateSavedAtKey);await deleteBrowserStateRecord().catch(()=>{});toast("Локальное автосохранение очищено.");}});
@@ -4067,14 +4129,14 @@
   $("#qualityAnalysisButton").addEventListener("click",()=>{analyzeQuality();toast("Анализ качества данных завершён.");});
   $("#refreshAnalyticsReportButton").addEventListener("click",refreshAnalyticsReport);
   $("#exportAnalyticsReportButton").addEventListener("click",exportAnalyticsReport);
-  $("#dashboardVendorFilter").addEventListener("change",renderAnalytics);
-  $("#dashboardSearchInput").addEventListener("input",debounce(renderAnalytics,180));
-  $("#dashboardRoomFilter").addEventListener("change",renderAnalytics);
-  $("#dashboardStatusFilter").addEventListener("change",renderAnalytics);
-  $("#refreshDashboardButton").addEventListener("click",renderAnalytics);
-  $$("[data-dashboard-status]").forEach((button)=>button.addEventListener("click",async()=>{const selected=button.dataset.dashboardStatus||"all",status=$("#dashboardStatusFilter");if(status)status.value=selected;await renderAnalytics();if(selected==="all")showDashboardDynamicsDialog();else if(selected==="changed")showDashboardChangesDialog("modified");else if(selected==="missing")showDashboardChangesDialog("removed");}));
+  $("#dashboardVendorFilter").addEventListener("change",()=>renderAnalytics({force:true}));
+  $("#dashboardSearchInput").addEventListener("input",debounce(()=>renderAnalytics({force:true}),180));
+  $("#dashboardRoomFilter").addEventListener("change",()=>renderAnalytics({force:true}));
+  $("#dashboardStatusFilter").addEventListener("change",()=>renderAnalytics({force:true}));
+  $("#refreshDashboardButton").addEventListener("click",()=>renderAnalytics({force:true}));
+  $$("[data-dashboard-status]").forEach((button)=>button.addEventListener("click",async()=>{const selected=button.dataset.dashboardStatus||"all",status=$("#dashboardStatusFilter");if(status)status.value=selected;await renderAnalytics({force:true});if(selected==="all")showDashboardDynamicsDialog();else if(selected==="changed")showDashboardChangesDialog("modified");else if(selected==="missing")showDashboardChangesDialog("removed");}));
   $("#dashboardChangeMode").addEventListener("change",()=>{const settings=readDashboardChangeControls();syncDashboardChangeControls(settings);});
-  $("#applyDashboardChangeRangeButton").addEventListener("click",async()=>{readDashboardChangeControls();await renderAnalytics();showDashboardChangesDialog();});
+  $("#applyDashboardChangeRangeButton").addEventListener("click",async()=>{readDashboardChangeControls();await renderAnalytics({force:true});showDashboardChangesDialog();});
   $("#openDashboardChangesButton").addEventListener("click",()=>showDashboardChangesDialog("all"));
   $("#dashboardChangeSeverityFilter").addEventListener("change",()=>{dashboardChangesVisibleLimit=100;syncDashboardChangeTabState();renderDashboardChangesTable();});
   $("#dashboardChangeTypeFilter").addEventListener("change",()=>{dashboardChangesVisibleLimit=100;syncDashboardChangeTabState();renderDashboardChangesTable();});
@@ -4089,10 +4151,14 @@
   $("#closeDashboardAllChangedRoomsDialog").addEventListener("click",()=>$("#dashboardAllChangedRoomsDialog").close());
   $("#dashboardAllChangedRoomsBody").addEventListener("click",async(event)=>{const button=event.target.closest("[data-dashboard-room]");if(!button||!button.dataset.dashboardRoom)return;$("#dashboardAllChangedRoomsDialog").close();const opened=await SmartroomUI?.openRoom?.(button.dataset.dashboardRoom);if(!opened)UiFeedback?.showError(new Error("Хронология выбранной переговорной не найдена в финальных выгрузках."));});
   $("#closeDashboardDynamicsDialog").addEventListener("click",()=>$("#dashboardDynamicsDialog").close());
+  $("#openPresenceChurnButton")?.addEventListener("click",openPresenceChurn);
+  $("#closePresenceChurnDialog")?.addEventListener("click",()=>$("#presenceChurnDialog")?.close());
+  $("#presenceChurnSearch")?.addEventListener("input",debounce(renderPresenceChurnDialog,120));
+  $("#presenceChurnBody")?.addEventListener("click",(event)=>{const button=event.target.closest("[data-mac]");if(button)showDevice(button.dataset.mac);});
   $("#saveDashboardSettingsButton").addEventListener("click",showDashboardSettingsDialog);
   $$('[data-dashboard-settings-tab]').forEach((button)=>button.addEventListener("click",()=>selectDashboardSettingsTab(button.dataset.dashboardSettingsTab)));
   $("#applyDashboardSettingsButton").addEventListener("click",()=>saveDashboardSettings(dashboardDialogSettings()));
-  $("#resetDashboardSettingsButton").addEventListener("click",()=>{const current=dashboardSettings();fillDashboardSettingsDialog({...current,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true,missingRoom:true,changedRooms:true,allChangedRooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true},autoRefresh:true,refreshInterval:60});saveDashboardSettings(dashboardDialogSettings());});
+  $("#resetDashboardSettingsButton").addEventListener("click",()=>{const current=dashboardSettings();fillDashboardSettingsDialog({...current,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true,missingRoom:true,changedRooms:true,allChangedRooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true,presenceChurn:true},autoRefresh:true,refreshInterval:60});saveDashboardSettings(dashboardDialogSettings());});
   $("#closeDashboardSettingsDialog").addEventListener("click",()=>$("#dashboardSettingsDialog").close());
   $("#cancelDashboardSettingsButton").addEventListener("click",()=>$("#dashboardSettingsDialog").close());
   $("#exportDashboardButton").addEventListener("click",(event)=>{event.preventDefault();event.stopImmediatePropagation();exportDashboard();},true);

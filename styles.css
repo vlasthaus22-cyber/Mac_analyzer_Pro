@@ -204,6 +204,10 @@ fieldset { border:1px solid var(--line); border-radius:5px; margin:14px 0; } leg
 .column-conflict-table-wrap .required-field { color:var(--danger); }
 .analytics-report-panel { grid-column:1 / -1; }
 .analytics-groups { display:grid; gap:12px; }
+.batch-mapping-dialog { width:min(1120px,96vw); }
+.batch-mapping-review-body { display:grid; gap:14px; max-height:70vh; overflow:auto; padding-right:4px; }
+.batch-mapping-review-body fieldset { border:1px solid var(--line); border-radius:7px; padding:12px; }
+.mac-timeline-context .mac-context-changed { border-left:3px solid var(--warning, #d99500); background:color-mix(in srgb, var(--warning, #d99500) 12%, transparent); padding-left:8px; }
 .analytics-group { border:1px solid var(--line); border-radius:7px; background:var(--surface); box-shadow:var(--shadow); }
 .analytics-group > summary { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:center; padding:14px 16px; color:var(--text); cursor:pointer; list-style:none; }
 .analytics-group > summary::-webkit-details-marker { display:none; }

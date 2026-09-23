@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
   <meta name="application-build" content="2026.09.13.1">
-  <meta name="application-version" content="1.0.70">
+  <meta name="application-version" content="1.0.71">
   <link rel="stylesheet" href="styles.css?v=1064">
 </head>
 <body>
@@ -362,6 +362,7 @@
           <div class="tool-panel" data-dashboard-chart="vendors"><div class="panel-head"><h2>Топ производителей</h2></div><div class="bar-list" id="dashboardStatusVendorChart"></div></div>
           <div class="tool-panel" data-dashboard-chart="fields"><div class="panel-head"><h2>Изменения по полям</h2></div><div class="bar-list" id="dashboardFieldChangesChart"></div></div>
           <div class="tool-panel" data-dashboard-chart="missing"><div class="panel-head"><h2>Отсутствующие устройства</h2></div><div class="bar-list" id="dashboardMissingChart"></div></div>
+          <div class="tool-panel" data-dashboard-chart="presenceChurn"><div class="panel-head"><div><h2>MAC, которые исчезают и появляются</h2><span class="muted" id="presenceChurnSummary">Расчёт по всем финальным выгрузкам</span></div><button class="button secondary" id="openPresenceChurnButton" type="button">Открыть список</button></div><div class="bar-list" id="presenceChurnChart"><p class="muted">Данные рассчитываются…</p></div></div>
           </section>
         </details>
         <details class="analytics-group" open>
@@ -510,6 +511,11 @@
             <button class="button secondary" id="deleteAutosaveButton" data-engineering-permission="write:settings">Удалить автосохранение</button>
             <p class="muted" id="autosaveStatus">Автосохранение ещё не проверено.</p>
             <label class="button secondary file-button">Восстановить из копии<input id="restoreBackupInput" type="file" accept=".json" hidden></label>
+            <hr>
+            <h3>Архивы состояний</h3>
+            <p class="muted">Архив хранит состояние и ссылки на все Final в IndexedDB. Для переноса в другой браузер используйте полную MADB-копию.</p>
+            <div class="inline-form"><input id="archiveNameInput" placeholder="Название архива"><button class="button primary" id="createArchiveButton" type="button">Создать архив</button></div>
+            <div class="mapping-list" id="archiveList"><p class="muted">Архивы ещё не загружены.</p></div>
           </div>
           <div class="tool-panel">
             <h2>Тема оформления</h2>
@@ -847,6 +853,15 @@
     </div>
     <div class="table-wrap dashboard-changes-table" id="dashboardChangesPanel" role="tabpanel"><table><thead><tr><th>Важность</th><th>Дата</th><th>MAC</th><th>Тип</th><th>Модель</th><th>Адрес помещения</th><th>Помещение</th><th>Что изменилось</th><th>Источник</th></tr></thead><tbody id="dashboardChangesBody"><tr><td colspan="9" class="empty-state">Изменений не найдено.</td></tr></tbody></table></div>
   </dialog>
+  <dialog class="device-dialog global-search-dialog" id="globalSearchDialog">
+    <div class="dialog-head"><div><h2>Поиск по всем финальным выгрузкам</h2><p class="muted" id="globalSearchStatus">Поиск охватывает накопленный реестр устройств, а не только последний Final.</p></div><button class="icon-button" id="closeGlobalSearchDialog" type="button" aria-label="Закрыть">×</button></div>
+    <div class="table-wrap"><table><thead><tr><th>MAC</th><th>Производитель / модель</th><th>IP</th><th>Помещение / адрес</th><th>Последний источник</th></tr></thead><tbody id="globalSearchResults"><tr><td colspan="5" class="empty-state">Введите запрос в верхней строке поиска.</td></tr></tbody></table></div>
+  </dialog>
+  <dialog class="device-dialog batch-mapping-dialog" id="batchMappingReviewDialog">
+    <div class="dialog-head"><div><h2>Проверка колонок массового обогащения</h2><p class="muted">Проверьте автоматически выбранные колонки. Настройки применяются только к выбранному циклу Final.</p></div><button class="icon-button" id="closeBatchMappingReviewDialog" type="button" aria-label="Закрыть">×</button></div>
+    <div id="batchMappingReviewBody" class="batch-mapping-review-body"></div>
+    <div class="dialog-actions"><button class="button secondary" id="cancelBatchMappingReviewButton" type="button">Отмена</button><span></span><button class="button primary" id="applyBatchMappingReviewButton" type="button">Сохранить сопоставление</button></div>
+  </dialog>
   <dialog class="device-dialog dashboard-changes-dialog" id="dashboardAllChangedRoomsDialog">
     <div class="dialog-head"><div><h2>Переговорные: изменилось всё оборудование</h2><p class="muted" id="dashboardAllChangedRoomsPeriod">Сравнение двух финальных обогащений</p></div><button class="icon-button" id="closeDashboardAllChangedRoomsDialog" aria-label="Закрыть">×</button></div>
     <p class="room-coverage-explanation">В список попадают только помещения, где каждое учтённое устройство было добавлено, удалено, перемещено или имело подтверждённое изменение непустого значения. Простое заполнение ранее пустого поля изменением оборудования не считается.</p>
@@ -860,6 +875,11 @@
   <dialog class="device-dialog dashboard-changes-dialog" id="dashboardDynamicsDialog">
     <div class="dialog-head"><div><h2>Динамика общего числа устройств</h2><p class="muted">Количество уникальных MAC в каждой финальной выгрузке.</p></div><button class="icon-button" id="closeDashboardDynamicsDialog" aria-label="Закрыть">×</button></div>
     <div class="table-wrap"><table><thead><tr><th>Дата</th><th>Выгрузка</th><th>Устройств</th><th>Изменение</th></tr></thead><tbody id="dashboardDynamicsBody"><tr><td colspan="4" class="empty-state">Нет данных.</td></tr></tbody></table></div>
+  </dialog>
+  <dialog class="device-dialog dashboard-changes-dialog" id="presenceChurnDialog">
+    <div class="dialog-head"><div><h2>MAC, которые повторно исчезают и появляются</h2><p class="muted">Переходы присутствует → отсутствует → снова присутствует между финальными выгрузками основного файла.</p></div><button class="icon-button" id="closePresenceChurnDialog" type="button" aria-label="Закрыть">×</button></div>
+    <label>Поиск по MAC и данным устройства<input type="search" id="presenceChurnSearch" placeholder="MAC, модель, помещение, IP"></label>
+    <div class="table-wrap dashboard-changes-table"><table><thead><tr><th>MAC</th><th>Производитель</th><th>Модель</th><th>IP</th><th>Помещение</th><th>Появлений</th><th>Исчезновений</th><th>Возвращений</th><th>Всего переходов</th></tr></thead><tbody id="presenceChurnBody"><tr><td colspan="9" class="empty-state">Данные ещё не рассчитаны.</td></tr></tbody></table></div>
   </dialog>
 
   <dialog class="device-dialog dashboard-settings-dialog" id="dashboardSettingsDialog">
@@ -888,6 +908,7 @@
         <label class="check"><input type="checkbox" data-dashboard-chart-toggle="vendors">Топ производителей</label>
         <label class="check"><input type="checkbox" data-dashboard-chart-toggle="fields">Изменения по полям</label>
         <label class="check"><input type="checkbox" data-dashboard-chart-toggle="missing">Отсутствовавшие устройства</label>
+        <label class="check"><input type="checkbox" data-dashboard-chart-toggle="presenceChurn">Исчезающие и возвращающиеся MAC</label>
       </div></fieldset>
     </section>
     <section class="dashboard-settings-panel" data-dashboard-settings-panel="refresh" role="tabpanel" hidden>
@@ -925,10 +946,12 @@
   <script src="frontend/state-persistence.js?v=1062"></script>
   <script src="frontend/record-validation.js?v=1053"></script>
   <script src="frontend/device-identity.js?v=1066"></script>
+  <script src="frontend/column-presets.js?v=1071"></script>
   <script src="frontend/enrichment-strategy.js?v=1050"></script>
   <script src="frontend/browser-snapshot-store.js?v=1066"></script>
   <script src="frontend/time-utils.js?v=1047"></script>
   <script src="frontend/mac-chronology.js?v=1066"></script>
+  <script src="frontend/presence-churn.js?v=1071"></script>
   <script src="frontend/local-analytics.js?v=20260729.3"></script>
   <script src="frontend/xlsx-exporter.js?v=20260727.5"></script>
   <script src="frontend/full-xlsx-report.js?v=20260729.1"></script>

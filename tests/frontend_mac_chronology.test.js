@@ -157,6 +157,9 @@ const chronology = global.MacAnalyzerMacChronology;
   assert.match(timeline, /Главный корпус/);
   assert.match(timeline, /101/);
   assert.match(timeline, /202/);
+  const firstSnapshotTimeline = chronology.renderTimeline([events.find((item) => item.type === "snapshot")]);
+  assert.doesNotMatch(firstSnapshotTimeline, /Не заполнено/, "first Final must render its full context without a fake blank-to-filled change");
+  assert.match(timeline, /mac-context-changed/, "changed fields must be highlighted in the full Final comparison");
   assert.ok(
     timeline.indexOf("Первая выгрузка") < timeline.indexOf("Вторая выгрузка"),
     "visible chronology must run from first appearance to current state",

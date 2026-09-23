@@ -340,8 +340,9 @@
     return "changed";
   }
 
-  function contextHtml(device) {
+  function contextHtml(device, changedFields = new Set()) {
     const items = [
+      ["MAC-адрес", device.mac, "mac"],
       ["Производитель", device.vendor],
       ["Модель", device.model],
       ["IP устройства", device.ip],
@@ -354,20 +355,25 @@
       ["Smartroom ID", device.smartroomId],
       ["Коммутатор", device.switchIp],
       ["Порт", device.switchPort],
-    ].filter(([, value]) => value);
+    ].map(([label, value, field]) => [label, value, field || ({"Производитель":"vendor","Модель":"model","IP устройства":"ip","Адрес":"address","ТБ":"tb","Город":"city","Площадка":"site","Этаж":"floor","Помещение":"room","Smartroom ID":"smartroomId","Коммутатор":"switchIp","Порт":"switchPort"})[label]]).filter(([, value]) => value);
     if (!items.length) return "";
     return `<dl class="mac-timeline-context">${items
-      .map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`)
+      .map(([label, value, field]) => `<div${changedFields.has(field)?' class="mac-context-changed"':''}><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`)
       .join("")}</dl>`;
   }
 
   function comparisonHtml(event) {
     if (!Object.keys(event?.beforeDevice || {}).length || !Object.keys(event?.afterDevice || {}).length) return "";
+    const fields = new Set();
+    for (const field of ["mac","vendor","model","ip","address","tb","city","site","floor","room","smartroomId","switchIp","switchPort"]) {
+      if (String(event.beforeDevice?.[field] || "") !== String(event.afterDevice?.[field] || "")) fields.add(field);
+    }
+    if (event.field) fields.add(event.field);
     return (
       '<div class="mac-final-comparison">' +
-      `<section><h4>Было в предыдущем Final</h4>${contextHtml(event.beforeDevice) || "<p>Данные не заполнены.</p>"}</section>` +
+      `<section><h4>Было в предыдущем Final</h4>${contextHtml(event.beforeDevice, fields) || "<p>Данные не заполнены.</p>"}</section>` +
       `<span class="mac-change-arrow" aria-hidden="true">→</span>` +
-      `<section><h4>Стало в новом Final</h4>${contextHtml(event.afterDevice) || "<p>Данные не заполнены.</p>"}</section>` +
+      `<section><h4>Стало в новом Final</h4>${contextHtml(event.afterDevice, fields) || "<p>Данные не заполнены.</p>"}</section>` +
       "</div>"
     );
   }
@@ -394,7 +400,7 @@
             ? ""
             : `<small class="timeline-duration">Интервал: ${escapeHtml(Time.formatDuration(Math.abs(currentTimestamp - previousTimestamp)))}</small>`;
         if (currentTimestamp !== null) previousTimestamp = currentTimestamp;
-        const hasChange = String(event.before || "") || String(event.after || "");
+        const hasChange = event.type === "movement" && (String(event.before || "") || String(event.after || ""));
         const change = hasChange
           ? `<div class="mac-timeline-change"><span class="mac-value-before">${escapeHtml(event.before || "Не заполнено")}</span>` +
             '<span class="mac-change-arrow" aria-hidden="true">→</span>' +
