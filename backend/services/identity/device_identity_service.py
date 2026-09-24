@@ -18,7 +18,7 @@ CANONICAL_ALIASES = {
 
 STABLE_FIELDS = ("mac", "serialNumber", "deviceId", "hostname")
 MERGE_FIELDS = (
-    "mac", "secondaryMac", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp",
+    "mac", "secondaryMac", "vendor", "model", "deviceType", "ip", "address", "room", "smartroomId", "switchIp",
     "switchPort", "authenticationTime", "hostname", "serialNumber", "deviceId", "deviceName",
 )
 CONFLICT_FIELDS = tuple(

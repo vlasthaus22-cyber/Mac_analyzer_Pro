@@ -77,6 +77,15 @@ def test_smartroom_secondary_interface_mac_matches_one_primary_device():
     assert result["diagnostics"]["counts"]["smartroomMatched"] == 1
 
 
+def test_smartroom_device_type_is_merged_into_the_final_device():
+    result = enrich_files([
+        {"name": "main.csv", "role": "primary", "mapping": {"mac": 0}, "rows": [["MAC"], ["00:11:22:33:44:55"]]},
+        {"name": "rooms.csv", "role": "smartroom", "mapping": {"mac": 0, "deviceType": 1}, "rows": [["MAC", "Тип модели"], ["00:11:22:33:44:55", "Video Conference"]]},
+    ])
+    assert len(result["devices"]) == 1
+    assert result["devices"][0]["deviceType"] == "Video Conference"
+
+
 if __name__ == "__main__":
     test_enrichment_primary_and_merge_strategies()
     test_enrichment_preserves_device_authentication_time_column()

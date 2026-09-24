@@ -4,8 +4,8 @@
   const mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
   const maximumRows = 1_048_575;
   const maximumColumns = 16_384;
-  const maximumWorksheetBytes = 512 * 1024 * 1024;
-  const maximumWorkbookBytes = 512 * 1024 * 1024;
+  const maximumWorksheetBytes = 1024 * 1024 * 1024;
+  const maximumWorkbookBytes = 2 * 1024 * 1024 * 1024;
   const maximumStyledRows = 50_000;
   const maximumSheets = 255;
   const encoder = new TextEncoder();
@@ -264,7 +264,7 @@
     let batch = "";
     const appendBytes = (bytes) => {
       if (worksheetBytes + bytes.byteLength > maximumWorksheetBytes) {
-        throw new Error(`Лист «${sheetName}» превысил безопасный лимит 512 МБ`);
+        throw new Error(`Лист «${sheetName}» превысил безопасный лимит ${Math.round(maximumWorksheetBytes / 1024 / 1024)} МБ`);
       }
       worksheetParts.push(bytes);
       worksheetBytes += bytes.byteLength;
@@ -350,7 +350,7 @@
       );
       worksheetBytes += result.bytes;
       if (worksheetBytes > maximumWorkbookBytes) {
-        throw new Error("XLSX превысил безопасный лимит 512 МБ; сократите число сохраняемых выгрузок");
+        throw new Error(`XLSX превысил безопасный лимит ${Math.round(maximumWorkbookBytes / 1024 / 1024)} МБ; используйте полный JSON или разделите архив`);
       }
       worksheetEntries.push(result.entry);
       sheetResults.push({ name: sheetNames[index], rows: result.rows, bytes: result.bytes });

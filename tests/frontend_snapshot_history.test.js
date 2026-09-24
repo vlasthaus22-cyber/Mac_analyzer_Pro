@@ -166,9 +166,22 @@ assert.deepEqual(store.comparisonHistoryIds(null, "baseline", "current"), []);
     request.onerror = () => reject(request.error);
   });
   cacheDatabase.close();
-  assert.equal(cachedMetadata.analyticsAggregateVersion, 1);
+  assert.equal(cachedMetadata.analyticsAggregateVersion, 2);
   assert.equal(cachedMetadata.analyticsAggregate.devices, 2);
   assert.equal((await store.aggregate("aggregate-cache", { limit: 8 })).uniqueVendors, 2);
+  const staleDatabase = await new Promise((resolve, reject) => {
+    const request = indexedDB.open("mac-analyzer-browser-storage-v1", 11);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  await new Promise((resolve, reject) => {
+    const transaction = staleDatabase.transaction("snapshots", "readwrite");
+    transaction.objectStore("snapshots").put({ ...cachedMetadata, analyticsAggregateVersion: 2, analyticsAggregate: { ...cachedMetadata.analyticsAggregate, devices: 0, vendors: [], models: [], rooms: [] } });
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+  });
+  staleDatabase.close();
+  assert.equal((await store.aggregate("aggregate-cache", { limit: 8 })).devices, 2, "an incomplete analytics cache is recomputed from all chunks");
   await store.save({ id: "aggregate-cache", kind: "analysis", devices: [
     { mac: "001122330003", vendor: "Cisco", room: "103" },
   ] });

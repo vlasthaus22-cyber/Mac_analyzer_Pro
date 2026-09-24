@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
   <meta name="application-build" content="2026.09.13.1">
-  <meta name="application-version" content="1.0.71">
+  <meta name="application-version" content="1.0.72">
   <link rel="stylesheet" href="styles.css?v=1064">
 </head>
 <body>
@@ -68,8 +68,10 @@
               <strong>Полный архив данных</strong>
               <button type="button" data-export-action="exportFullXlsxButton">Всё в одном XLSX</button>
               <button type="button" id="exportAllDevicesButton">Все устройства XLSX</button>
+              <button type="button" id="exportAllDevicesCsvButton">Все устройства CSV</button>
               <button type="button" id="exportFullJsonButton">Всё в одном JSON</button>
               <strong>Аналитика и история</strong>
+              <button type="button" id="exportDashboardChangesCsvButton">Изменения периода CSV</button>
               <button type="button" data-export-action="exportDashboardButton">Dashboard PNG</button>
               <button type="button" data-export-action="exportChartsSvgButton">Диаграммы SVG</button>
               <button type="button" data-export-action="exportAnalyticsReportButton">Отчёт TXT</button>
@@ -344,6 +346,7 @@
           <article class="metric" data-dashboard-card="missingRoom"><span>Без помещения</span><strong id="dashboardMissingRoomMetric">0</strong><small>Устройств в текущем Final</small></article>
           <article class="metric" data-dashboard-card="changedRooms"><span>Помещений с изменениями</span><strong id="dashboardChangedRoomMetric">0</strong><small>За выбранный интервал</small></article>
           <button type="button" class="metric dashboard-kpi room-coverage-kpi" id="dashboardAllChangedRoomsButton" data-dashboard-card="allChangedRooms"><span>Изменилось всё оборудование</span><strong id="dashboardAllChangedRoomsMetric">0</strong><small>Переговорных · открыть список</small></button>
+          <button type="button" class="metric dashboard-kpi" id="dashboardCodecChangesButton" data-dashboard-card="codecChanges"><span>Изменения кодеков</span><strong id="dashboardCodecChangesMetric">0</strong><small>Тип: Video Conference · открыть</small></button>
         </section>
         <section class="metrics analytics-metrics">
           <article class="metric"><span>Снимков</span><strong id="snapshotMetric">0</strong></article>
@@ -513,8 +516,9 @@
             <label class="button secondary file-button">Восстановить из копии<input id="restoreBackupInput" type="file" accept=".json" hidden></label>
             <hr>
             <h3>Архивы состояний</h3>
-            <p class="muted">Архив хранит состояние и ссылки на все Final в IndexedDB. Для переноса в другой браузер используйте полную MADB-копию.</p>
+            <p class="muted">Архив хранит состояние и все Final. Его можно выгрузить в переносимый файл и восстановить в другом браузере.</p>
             <div class="inline-form"><input id="archiveNameInput" placeholder="Название архива"><button class="button primary" id="createArchiveButton" type="button">Создать архив</button></div>
+            <label class="button secondary file-button">Загрузить архив из файла<input id="importArchiveInput" type="file" accept=".macarchive,.json,application/json" hidden></label>
             <div class="mapping-list" id="archiveList"><p class="muted">Архивы ещё не загружены.</p></div>
           </div>
           <div class="tool-panel">

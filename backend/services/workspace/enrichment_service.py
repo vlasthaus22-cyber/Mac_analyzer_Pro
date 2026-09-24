@@ -18,7 +18,7 @@ from .workspace_cache_service import WorkspaceFileCache, workspace_row_iterator
 
 
 ENRICH_FIELDS = [
-    "secondaryMac", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp",
+    "secondaryMac", "vendor", "model", "deviceType", "ip", "address", "room", "smartroomId", "switchIp",
     "switchPort", "authenticationTime", "hostname", "serialNumber", "deviceId", "deviceName",
 ]
 

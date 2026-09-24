@@ -2534,6 +2534,16 @@ def test_ddio_switch_ip_hint_is_persisted_and_rendered_in_local_history():
     assert ".ddio-history-warning" in styles
 
 
+def test_presence_churn_streams_real_device_chunks_and_new_archive_controls_exist():
+    app = read_app_js()
+    html = read_index_html()
+    assert 'if(kind==="device")for(const device of chunk)' in app
+    assert 'id="importArchiveInput"' in html
+    assert 'data-export-archive=' in app
+    assert 'id="exportAllDevicesCsvButton"' in html
+    assert 'id="exportDashboardChangesCsvButton"' in html
+
+
 if __name__ == "__main__":
     test_ddio_switch_ip_hint_is_persisted_and_rendered_in_local_history()
     test_ddio_third_export_is_display_only_and_bound_in_primary_frontend()

@@ -2,6 +2,7 @@
   "use strict";
 
   const defaultMaximumRows = 1_048_575;
+  const defaultHistoryRowsPerSheet = 60_000;
   const deviceColumns = Object.freeze([
     { key: "row", title: "№" },
     { key: "macFormatted", title: "MAC-адрес" },
@@ -10,6 +11,7 @@
     { key: "oui5", title: "OUI 5 байт" },
     { key: "vendor", title: "Производитель" },
     { key: "model", title: "Модель" },
+    { key: "deviceType", title: "Тип устройства" },
     { key: "ip", title: "IP устройства" },
     { key: "address", title: "Адрес помещения" },
     { key: "room", title: "Помещение" },
@@ -56,7 +58,8 @@
       : Math.max(0, (snapshot.devices || []).length);
   }
 
-  function historyGroups(snapshots, maximumRows = defaultMaximumRows) {
+  function historyGroups(snapshots, maximumRows = defaultMaximumRows, preferredRows = defaultHistoryRowsPerSheet) {
+    const groupLimit = Math.max(1, Math.min(maximumRows, Number(preferredRows || defaultHistoryRowsPerSheet)));
     const groups = [];
     let current = [];
     let rows = 0;
@@ -65,7 +68,7 @@
       if (count > maximumRows) {
         throw new Error(`Выгрузка «${snapshot.name || snapshot.id || "snapshot"}» превышает лимит листа Excel`);
       }
-      if (current.length && rows + count > maximumRows) {
+      if (current.length && rows + count > groupLimit) {
         groups.push({ snapshots: current, totalRows: rows });
         current = [];
         rows = 0;
@@ -103,7 +106,9 @@
     const contents = [
       ["Сводка", "Главные показатели и содержание книги"],
       ["Устройства", "Полный состав последней выгрузки"],
+      ["Все устройства", "Все уникальные устройства, прошедшие хотя бы одно успешное обогащение"],
       ["Аналитика", "Распределения по производителям, моделям, помещениям, коммутаторам и OUI"],
+      ["Данные графиков", "Динамика Final и готовые ряды для диаграмм"],
       ["Выгрузки", "Реестр сохранённых точек истории"],
       ["История MAC", "Каждое появление каждого MAC во всех доступных выгрузках"],
       ["Изменения", "Изменения полей устройств между выгрузками"],
@@ -117,7 +122,7 @@
       ["Отчёт", "Дата экспорта", new Date().toISOString(), "UTC"],
       ["История", "Выгрузок", snapshots.length, "Все сохранённые точки истории"],
       ["История", "Строк в хронологии MAC", historyRowCount, "Появления устройств во всех доступных выгрузках"],
-      ["История", "Записей изменений", (state.movementHistory || []).length, "Сохранённая расширенная история"],
+      ["История", "Записей изменений", (state.reportChanges || state.movementHistory || []).length, "Выбранный период или сохранённая расширенная история"],
       ...Object.entries(metricLabels).map(([key, label]) => ["Последняя выгрузка", label, metrics[key] ?? 0, key === "knownPercent" ? "Процент" : ""]),
       ...contents.map(([sheet, description]) => ["Содержание книги", sheet, "", description]),
     ];
@@ -145,11 +150,20 @@
     return rows;
   }
 
+  function chartRows(payload, snapshots) {
+    const rows = snapshots.map((snapshot) => ["Общее число устройств", snapshotDate(snapshot), Number(snapshot.deviceCount ?? (snapshot.devices || []).length), snapshot.name || snapshot.id || ""]);
+    for (const item of payload.distributions?.vendors || []) rows.push(["Производители", item.label || "Unknown", Number(item.value ?? item.count ?? 0), ""]);
+    for (const item of payload.distributions?.models || []) rows.push(["Модели", item.label || "Unknown", Number(item.value ?? item.count ?? 0), ""]);
+    for (const item of payload.distributions?.rooms || []) rows.push(["Помещения", item.label || "Без помещения", Number(item.value ?? item.count ?? 0), ""]);
+    return rows;
+  }
+
   function compactDevice(device) {
     if (!device || typeof device !== "object") return null;
     return {
       vendor: String(device.vendor || ""),
       model: String(device.model || ""),
+      deviceType: String(device.deviceType || device.device_type || device.modelType || device.model_type || device.type || ""),
       ip: String(device.ip || ""),
       address: String(device.address || ""),
       room: String(device.room || ""),
@@ -214,8 +228,10 @@
     const name = String(sheet.sheetName || "");
     const widths = {
       "Сводка": [22, 38, 24, 60],
-      "Устройства": [8, 20, 16, 16, 18, 26, 28, 18, 32, 18, 18, 19, 15, 28, 26, 20, 22, 24, 20, 22, 15],
+      "Устройства": [8, 20, 16, 16, 18, 26, 28, 24, 18, 32, 18, 18, 19, 15, 28, 26, 20, 22, 24, 20, 22, 15],
+      "Все устройства": [8, 20, 16, 16, 18, 26, 28, 24, 18, 32, 18, 18, 19, 15, 28, 26, 20, 22, 24, 20, 22, 15],
       "Аналитика": [24, 38, 16, 22],
+      "Данные графиков": [28, 28, 18, 40],
       "Выгрузки": [38, 34, 22, 22, 30, 18, 14, 14, 22],
       "Изменения": [22, 20, 16, 24, 30, 30, 24, 26, 18, 30, 18, 18, 20, 14, 30],
       "Ошибки": [12, 30, 36, 60],
@@ -242,14 +258,16 @@
       movementType: options.movementType || movementType,
     };
     const streamCurrentRows = options.streamCurrentRows || (async (accept) => accept(state.devices || []));
+    const streamInventoryRows = options.streamInventoryRows || streamCurrentRows;
     const streamInvalidRows = options.streamInvalidRows || (async (accept) => accept(state.invalid || []));
     const streamSnapshotRows = options.streamSnapshotRows || (async (snapshot, accept) => accept(snapshot.devices || []));
     const currentDeviceCount = Math.max(0, Number(options.currentDeviceCount ?? (state.devices || []).length));
     const currentInvalidCount = Math.max(0, Number(options.currentInvalidCount ?? (state.invalid || []).length));
+    const inventoryDeviceCount = Math.max(0, Number(options.inventoryDeviceCount ?? currentDeviceCount));
     const snapshots = (state.snapshots || []).slice().sort(
       (left, right) => (Date.parse(snapshotDate(left)) || 0) - (Date.parse(snapshotDate(right)) || 0),
     );
-    const groups = historyGroups(snapshots, options.maximumRows || defaultMaximumRows);
+    const groups = historyGroups(snapshots, options.maximumRows || defaultMaximumRows, options.maximumHistoryRows || defaultHistoryRowsPerSheet);
     const historyRowCount = groups.reduce((sum, group) => sum + group.totalRows, 0);
     const analytics = await options.analyticsPayload();
     const columns = deviceColumns;
@@ -262,7 +280,15 @@
         streamRows: streamCurrentRows,
         rowMapper: (device, index) => columns.map((column) => valueFor(device, column.key, index, helpers)),
       },
+      {
+        sheetName: "Все устройства",
+        columns: columns.map((column) => column.title),
+        totalRows: inventoryDeviceCount,
+        streamRows: streamInventoryRows,
+        rowMapper: (device, index) => columns.map((column) => valueFor(device, column.key, index, helpers)),
+      },
       { sheetName: "Аналитика", columns: ["Разрез", "Значение", "Количество", "Доля от устройств, %"], rows: analyticsRows(analytics) },
+      { sheetName: "Данные графиков", columns: ["График", "Категория / дата", "Значение", "Источник / Final"], rows: chartRows(analytics, snapshots) },
       {
         sheetName: "Выгрузки",
         columns: ["ID", "Название", "Дата файла", "Сохранено", "Источник", "Тип", "Устройств", "Ошибок", "Полнота"],
@@ -275,7 +301,7 @@
       {
         sheetName: "Изменения",
         columns: ["Дата", "MAC-адрес", "Тип", "Поле", "Было", "Стало", "Производитель", "Модель", "IP устройства", "Адрес помещения", "Помещение", "Smartroom ID", "IP коммутатора", "Порт", "Источник"],
-        rows: state.movementHistory || [],
+        rows: state.reportChanges || state.movementHistory || [],
         rowMapper: (item) => movementRow(item, helpers),
       },
       {

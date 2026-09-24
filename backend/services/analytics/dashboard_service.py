@@ -44,7 +44,7 @@ def normalize_dashboard_settings(settings: dict[str, Any] | None = None) -> dict
         "showUnknown": bool(settings.get("showUnknown", True)),
         "visibleCards": {
             key: bool(card_settings.get(key, True))
-            for key in ("total", "changed", "missing", "unchanged", "vendors", "rooms", "missingRoom", "changedRooms", "allChangedRooms")
+            for key in ("total", "changed", "missing", "unchanged", "vendors", "rooms", "missingRoom", "changedRooms", "allChangedRooms", "codecChanges")
         },
         "visibleCharts": {
             key: bool(chart_settings.get(key, True))
@@ -60,9 +60,9 @@ def normalize_dashboard_settings(settings: dict[str, Any] | None = None) -> dict
     }
 
 
-CHANGE_FIELDS = ("mac", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName")
+CHANGE_FIELDS = ("mac", "vendor", "model", "deviceType", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName")
 CHANGE_FIELD_LABELS = {
-    "vendor": "Производитель", "model": "Модель", "ip": "IP-адрес", "address": "Адрес",
+    "vendor": "Производитель", "model": "Модель", "deviceType": "Тип устройства", "ip": "IP-адрес", "address": "Адрес",
     "room": "Помещение", "smartroomId": "Smartroom ID", "switchIp": "IP коммутатора", "switchPort": "Порт", "device": "Устройство",
     "mac": "MAC / физический адрес", "hostname": "Hostname", "serialNumber": "Серийный номер",
     "deviceId": "ID устройства", "deviceName": "Название устройства", "identityConflict": "Конфликт идентификации",
@@ -174,7 +174,7 @@ def _change_severity(
         return "critical"
     if field in {"ip", "address", "room"}:
         return "high"
-    if field in {"vendor", "model", "smartroomId", "switchIp", "switchPort"}:
+    if field in {"vendor", "model", "deviceType", "smartroomId", "switchIp", "switchPort"}:
         return "medium"
     if change_type == "removed":
         return "high"
@@ -188,6 +188,7 @@ def _device_context(device: dict[str, Any] | None) -> dict[str, Any] | None:
         "mac": _mac(device),
         "vendor": _text(device.get("vendor")),
         "model": _text(device.get("model")),
+        "deviceType": _text(device.get("deviceType") or device.get("device_type") or device.get("modelType") or device.get("type")),
         "ip": _text(device.get("ip")),
         "address": _text(device.get("address")),
         "room": _text(device.get("room")),
@@ -358,9 +359,28 @@ def analyze_dashboard_changes(
     room_coverage = {"totalRooms": 0, "changedRooms": 0, "allChangedRoomCount": 0, "rooms": []}
 
     if len(snapshots) >= 2:
-        baseline_id = baseline_id or options[-2]["id"]
-        comparison_id = comparison_id or options[-1]["id"]
         indexed = {_snapshot_id(snapshot, index): snapshot for index, snapshot in enumerate(snapshots) if isinstance(snapshot, dict)}
+        if normalized["changeMode"] == "period":
+            ordered = sorted(
+                ((option, _parse_date(option.get("date") or option.get("savedAt"))) for option in options),
+                key=lambda item: (item[1] or datetime.min, item[0].get("id", "")),
+            )
+            range_from = _parse_date(selected_from) if selected_from else None
+            range_to = _parse_date(selected_to, end_of_day=True) if selected_to else None
+            in_range = [item for item in ordered if item[1] and (not range_from or item[1] >= range_from) and (not range_to or item[1] <= range_to)]
+            if len(in_range) >= 2:
+                baseline_id, comparison_id = in_range[0][0]["id"], in_range[-1][0]["id"]
+            elif len(in_range) == 1:
+                comparison_id = in_range[0][0]["id"]
+                previous = [item for item in ordered if item[1] and item[1] < in_range[0][1]]
+                baseline_id = (previous[-1][0]["id"] if previous else comparison_id)
+            else:
+                eligible = [item for item in ordered if item[1] and (not range_to or item[1] <= range_to)] or ordered
+                comparison_id = eligible[-1][0]["id"]
+                baseline_id = eligible[-2][0]["id"] if len(eligible) > 1 else comparison_id
+        else:
+            baseline_id = baseline_id or options[-2]["id"]
+            comparison_id = comparison_id or options[-1]["id"]
         baseline = indexed.get(baseline_id) or indexed.get(options[-2]["id"]) or snapshots[-2]
         comparison = indexed.get(comparison_id) or indexed.get(options[-1]["id"]) or snapshots[-1]
         baseline_date = _text(baseline.get("fileCreatedAt") or baseline.get("createdAt") or baseline.get("created_at") or baseline.get("savedAt"))
@@ -630,7 +650,7 @@ def _status_charts(
     daily: Counter[str] = Counter()
     fields: Counter[str] = Counter()
     field_labels = {
-        "vendor": "Производитель", "model": "Модель", "ip": "IP-адрес",
+        "vendor": "Производитель", "model": "Модель", "deviceType": "Тип устройства", "ip": "IP-адрес",
         "address": "Адрес", "room": "Помещение", "switch_ip": "Коммутатор",
         "switchIp": "Коммутатор", "switch_port": "Порт", "switchPort": "Порт",
     }

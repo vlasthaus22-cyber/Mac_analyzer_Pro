@@ -86,21 +86,26 @@ const readers = global.MacAnalyzerFileReaders;
     analyticsPayload: async () => analytics,
   });
   assert.equal(report.historyRowCount, 3);
-  assert.equal(report.sheets.length, 10);
+  assert.equal(report.sheets.length, 12);
   assert.deepEqual(
     report.sheets.map((sheet) => sheet.sheetName),
-    ["Сводка", "Устройства", "Аналитика", "Выгрузки", "История MAC", "Изменения", "Ошибки", "Исходные файлы", "Справочники", "Настройки"],
+    ["Сводка", "Устройства", "Все устройства", "Аналитика", "История MAC", "Данные графиков", "Выгрузки", "Изменения", "Ошибки", "Исходные файлы", "Справочники", "Настройки"],
   );
   assert.deepEqual(report.snapshots.map((snapshot) => snapshot.id), ["old", "new"]);
   assert.equal(reportBuilder.historyGroups(report.snapshots, 2).length, 2);
+  assert.equal(reportBuilder.historyGroups([
+    { id: "a", deviceCount: 40_000, browserStored: true },
+    { id: "b", deviceCount: 40_000, browserStored: true },
+    { id: "c", deviceCount: 40_000, browserStored: true },
+  ]).length, 3, "large MAC history is split before a worksheet reaches the byte safety limit");
 
   const workbook = await exporter.createWorkbook({ sheets: report.sheets });
-  assert.equal(workbook.sheets.length, 10);
+  assert.equal(workbook.sheets.length, 12);
   assert.equal(workbook.sheets.find((sheet) => sheet.name === "История MAC").rows, 3);
   assert.equal(workbook.sheets.find((sheet) => sheet.name === "Изменения").rows, 1);
   const buffer = await workbook.blob.arrayBuffer();
   const directory = readers.clientZipDirectory(buffer);
-  assert.ok(directory.entries.has("xl/worksheets/sheet10.xml"));
+  assert.ok(directory.entries.has("xl/worksheets/sheet12.xml"));
   assert.ok(directory.entries.has("xl/styles.xml"));
 
   const summarySheet = new TextDecoder().decode(
@@ -112,7 +117,7 @@ const readers = global.MacAnalyzerFileReaders;
   assert.match(summarySheet, /customWidth="1"/);
 
   const analyticsSheet = new TextDecoder().decode(
-    await readers.clientZipEntryBytes(directory, "xl/worksheets/sheet3.xml"),
+    await readers.clientZipEntryBytes(directory, "xl/worksheets/sheet4.xml"),
   );
   assert.match(analyticsSheet, /autoFilter ref=/);
 
@@ -123,7 +128,7 @@ const readers = global.MacAnalyzerFileReaders;
   assert.match(stylesSheet, /wrapText="1"/);
 
   const historySheet = new TextDecoder().decode(
-    await readers.clientZipEntryBytes(directory, "xl/worksheets/sheet5.xml"),
+    await readers.clientZipEntryBytes(directory, `xl/worksheets/sheet${workbook.sheets.findIndex((sheet) => sheet.name === "История MAC") + 1}.xml`),
   );
   assert.equal((historySheet.match(/<row\b/g) || []).length, 4);
   assert.match(historySheet, /Catalyst 2960/);
@@ -131,7 +136,7 @@ const readers = global.MacAnalyzerFileReaders;
   assert.match(historySheet, /AP-1/);
 
   const changesSheet = new TextDecoder().decode(
-    await readers.clientZipEntryBytes(directory, "xl/worksheets/sheet6.xml"),
+    await readers.clientZipEntryBytes(directory, `xl/worksheets/sheet${workbook.sheets.findIndex((sheet) => sheet.name === "Изменения") + 1}.xml`),
   );
   assert.match(changesSheet, /Catalyst 2960/);
   assert.match(changesSheet, /Catalyst 3560/);

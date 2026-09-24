@@ -8,6 +8,7 @@ FIELD_PATTERNS = {
     "mac": r"mac|mac.?address|hardware|ethernet|client.?mac|mac.?Р°РґСЂРµСЃ",
     "vendor": r"vendor|manufacturer|brand|maker|producer|РїСЂРѕРёР·РІРѕРґРёС‚РµР»СЊ",
     "model": r"model|device|type|equipment|platform|РјРѕРґРµР»СЊ|СѓСЃС‚СЂРѕР№СЃС‚РІРѕ",
+    "deviceType": r"device.*type|model.*type|equipment.*type|тип.*модел|^тип$",
     "switchIp": r"switch.*ip|ip.*switch|switch|gateway|node.?ip|РєРѕРјРјСѓС‚Р°С‚РѕСЂ",
     "ip": r"^ip$|ip.?address|host.?ip|client.?ip|endpoint|address.?ip|ip.?Р°РґСЂРµСЃ",
     "address": r"address|location|place|site|building|rack|street|Р°РґСЂРµСЃ|Р»РѕРєР°С†РёСЏ",
@@ -24,13 +25,14 @@ FIELD_PATTERNS = {
 # Reserve explicit identifiers before broad descriptive fields. Otherwise
 # "Smartroom ID" is consumed by room and "Device ID" by model because both
 # broad patterns intentionally contain room/device for legacy exports.
-FIELD_ORDER = ["secondaryMac", "mac", "smartroomId", "deviceId", "deviceName", "vendor", "model", "switchIp", "ip", "address", "room", "switchPort", "authenticationTime", "hostname", "serialNumber"]
+FIELD_ORDER = ["secondaryMac", "mac", "smartroomId", "deviceId", "deviceName", "vendor", "deviceType", "model", "switchIp", "ip", "address", "room", "switchPort", "authenticationTime", "hostname", "serialNumber"]
 
 FIELD_LABELS = {
     "secondaryMac": "secondary interface MAC address",
     "mac": "MAC address",
     "vendor": "vendor",
     "model": "model",
+    "deviceType": "device type",
     "switchIp": "switch IP",
     "ip": "host IP",
     "address": "address",
@@ -49,6 +51,7 @@ FIELD_KEYWORDS = {
     "mac": {"mac", "hardware", "ethernet", "device", "client", "id"},
     "vendor": {"vendor", "manufacturer", "brand", "maker", "producer"},
     "model": {"model", "device", "type", "equipment", "platform", "series"},
+    "deviceType": {"device", "model", "equipment", "type", "category"},
     "switchIp": {"switch", "gateway", "node", "router", "uplink"},
     "ip": {"ip", "host", "client", "endpoint", "address"},
     "address": {"address", "location", "place", "site", "building", "rack", "street"},
@@ -70,6 +73,7 @@ NEGATIVE_KEYWORDS = {
     "room": {"ip", "mac", "port"},
     "smartroomId": {"ip", "mac", "port"},
     "model": {"ip", "mac", "port"},
+    "deviceType": {"ip", "mac", "port"},
     "hostname": {"ip", "mac", "port"},
     "serialNumber": {"ip", "mac", "port"},
     "deviceId": {"ip", "mac", "port", "name"},
@@ -84,6 +88,7 @@ EXACT_HEADER_ALIASES = {
     "authenticationTime": {"breceipttime", "receipttime", "времяаутентификацииустройства"},
     "vendor": {"производитель"},
     "model": {"модель"},
+    "deviceType": {"типмодели", "тип"},
     "address": {"адреслокации", "адрескомнаты"},
     "room": {"названиекомнаты", "наименованиелокации"},
     "smartroomId": {"smartroomidлокации", "idкомнаты", "smartroomid"},
@@ -204,7 +209,9 @@ def _sample_score(field, profile, header_score):
         return profile["ip"] if header_score else profile["ip"] * 0.35
     if field == "switchPort":
         return profile["port"]
-    if field in {"vendor", "model", "address", "room", "smartroomId", "authenticationTime"}:
+    if field == "deviceType":
+        return min(profile["text"], 0.45) if header_score else 0.0
+    if field in {"vendor", "model", "deviceType", "address", "room", "smartroomId", "authenticationTime"}:
         return min(profile["text"], 0.45)
     return 0.0
 
@@ -239,6 +246,9 @@ def _semantic_boost(field, header, profile):
     elif field in {"vendor", "model", "address", "room", "smartroomId", "authenticationTime"} and profile["text"] >= 0.8:
         boost += 0.1
         reasons.append("sample values are descriptive text")
+    elif field == "deviceType" and profile["text"] >= 0.8 and ({"type", "category"} & words):
+        boost += 0.1
+        reasons.append("sample values and header identify a device type")
 
     if field == "room" and ({"room", "office", "floor", "cabinet"} & words):
         boost += 0.16

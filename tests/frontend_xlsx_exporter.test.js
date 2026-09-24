@@ -13,6 +13,7 @@ const readers = global.MacAnalyzerFileReaders;
 
 (async () => {
   assert.ok(exporter, "XLSX exporter module must be exported");
+  assert.ok(exporter.maximumWorkbookBytes > 512 * 1024 * 1024, "full exports must support workbooks larger than the former 512 MB limit");
   assert.equal(document.documentElement.dataset.xlsxExporter, "ready");
 
   const sourceBatches = [

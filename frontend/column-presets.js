@@ -6,7 +6,7 @@
   "use strict";
 
   const emptyMapping = () => ({
-    mac: "", secondaryMac: "", vendor: "", model: "", ip: "", address: "",
+    mac: "", secondaryMac: "", vendor: "", model: "", deviceType: "", ip: "", address: "",
     room: "", smartroomId: "", switchIp: "", switchPort: "",
     authenticationTime: "", hostname: "", serialNumber: "", deviceId: "", deviceName: ""
   });
@@ -31,6 +31,7 @@
       ip: ["IP", "IP адрес", "IP-адрес"],
       vendor: ["Производитель"],
       model: ["Модель"],
+      deviceType: ["Тип модели", "Тип"],
       address: ["Адрес локации", "Адрес комнаты"],
       room: ["Название комнаты", "Наименование локации"],
       smartroomId: ["Smartroom ID локации", "ID комнаты", "Smartroom ID"]
@@ -71,7 +72,7 @@
     const names = headerNames(headers);
     const labels = role === "ddio"
       ? { reservationMac: "MAC резервации", reservationIp: "IP резервации", leaseMac: "MAC аренды", leaseIp: "IP аренды" }
-      : { mac: "MAC", secondaryMac: "Дополнительный MAC", ip: "IP устройства", switchIp: "IP коммутатора", switchPort: "Порт", authenticationTime: "Время аутентификации", vendor: "Производитель", model: "Модель", address: "Адрес", room: "Помещение", smartroomId: "Smartroom ID" };
+      : { mac: "MAC", secondaryMac: "Дополнительный MAC", ip: "IP устройства", switchIp: "IP коммутатора", switchPort: "Порт", authenticationTime: "Время аутентификации", vendor: "Производитель", model: "Модель", deviceType: "Тип устройства", address: "Адрес", room: "Помещение", smartroomId: "Smartroom ID" };
     return Object.entries(labels).map(([field, label]) => ({ field, label, index: mapping[field], header: mapping[field] === "" || mapping[field] == null ? "Не определено" : names[Number(mapping[field])] || `Колонка ${Number(mapping[field]) + 1}` }));
   }
 

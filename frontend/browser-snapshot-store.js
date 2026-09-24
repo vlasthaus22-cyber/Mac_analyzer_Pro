@@ -695,7 +695,7 @@
             if (["fieldSources", "sourceFiles", "sourceRoles", "conflicts", "alternateMacs"].includes(field)) continue;
             const hasExisting = merged[field] !== "" && merged[field] !== undefined && merged[field] !== null;
             if (hasExisting && value !== "" && value !== undefined && String(merged[field]) !== String(value)
-              && ["vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId"].includes(field)) {
+              && ["vendor", "model", "deviceType", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId"].includes(field)) {
               const conflict = { field, selected: preferExisting ? merged[field] : value, selectedSource: preferExisting ? fieldSources[field] : incoming.source, alternative: preferExisting ? value : merged[field], alternativeSource: preferExisting ? incoming.source : fieldSources[field] };
               if (!conflicts.some((item) => JSON.stringify(item) === JSON.stringify(conflict))) conflicts.push(conflict);
             }
@@ -834,7 +834,7 @@
   }
 
   const historyFields = [
-    "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort",
+    "vendor", "model", "deviceType", "ip", "address", "room", "smartroomId", "switchIp", "switchPort",
     "hostname", "serialNumber", "deviceId", "deviceName",
   ];
 
@@ -1294,7 +1294,7 @@
     const matches = (row) => {
       if (vendor && String(row?.vendor || "") !== vendor) return false;
       if (!query) return true;
-      const searchable = [row?.mac, row?.macFormatted, row?.vendor, row?.model, row?.ip, row?.address, row?.room,
+      const searchable = [row?.mac, row?.macFormatted, row?.vendor, row?.model, row?.deviceType, row?.device_type, row?.ip, row?.address, row?.room,
         row?.smartroomId, row?.smartroom_id, row?.switchIp, row?.switch_ip, row?.switchPort, row?.switch_port, row?.authenticationTime, row?.authentication_time,
         row?.hostname, row?.host_name, row?.serialNumber, row?.serial_number, row?.serial,
         row?.deviceId, row?.device_id, row?.deviceName, row?.device_name, row?.internalDeviceId,
@@ -1379,7 +1379,7 @@
     const query = String(options.query || "").trim().toLowerCase();
     const queryMac = query.replace(/[^0-9a-f]/gi, "").toUpperCase();
     const deviceMac = String(device?.mac || device?.macFormatted || device?.mac_formatted || "").replace(/[^0-9a-f]/gi, "").toUpperCase();
-    const searchable = [device?.mac, device?.macFormatted, device?.vendor, device?.model, device?.ip, device?.address,
+    const searchable = [device?.mac, device?.macFormatted, device?.vendor, device?.model, device?.deviceType, device?.device_type, device?.ip, device?.address,
       device?.room, device?.smartroomId, device?.smartroom_id, device?.switchIp, device?.switch_ip,
       device?.switchPort, device?.switch_port, device?.authenticationTime, device?.authentication_time, device?.hostname, device?.host_name,
       device?.serialNumber, device?.serial_number, device?.serial, device?.deviceId, device?.device_id,
@@ -1411,7 +1411,7 @@
     if (!metadata?.id || !payload) return false;
     const cached = { ...payload };
     delete cached.metadata;
-    const updated = { ...metadata, devices: [], invalid: [], analyticsAggregateVersion: 1, analyticsAggregate: cached };
+    const updated = { ...metadata, devices: [], invalid: [], analyticsAggregateVersion: 2, analyticsAggregate: cached };
     await transaction(snapshotStore, "readwrite", (store) => store.put(updated));
     return true;
   }
@@ -1420,7 +1420,10 @@
     const requestedLimit = Math.max(8, Math.min(200, Number(options.limit || 50)));
     const cacheable = aggregateCacheable(options);
     const cachedMetadata = cacheable ? await loadSnapshotMetadata(id) : null;
-    if (cachedMetadata?.analyticsAggregateVersion === 1 && cachedMetadata.analyticsAggregate) {
+    const cachedCount = Number(cachedMetadata?.analyticsAggregate?.devices ?? -1);
+    const expectedCount = Number(cachedMetadata?.deviceCount ?? cachedCount);
+    const cacheIsComplete = cachedCount >= 0 && expectedCount >= 0 && cachedCount === expectedCount;
+    if (cachedMetadata?.analyticsAggregateVersion === 2 && cachedMetadata.analyticsAggregate && cacheIsComplete) {
       return {
         ...sliceAggregateRows(cachedMetadata.analyticsAggregate, requestedLimit),
         metadata: { ...cachedMetadata, devices: [], invalid: [] },
@@ -1567,6 +1570,7 @@
       mac: String(device?.mac || device?.macFormatted || "").toUpperCase().replace(/[^0-9A-F]/g, ""),
       vendor: String(device?.vendor || ""),
       model: String(device?.model || ""),
+      deviceType: String(device?.deviceType || device?.device_type || device?.modelType || device?.model_type || device?.type || ""),
       ip: String(device?.ip || ""),
       address: String(device?.address || ""),
       room: String(device?.room || ""),
@@ -1752,7 +1756,7 @@
   }
 
   function comparisonConfirmedChange(previous = {}, current = {}) {
-    for (const field of ["mac", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName"]) {
+    for (const field of ["mac", "vendor", "model", "deviceType", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName"]) {
       const before = String(previous[field] || "").trim();
       const after = String(current[field] || "").trim();
       if (before && after && before !== after) return true;
@@ -1944,7 +1948,7 @@
     const limit = Math.max(100, Math.min(20000, Number(options.limit || 5000)));
     const result = {
       baselineSnapshotId: String(baselineId || ""),
-      fields: ["mac", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName"],
+      fields: ["mac", "vendor", "model", "deviceType", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName"],
       added: 0, removed: 0, modifiedDevices: 0, modifiedFields: 0, changedDevices: 0, unchanged: 0, critical: 0, identityConflicts: 0,
       changes: [], fieldCounts: new Map(), changedVendors: new Map(), unchangedVendors: new Map(), missingVendors: new Map(), roomCoverage: new Map(),
     };

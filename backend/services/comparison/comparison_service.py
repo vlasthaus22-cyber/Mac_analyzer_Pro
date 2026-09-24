@@ -9,10 +9,11 @@ from typing import Any
 from backend.services.identity.device_identity_service import pair_device_sets
 
 
-DEFAULT_FIELDS = ["mac", "vendor", "model", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName"]
+DEFAULT_FIELDS = ["mac", "vendor", "model", "deviceType", "ip", "address", "room", "smartroomId", "switchIp", "switchPort", "hostname", "serialNumber", "deviceId", "deviceName"]
 FIELD_TITLES = {
     "vendor": "Производитель",
     "model": "Модель",
+    "deviceType": "Тип устройства",
     "ip": "IP",
     "address": "Адрес",
     "room": "Помещение",
