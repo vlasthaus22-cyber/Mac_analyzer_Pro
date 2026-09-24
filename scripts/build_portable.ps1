@@ -68,6 +68,7 @@ Get-ChildItem -LiteralPath $package -File -Recurse -ErrorAction SilentlyContinue
     Remove-Item -Force
 Copy-Item -LiteralPath (Join-Path $root "START_MAC_ANALYZER.cmd") -Destination $package -Force
 Copy-Item -LiteralPath (Join-Path $root "STOP_MAC_ANALYZER.cmd") -Destination $package -Force
+Copy-Item -LiteralPath (Join-Path $root "PYTHON_PATH.cmd") -Destination $package -Force
 $verifiedFrontendFiles = @(
     "index.html",
     "app.js",

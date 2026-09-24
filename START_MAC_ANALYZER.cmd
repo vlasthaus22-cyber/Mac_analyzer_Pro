@@ -3,6 +3,17 @@ setlocal
 cd /d "%~dp0"
 title MAC Analyzer Pro Launcher
 
+rem Optional explicit Python path. Edit PYTHON_PATH.cmd next to this file.
+if exist "%~dp0PYTHON_PATH.cmd" call "%~dp0PYTHON_PATH.cmd"
+if defined MAC_ANALYZER_PYTHON (
+  if exist "%MAC_ANALYZER_PYTHON%" (
+    "%MAC_ANALYZER_PYTHON%" "%~dp0scripts\portable_launcher.py" --root "%~dp0." %*
+    if not errorlevel 1 goto launcher_success
+  ) else (
+    echo Configured Python was not found: "%MAC_ANALYZER_PYTHON%"
+  )
+)
+
 if exist "%~dp0.venv-portable\Scripts\python.exe" (
   "%~dp0.venv-portable\Scripts\python.exe" "%~dp0scripts\portable_launcher.py" --root "%~dp0." %*
   if not errorlevel 1 goto launcher_success

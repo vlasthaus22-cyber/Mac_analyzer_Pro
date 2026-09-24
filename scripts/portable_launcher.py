@@ -44,6 +44,11 @@ def _port_available(port: int) -> bool:
 
 
 def _candidate_commands(root: Path) -> Iterable[Tuple[Sequence[str], str]]:
+    configured_python = os.environ.get("MAC_ANALYZER_PYTHON", "").strip().strip('"')
+    if configured_python:
+        candidate = Path(configured_python).expanduser()
+        if candidate.is_file():
+            yield ([str(candidate)], f"configured: {candidate}")
     local_candidates = (
         root / ".venv-portable" / "Scripts" / "python.exe",
         root / ".venv" / "Scripts" / "python.exe",

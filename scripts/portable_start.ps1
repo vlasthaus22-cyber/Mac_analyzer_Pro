@@ -86,10 +86,11 @@ $filePath = ""
 $argumentList = @()
 $backendMode = ""
 $pythonCandidates = @(
+    $env:MAC_ANALYZER_PYTHON,
     (Join-Path $root ".venv-portable\Scripts\python.exe"),
     (Join-Path $root ".venv\Scripts\python.exe"),
     (Join-Path $root "runtime\python\python.exe")
-)
+) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 $python = $pythonCandidates | Where-Object { (Test-Path -LiteralPath $_) -and (Test-Python $_) } | Select-Object -First 1
 $pythonPrefix = @()
 

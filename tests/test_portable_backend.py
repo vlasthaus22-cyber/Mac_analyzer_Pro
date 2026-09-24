@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -29,6 +30,7 @@ def test_portable_build_is_self_contained_and_excludes_working_data():
     assert '@("frontend", "frontend")' in builder
     assert '@("backend", "backend")' in builder
     assert '@("scripts\\portable_launcher.py", "scripts")' in builder
+    assert 'Join-Path $root "PYTHON_PATH.cmd"' in builder
     assert '@("mac_analyzer_standalone.html", ".")' not in builder
     assert 'data\\reference' in builder
     assert "data\\databases" not in builder
@@ -113,19 +115,26 @@ def test_portable_launcher_resolves_a_relocated_cyrillic_path():
 
 def test_root_launchers_delegate_to_portable_scripts():
     start = _read("START_MAC_ANALYZER.cmd")
+    python_path = _read("PYTHON_PATH.cmd")
     stop = _read("STOP_MAC_ANALYZER.cmd")
     launcher = _read("scripts/portable_start.ps1")
     python_launcher = _read("scripts/portable_launcher.py")
     assert "portable_launcher.py" in start
+    assert 'if exist "%~dp0PYTHON_PATH.cmd" call "%~dp0PYTHON_PATH.cmd"' in start
+    assert 'if defined MAC_ANALYZER_PYTHON' in start
+    assert '"%MAC_ANALYZER_PYTHON%" "%~dp0scripts\\portable_launcher.py"' in start
+    assert 'set "MAC_ANALYZER_PYTHON="' in python_path
     assert "portable_start.ps1" in start, "PowerShell remains only as a no-Python compatibility fallback"
     assert "portable_stop.ps1" in stop
     assert "runas" not in start.lower()
     assert "CREATE_NEW_CONSOLE" in python_launcher
     assert "administratorRightsRequired" in python_launcher
     assert "webbrowser.open" in python_launcher
+    assert 'os.environ.get("MAC_ANALYZER_PYTHON", "")' in python_launcher
     assert "/api/health" in python_launcher
     assert 'Join-Path $root "MACAnalyzerBackend.exe"' in launcher
     assert 'Join-Path $root ".venv-portable\\Scripts\\python.exe"' in launcher
+    assert '$env:MAC_ANALYZER_PYTHON' in launcher
     assert launcher.index("if ($python) {") < launcher.index("elseif (Test-Path -LiteralPath $portableExecutable)")
     assert 'Starting MAC Analyzer without elevation: $backendMode' in launcher
     assert "Test-MacAnalyzerHealth" in launcher
@@ -147,6 +156,8 @@ def test_python_launcher_validates_a_relocated_cyrillic_path():
         for name in ("server.py", "index.html", "START_MAC_ANALYZER.cmd"):
             shutil.copy2(ROOT / name, relocated / name)
 
+        environment = os.environ.copy()
+        environment["MAC_ANALYZER_PYTHON"] = sys.executable
         completed = subprocess.run(
             [
                 sys.executable,
@@ -156,6 +167,7 @@ def test_python_launcher_validates_a_relocated_cyrillic_path():
                 "--validate-only",
             ],
             cwd=Path(temporary),
+            env=environment,
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -169,6 +181,7 @@ def test_python_launcher_validates_a_relocated_cyrillic_path():
         assert report["server"] is True
         assert report["index"] is True
         assert report["launcher"] is True
+        assert report["python"].startswith("configured:")
         assert report["administratorRightsRequired"] is False
 
 
