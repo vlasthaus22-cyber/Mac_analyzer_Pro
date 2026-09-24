@@ -138,6 +138,47 @@ class MemoryFileHandle {
   assert.equal(restoredChunks.filter((item) => item.kind === "device").length, 120);
   assert.equal(inventoryRows.length, 750, "portable database must carry the cumulative device inventory");
 
+  // A valid MADB larger than the former 1 GiB cap must be accepted because
+  // the reader consumes its stream instead of materialising the whole file.
+  const tinyDatabase = [
+    JSON.stringify({ format: database.format, version: database.version, savedAt: new Date().toISOString(), counts: { devices: 0, invalid: 0, movements: 0, snapshots: 0 } }),
+    JSON.stringify({ type: "state", value: { theme: "light" } }),
+    "",
+  ].join("\n");
+  const encodedTinyDatabase = new TextEncoder().encode(tinyDatabase);
+  const sparseLargeFile = {
+    size: 2 * 1024 * 1024 * 1024,
+    stream: () => new globalThis.ReadableStream({
+      start(controller) {
+        controller.enqueue(encodedTinyDatabase);
+        controller.close();
+      },
+    }),
+  };
+  const sparseRestored = await database.readFile(sparseLargeFile, () => {}, { retainRows: false });
+  assert.equal(sparseRestored.deviceCount, 0);
+  assert.equal(sparseRestored.state.theme, "light");
+
+  const boundedMovementsHandle = new MemoryFileHandle("bounded-movements.madb");
+  await database.write(boundedMovementsHandle, {
+    state: { theme: "dark" },
+    devices: [],
+    invalid: [],
+    movements: Array.from({ length: 2_500 }, (_, index) => ({ index })),
+    snapshotMetadata: [],
+  });
+  let streamedMovementRows = 0;
+  const boundedMovements = await database.readFile(boundedMovementsHandle.blob, () => {}, {
+    retainRows: false,
+    movementLimit: 100,
+    batchRows: 500,
+    onMovementChunk: async (rows) => { streamedMovementRows += rows.length; },
+  });
+  assert.equal(boundedMovements.movementCount, 2_500);
+  assert.equal(boundedMovements.movements.length, 100);
+  assert.equal(boundedMovements.movementsTruncated, true);
+  assert.equal(streamedMovementRows, 2_500);
+
   console.log("portable database streaming stress test passed");
 })().catch((error) => {
   console.error(error);

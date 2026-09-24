@@ -312,6 +312,7 @@
       retainRows:false,
       previewLimit:resultPageSize,
       batchRows:500,
+      movementLimit:MemoryGuard?.limits?.movementRows||5000,
       onSnapshotStart:async(metadata)=>{
         if(!BrowserSnapshots||!metadata?.id)return;
         await BrowserSnapshots.beginStreamedSnapshot(metadata);
@@ -1579,7 +1580,13 @@
       if(!fileRecord)fileRecord=await clientFileRecord(file,fileCreatedAt,progress);
       if(revision!==ddioLoadRevision)return;
       fileRecord.role="ddio";
-      fileRecord.mapping=DdioOverlay.detectMapping(fileRecord.headers||[]);
+      // Normal and batch DDIO imports must use the same four-column preset.
+      // Real DDIO exports often expose only generic Column2/3/9/10 names,
+      // which semantic header detection cannot infer on its own.
+      fileRecord.mapping={
+        ...DdioOverlay.detectMapping(fileRecord.headers||[]),
+        ...ColumnPresets.mappingForRole(fileRecord.headers||[],"ddio"),
+      };
       await rememberSourceFile(fileRecord,file);
       state.ddioFile=fileRecord;state.ddioOverlay={};state.ddioSummary=null;
       save({immediate:true});renderDdioPanel();

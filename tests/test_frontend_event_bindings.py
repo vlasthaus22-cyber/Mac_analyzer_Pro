@@ -22,6 +22,7 @@ def test_ddio_third_export_is_display_only_and_bound_in_primary_frontend():
     assert '[["deviceId","Device ID"],["mac","MAC устройства"]' not in app
     assert 'const fallbackCount=DdioOverlay.applyIpFallback([device],ddio.index)' in app
     assert 'ddio.summary.ipFallbacks=DdioOverlay.applyIpFallback(devices,ddio.index)' in app
+    assert '...ColumnPresets.mappingForRole(fileRecord.headers||[],"ddio")' in app
     assert 'mappingOptionLabel(header,"letter")' in app
     assert 'headers = Array.from({ length: columnCount }' in Path("frontend/file-readers.js").read_text(encoding="utf-8")
     assert 'applyDdioOverlayToResults(body,columns)' in app
@@ -2460,7 +2461,7 @@ def test_autonomous_file_database_is_streamed_and_connected_to_workspace_saves()
         'id="createPortableDatabaseButton"',
         'id="portableDatabaseInput"',
         'id="portableFolderInput"',
-        '<script src="frontend/portable-database.js?v=20260810.1"></script>',
+        '<script src="frontend/portable-database.js?v=20260924.1"></script>',
     ):
         assert marker in html
     assert 'if(theme){saveThemePreference(theme);$("#themeDialog").close();}' in app
@@ -2478,8 +2479,9 @@ def test_autonomous_file_database_is_streamed_and_connected_to_workspace_saves()
         "const writeBatchRows = 250;",
         "file.stream().getReader()",
         'type: "snapshot-current"',
-        "maximumDatabaseBytes = 1024 * 1024 * 1024",
+        'typeof file.stream !== "function"',
         'const retainRows = options.retainRows !== false;',
+        'options.movementLimit ?? 5_000',
         'await options.onSnapshotChunk(context.metadata, kind, rows, context[indexKey]);',
     ):
         assert marker in database

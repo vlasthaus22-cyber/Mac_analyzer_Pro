@@ -6,7 +6,6 @@
   const handleDatabaseName = "mac-analyzer-portable-file-v1";
   const handleStoreName = "handles";
   const handleRecordId = "main";
-  const maximumDatabaseBytes = 1024 * 1024 * 1024;
   const writeBatchRows = 250;
 
   function openHandleDatabase() {
@@ -210,7 +209,12 @@
   }
 
   async function readLines(file, onLine, onProgress) {
-    if (!file || file.size > maximumDatabaseBytes) throw new Error("Файл базы слишком большой или недоступен");
+    // MADB is a newline-delimited streaming format. Rejecting a file only
+    // because it is larger than 1 GiB made otherwise valid databases
+    // impossible to move between browsers. Keep memory bounded by the stream
+    // and by the per-record batches below instead of imposing a file-size cap.
+    if (!file || typeof file.stream !== "function") throw new Error("Файл базы недоступен для потокового чтения");
+    if (!Number.isFinite(Number(file.size)) || Number(file.size) <= 0) throw new Error("Файл базы пуст или повреждён");
     const reader = file.stream().getReader();
     const decoder = new TextDecoder("utf-8");
     let pending = "";
@@ -244,9 +248,14 @@
     const previewLimit = retainRows ? Number.POSITIVE_INFINITY : Math.max(0, Number(options.previewLimit ?? 250));
     const streamSnapshots = typeof options.onSnapshotStart === "function" && typeof options.onSnapshotChunk === "function" && typeof options.onSnapshotEnd === "function";
     const restoreBatchRows = Math.max(100, Math.min(2000, Number(options.batchRows || 500)));
+    const movementLimit = retainRows
+      ? Number.POSITIVE_INFINITY
+      : Math.max(0, Number(options.movementLimit ?? 5_000));
+    const movementBatch = [];
     const inventoryBatch = [];
     let deviceCount = 0;
     let invalidCount = 0;
+    let movementCount = 0;
     let activeSnapshot = null;
     let currentSnapshot = null;
 
@@ -351,13 +360,23 @@
         if (invalid.length < previewLimit) invalid.push(record.value);
         if (currentSnapshot) await appendSnapshotRow(currentSnapshot, "invalid", record.value);
       }
-      else if (record.type === "movement") movements.push(record.value);
+      else if (record.type === "movement") {
+        movementCount += 1;
+        if (movements.length < movementLimit) movements.push(record.value);
+        if (typeof options.onMovementChunk === "function") {
+          movementBatch.push(record.value);
+          if (movementBatch.length >= restoreBatchRows) {
+            await options.onMovementChunk(movementBatch.splice(0, movementBatch.length));
+          }
+        }
+      }
       else if (record.type === "inventory" && typeof options.onInventoryChunk === "function") {
         inventoryBatch.push(record.value);
         if (inventoryBatch.length >= restoreBatchRows) await options.onInventoryChunk(inventoryBatch.splice(0, inventoryBatch.length));
       }
     }, onProgress);
     if (inventoryBatch.length && typeof options.onInventoryChunk === "function") await options.onInventoryChunk(inventoryBatch.splice(0, inventoryBatch.length));
+    if (movementBatch.length && typeof options.onMovementChunk === "function") await options.onMovementChunk(movementBatch.splice(0, movementBatch.length));
     if (!header || !state) throw new Error("Файл базы повреждён: отсутствует заголовок или состояние");
     if (activeSnapshot) throw new Error("Файл базы повреждён: снимок не завершён");
     if (currentSnapshot) await finishSnapshot(currentSnapshot);
@@ -365,7 +384,18 @@
     if (Number(counts.devices || 0) !== deviceCount) throw new Error("Файл базы повреждён: количество устройств не совпадает");
     if (Number(counts.snapshots || 0) !== snapshots.length) throw new Error("Файл базы повреждён: количество снимков не совпадает");
     onProgress(100, `Восстановлено устройств: ${deviceCount.toLocaleString("ru-RU")}`);
-    return { header, state, devices, invalid, movements, snapshots, deviceCount, invalidCount };
+    return {
+      header,
+      state,
+      devices,
+      invalid,
+      movements,
+      snapshots,
+      deviceCount,
+      invalidCount,
+      movementCount,
+      movementsTruncated: movementCount > movements.length,
+    };
   }
 
   async function read(handle, onProgress = () => {}, options = {}) {
