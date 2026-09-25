@@ -18,7 +18,13 @@ def test_batch_enrichment_ui_and_module_are_wired():
     assert "frontend/batch-enrichment.js" in html
     assert 'BatchEnrichment.describeFiles' in app
     assert 'BatchEnrichment.buildPlan' in app
-    assert 'await analyze()' in app
+    assert 'await stageBatchSourceFiles(descriptors' in app
+    assert 'await BrowserSnapshots.saveSourceFile(storageId,item.file)' in app
+    assert 'await BrowserSnapshots.loadSourceFile(item.sourceStorageId)' in app
+    assert 'ids.push(...batchStagedSourceIds)' in app
+    assert 'const analysisResult=await analyze()' in app
+    assert 'if(!analysisResult?.ok)' in app
+    assert 'return{ok:true,deviceCount:currentDeviceCount()' in app
     assert 'DDIO «${ddio.name}»: не определены четыре колонки' in app
     assert 'SUPPORTED_EXTENSIONS' in module
     assert '"csv"' in module

@@ -593,6 +593,7 @@
   const batchFolderFiles={primary:[],smartroom:[],ddio:[]};
   let batchPlan=null,batchRunStopRequested=false,batchRunActive=false,batchMappingReviewContext=null;
   const batchMappingOverrides=new Map();
+  const batchStagedSourceIds=new Set();
   const sourceFilesById = new Map();
   const workspacePreviewDataRows = 100;
   function releaseTransientAnalysisMemory(){
@@ -649,7 +650,7 @@
     if(released)await MemoryGuard.yieldToMainThread();
     return released;
   }
-  function pruneStoredSourceFiles(){const ids=(state.files||[]).map((file)=>file.sourceStorageId).filter(Boolean);if(state.ddioFile?.sourceStorageId)ids.push(state.ddioFile.sourceStorageId);return BrowserSnapshots?.pruneSourceFiles?.(ids).catch(()=>false);}
+  function pruneStoredSourceFiles(){const ids=(state.files||[]).map((file)=>file.sourceStorageId).filter(Boolean);if(state.ddioFile?.sourceStorageId)ids.push(state.ddioFile.sourceStorageId);ids.push(...batchStagedSourceIds);return BrowserSnapshots?.pruneSourceFiles?.(ids).catch(()=>false);}
   async function replaceConsumedEnrichmentFiles(requestedRole){
     const selection=WorkspaceFileLifecycle.selectForNextImport(state.files,requestedRole),removed=selection.removed;
     if(!removed.length)return 0;
@@ -924,6 +925,38 @@
     if(status)status.textContent=batchFolderLabel(batchFolderFiles[role]);
     batchPlan=null;renderBatchPlan();
   }
+  function batchSourceStorageId(item){return "batch-source-v1|"+String(item?.id||[item?.role,item?.relativePath||item?.name,item?.size,item?.file?.lastModified].join("|"));}
+  function batchSourceAccessError(item,error){
+    const message=String(error?.message||error||"Неизвестная ошибка чтения"),accessFailure=["NotReadableError","NotFoundError","NotAllowedError","SecurityError"].includes(String(error?.name||""));
+    const result=new Error(accessFailure
+      ? `Браузер потерял доступ к файлу «${item?.name||"без имени"}». Повторно выберите папки и постройте план либо запустите START_MAC_ANALYZER.cmd и используйте поля путей Python.`
+      : `Не удалось подготовить файл «${item?.name||"без имени"}»: ${message}`);
+    result.name=accessFailure?"BatchSourceAccessError":"BatchSourceStagingError";result.stage="batch-source-staging";result.source=item?.name||"";result.cause=error;return result;
+  }
+  async function stageBatchSourceFiles(descriptors,onProgress=()=>{}){
+    const browserItems=(descriptors||[]).filter((item)=>item?.file&&!item?.backendToken),nextIds=new Set();
+    for(const [index,item] of browserItems.entries()){
+      const storageId=batchSourceStorageId(item);nextIds.add(storageId);onProgress(index,browserItems.length,item.name);
+      try{
+        // The transaction completes only after the Blob has been cloned into browser storage.
+        // This prevents network/share File references from becoming unreadable during later cycles.
+        await BrowserSnapshots.saveSourceFile(storageId,item.file);
+        item.sourceStorageId=storageId;item.sourceStaged=true;
+      }catch(error){throw batchSourceAccessError(item,error);}
+      if((index+1)%3===0)await MemoryGuard.yieldToMainThread();
+    }
+    for(const storageId of batchStagedSourceIds)if(!nextIds.has(storageId))await BrowserSnapshots.removeSourceFile(storageId).catch(()=>false);
+    batchStagedSourceIds.clear();for(const storageId of nextIds)batchStagedSourceIds.add(storageId);
+    onProgress(browserItems.length,browserItems.length,"");return browserItems.length;
+  }
+  async function restoreBatchSourceFile(item){
+    if(item?.sourceStorageId&&BrowserSnapshots?.loadSourceFile){
+      try{const stored=await BrowserSnapshots.loadSourceFile(item.sourceStorageId);if(stored)return stored;}catch(error){if(!item?.file)throw batchSourceAccessError(item,error);}
+    }
+    if(item?.file)return item.file;
+    const missing=new Error("Файл отсутствует в закреплённом хранилище");missing.name="NotFoundError";
+    throw batchSourceAccessError(item,missing);
+  }
   function batchFileCaption(item){return item?`${item.name} · ${formatDisplayDateTime(item.date)} · ${batchDateSourceLabel(item.dateSource)}`:"Файл не назначен";}
   function batchAssignmentOptions(role,selectedId=""){
     const files=(batchPlan?.files||[]).filter((item)=>item.role===role);
@@ -950,6 +983,7 @@
         const described=await BatchEnrichment.describeFiles(batchFolderFiles[role],role,async(file)=>{const date=await resolveFileInfoDate(file);return{date,source:fileInfoDateSource(file)};});
         descriptors.push(...described);
       }
+      await stageBatchSourceFiles(descriptors,(ready,total,name)=>{if($("#batchEnrichmentSummary"))$("#batchEnrichmentSummary").innerHTML=`<p class="muted">Закрепление файлов: ${ready.toLocaleString("ru-RU")} / ${total.toLocaleString("ru-RU")}${name?` · ${esc(name)}`:""}</p>`;});
       state.batchSettings={...state.batchSettings,pairingMode:$("#batchPairingMode")?.value||"nearest",toleranceHours:Number($("#batchToleranceHours")?.value??24),enrichmentStrategy:EnrichmentStrategy.normalize($("#batchEnrichmentStrategy")?.value||"NO_EXPANSION")};save({immediate:true});
       batchPlan=BatchEnrichment.buildPlan(descriptors,{mode:state.batchSettings.pairingMode,toleranceHours:state.batchSettings.toleranceHours});
       batchPlan.groups.forEach((group)=>{group.status="pending";group.error="";});
@@ -988,13 +1022,15 @@
       record.mapping=role==="ddio"?ColumnPresets.mappingForRole(record.headers,"ddio"):ColumnPresets.mappingForRole(record.headers,role,record.mapping);
       localMappingSummary(record);onProgress(100,"Файл прочитан backend");return record;
     }
-    if(!item.file)throw new Error(`Исходный файл «${item.name}» недоступен`);
+    const sourceFile=await restoreBatchSourceFile(item);
     let record=null;
-    if(backendAvailable)try{record=await backendFileRecord(item.file,item.date,onProgress);}catch(error){if(!networkUnavailable(error))throw error;setBackendStatus(false,"Backend недоступен · массовое обогащение продолжено в браузере");}
-    if(!record)record=await clientFileRecord(item.file,item.date,onProgress);
+    if(backendAvailable)try{record=await backendFileRecord(sourceFile,item.date,onProgress);}catch(error){if(!networkUnavailable(error))throw batchSourceAccessError(item,error);setBackendStatus(false,"Backend недоступен · массовое обогащение продолжено в браузере");}
+    if(!record)try{record=await clientFileRecord(sourceFile,item.date,onProgress);}catch(error){throw batchSourceAccessError(item,error);}
     record.role=role;record.createdAt=item.date;record.fileDateSource=item.dateSource;
     record.mapping=role==="ddio"?ColumnPresets.mappingForRole(record.headers,"ddio"):ColumnPresets.mappingForRole(record.headers,role,record.mapping||localAutoMapping(record.headers,role));
-    await rememberSourceFile(record,item.file);return record;
+    sourceFilesById.set(record.id,sourceFile);record.sourceStorageId=item.sourceStorageId||sourceFileStorageId(sourceFile);
+    if(!item.sourceStorageId)await rememberSourceFile(record,sourceFile);
+    return record;
   }
   async function prepareBatchGroup(group,groupIndex,totalGroups){
     await releaseRetainedWorkspaceRows();await releaseTransientAnalysisMemory();
@@ -1031,7 +1067,8 @@
       try{
         await prepareBatchGroup(group,index,groups.length);
         const beforeId=String(state.snapshots?.[0]?.id||"")+"|"+String(state.resultSnapshotId||state.resultBrowserSnapshotId||"");
-        await analyze();
+        const analysisResult=await analyze();
+        if(!analysisResult?.ok)throw analysisResult?.error||new Error("Цикл обогащения не завершён");
         const afterId=String(state.snapshots?.[0]?.id||"")+"|"+String(state.resultSnapshotId||state.resultBrowserSnapshotId||"");
         if(!afterId||afterId===beforeId)throw new Error("Final не создан; проверьте сообщение этапа обогащения");
         group.status="complete";group.resultSnapshotId=state.resultSnapshotId||state.resultBrowserSnapshotId||state.snapshots?.[0]?.id||"";group.deviceCount=currentDeviceCount();completed++;
@@ -1950,9 +1987,13 @@
   function applyRefreshedFileTokens(fileTokens=[]){
     (Array.isArray(fileTokens)?fileTokens:[]).forEach((item)=>{const file=analysisFileRecords().find((entry)=>entry.id===item.id);if(file&&item.fileToken)file.fileToken=item.fileToken;});
   }
+  function failedAnalysis(error,message="Цикл обогащения не завершён"){
+    const normalized=error instanceof Error?error:new Error(String(error||message));
+    return{ok:false,error:normalized};
+  }
   async function analyze() {
-    if(!state.files.length){toast("Сначала добавьте файл.");return;}
-    if(state.ddioFile){const validation=DdioOverlay.validateMapping(state.ddioFile.mapping||{});if(!validation.valid){toast("DDIO: выберите MAC устройства + IP устройства либо полную пару резервации/аренды");renderDdioPanel();return;}}
+    if(!state.files.length){const error=new Error("Сначала добавьте файл.");toast(error.message);return failedAnalysis(error);}
+    if(state.ddioFile){const validation=DdioOverlay.validateMapping(state.ddioFile.mapping||{});if(!validation.valid){const error=new Error("DDIO: выберите MAC устройства + IP устройства либо полную пару резервации/аренды");toast(error.message);renderDdioPanel();return failedAnalysis(error);}}
     const enrich=Object.fromEntries($$("[data-field]").map((input)=>[input.dataset.field,input.checked]));
     const strategy=syncEnrichmentStrategyUi($("#strategySelect").value),progress=$("#enrichmentProgress"),cancelButton=$("#cancelAnalyzeButton");
     const processId=beginProcess("Обогащение MAC-адресов","Подготовка основного файла и файлов обогащения",5);
@@ -1962,7 +2003,7 @@
       setEnrichmentStage("previous-final-history",6,"Ожидание сохранения предыдущего Final");
       await snapshotMutationPromise;
       save({immediate:true});
-    }catch(error){progress.innerHTML='<p class="muted">Не удалось подготовить предыдущее финальное состояние: '+esc(error.message)+'</p>';failProcess(processId,error,{stage:enrichmentStage,source:state.files[0]?.name||""});toast(error.message);return;}
+    }catch(error){progress.innerHTML='<p class="muted">Не удалось подготовить предыдущее финальное состояние: '+esc(error.message)+'</p>';failProcess(processId,error,{stage:enrichmentStage,source:state.files[0]?.name||""});toast(error.message);return failedAnalysis(error);}
     let previousDevices=state.devices||[];
     try{
       setEnrichmentStage("validation",10,"Запуск сервиса обогащения");
@@ -1982,7 +2023,7 @@
     try{
       setEnrichmentStage("previous-final-history",12,"Сохранение предыдущего Final перед новым обогащением");
       await preserveCurrentBeforeAnalysis(source);
-    }catch(error){progress.innerHTML='<p class="muted">Не удалось сохранить предыдущий Final: '+esc(error.message)+'</p>';failProcess(processId,error,{stage:enrichmentStage,source});toast(error.message);cancelButton.disabled=true;enrichmentProgressControl.stopped=true;await enrichmentProgressPromise.catch(()=>{});currentEnrichmentJobId=null;enrichmentController=null;return;}
+    }catch(error){progress.innerHTML='<p class="muted">Не удалось сохранить предыдущий Final: '+esc(error.message)+'</p>';failProcess(processId,error,{stage:enrichmentStage,source});toast(error.message);cancelButton.disabled=true;enrichmentProgressControl.stopped=true;await enrichmentProgressPromise.catch(()=>{});currentEnrichmentJobId=null;enrichmentController=null;return failedAnalysis(error);}
     try {
       setEnrichmentStage("parsing-normalization",30,"Сопоставление файлов и обработка MAC-адресов");
       if(analysisFileRecords().some((file)=>!file.fileToken)){
@@ -2030,7 +2071,7 @@
       state.snapshots.unshift({id:snapshotResult.id,name:snapshotResult.name||"Анализ: "+source,source,createdAt:snapshotResult.createdAt||sourceCreatedAt,savedAt:snapshotResult.savedAt||new Date().toISOString(),snapshotOrder:snapshotResult.snapshotOrder||0,deviceCount:snapshotResult.deviceCount??state.devices.length,devices:[],kind:"analysis",backendStored:true});
       $("#storageStatus").textContent = "SQLite подключена";
     } catch(error) {
-      if(error.name==="AbortError"){progress.innerHTML='<p class="muted">Обогащение отменено.</p>';toast("Обогащение отменено.");cancelProcess(processId,"Обогащение отменено пользователем");cancelButton.disabled=true;return;}
+      if(error.name==="AbortError"){progress.innerHTML='<p class="muted">Обогащение отменено.</p>';toast("Обогащение отменено.");cancelProcess(processId,"Обогащение отменено пользователем");cancelButton.disabled=true;return failedAnalysis(error);}
       if(networkUnavailable(error)){
         if(!browserEnrichmentFallbackAllowed()){
           const message="Набор превышает безопасный автономный предел. Разделите файлы на части; операция остановлена до выделения опасного объёма памяти.";
@@ -2038,7 +2079,7 @@
           progress.innerHTML='<p class="muted">'+esc(message)+'</p>';
           toast(message);
           failProcess(processId,message);
-          return;
+          return failedAnalysis(new Error(message));
         }
         setEnrichmentStage("parsing-normalization",45,"Backend недоступен: локальное обогащение в браузере");
         let local,previousComparisonIndex=null;
@@ -2054,7 +2095,7 @@
           }
           local=await localAnalyzeFilesToSnapshot(enrich,strategy,source,sourceCreatedAt,(value,detail)=>updateProcess(processId,45+Math.round(value*0.45),detail));
           if(!local)local=await localAnalyzeFiles(enrich,strategy,(value,detail)=>updateProcess(processId,60+Math.round(value*0.25),detail));
-        }catch(localError){progress.innerHTML='<p class="muted">Автономный анализ остановлен безопасно: '+esc(localError.message)+'</p>';toast(localError.message);failProcess(processId,localError,{stage:localError.stage||enrichmentStage,source});return;}
+        }catch(localError){progress.innerHTML='<p class="muted">Автономный анализ остановлен безопасно: '+esc(localError.message)+'</p>';toast(localError.message);failProcess(processId,localError,{stage:localError.stage||enrichmentStage,source});return failedAnalysis(localError);}
         state.devices=SmartroomStore?await SmartroomStore.enrichData(local.devices,{registry:IeeeRegistry}):local.devices;
         state.invalid=local.invalid;
         state.resultInvalidCount=local.invalidCount;
@@ -2074,7 +2115,7 @@
         progress.innerHTML='<p class="muted">Backend analysis error: '+esc(error.message)+'</p>';
         toast("Backend analysis error: "+error.message);
         failProcess(processId,error,{stage:error.stage||enrichmentStage,source});
-        return;
+        return failedAnalysis(error);
       }
     } finally {
       cancelButton.disabled=true;
@@ -2088,9 +2129,10 @@
     browserDashboardCache=null;
     save({immediate:true});
     try{await flushBrowserStateSave();}
-    catch(error){const message="Результат рассчитан, но рабочее состояние не сохранено: "+String(error?.message||error);failProcess(processId,error,{stage:"database-save",source});toast(message);return;}
+    catch(error){const message="Результат рассчитан, но рабочее состояние не сохранено: "+String(error?.message||error);failProcess(processId,error,{stage:"database-save",source});toast(message);return failedAnalysis(error);}
     await flushPortableDatabaseSave().catch((error)=>portableDatabaseStatus("Локальный снимок сохранён, но файловая база не обновлена: "+error.message,"warning"));persistAutosave("enrichment-analysis").catch(()=>{});renderAll();toast("Анализ завершён: "+currentDeviceCount()+" устройств.");
     finishProcess(processId,"Обогащение завершено: "+currentDeviceCount()+" устройств");
+    return{ok:true,deviceCount:currentDeviceCount(),snapshotId:state.resultSnapshotId||state.resultBrowserSnapshotId||state.snapshots?.[0]?.id||""};
   }
   async function loadFilteredResults(signal=null) {
     const filters={query:$("#searchInput").value.trim(),vendor:$("#vendorFilter").value,validity:$("#validityFilter").value,ouiLength:state.ouiLength,ouiStyle:state.ouiStyle,offset:(resultPage-1)*resultPageSize,limit:resultPageSize,sortField:resultSortField,sortDirection:resultSortDirection};

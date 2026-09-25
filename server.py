@@ -66,7 +66,7 @@ from backend.services.detection.oui_service import format_oui_for_devices
 from backend.services.workspace.single_file_service import analyze_single_file, analyze_single_file_table, summarize_single_file
 from backend.services.comparison.comparison_service import compare_devices, compare_many_devices, compare_many_snapshots, compare_snapshots, export_comparison
 from backend.services.analytics.chart_service import build_chart_payload, export_charts_json, export_charts_svg
-from backend.services.analytics.dashboard_service import build_dashboard_metrics_payload, build_dashboard_payload, export_dashboard_html, export_dashboard_png, normalize_dashboard_settings
+from backend.services.analytics.dashboard_service import build_dashboard_metrics_payload, build_dashboard_payload, dashboard_upload_fleet, export_dashboard_html, export_dashboard_png, normalize_dashboard_settings
 from backend.services.analytics.topology_service import build_compact_topology, build_topology, export_topology_html
 from backend.services.analytics.cluster_service import build_clusters, export_clusters_csv
 from backend.services.analytics.device_analytics_service import build_device_analytics, build_model_analytics, export_device_analytics_html
@@ -103,6 +103,8 @@ from backend.services.system.storage_paths import initialize_storage
 from backend.services.workspace.workspace_cache_service import WorkspaceCacheMiss, WorkspaceFileCache, prepare_workspace_files, resolve_workspace_files, workspace_row_iterator
 
 SNAPSHOT_DEVICE_CACHE = SnapshotDeviceCache()
+DASHBOARD_FLEET_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
+DASHBOARD_FLEET_CACHE_LOCK = threading.Lock()
 ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 STORAGE, STORAGE_MIGRATION_REPORT = initialize_storage(ROOT)
 DATABASE_PATH = STORAGE.database
@@ -1652,6 +1654,7 @@ def snapshot_state_items(limit: int = 100) -> list[dict[str, Any]]:
             "createdAt": row["created_at"],
             "created_at": row["created_at"],
             "deviceCount": int(row["device_count"] or 0),
+            "signature": as_text(row["signature"]),
             "devices": [],
             "backendStored": True,
             "snapshotOrder": int(row["snapshot_order"] or 0),
@@ -1695,6 +1698,51 @@ def hydrate_snapshot_devices(snapshots: Any) -> list[dict[str, Any]]:
         item["devices"] = cached
         item["deviceCount"] = int(row["device_count"] or len(item["devices"]))
     return items
+
+
+def dashboard_upload_fleet_context(snapshots: Any) -> dict[str, Any]:
+    """Aggregate all final snapshots while keeping only one body in memory.
+
+    Dashboard comparisons deliberately hydrate two snapshots. Fleet counters,
+    however, must cover every Final. The metadata signature makes this cache
+    self-invalidating when a snapshot is replaced without retaining all device
+    collections in process memory.
+    """
+    items = [dict(item) for item in snapshots if isinstance(item, dict)] if isinstance(snapshots, list) else []
+    cache_key = tuple(
+        (
+            as_text(item.get("id") or item.get("snapshotId")),
+            as_text(item.get("signature")),
+            int(item.get("deviceCount") or 0),
+            int(item.get("snapshotOrder") or item.get("snapshot_order") or 0),
+        )
+        for item in items
+    )
+    with DASHBOARD_FLEET_CACHE_LOCK:
+        cached = DASHBOARD_FLEET_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
+    def load_devices(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+        snapshot_id = as_text(snapshot.get("id") or snapshot.get("snapshotId"))
+        if not snapshot_id:
+            return []
+        with db_connection() as conn:
+            row = conn.execute("SELECT devices_json FROM snapshots WHERE id = ?", (snapshot_id,)).fetchone()
+        if row is None:
+            return []
+        try:
+            devices = json.loads(row["devices_json"] or "[]")
+        except (TypeError, json.JSONDecodeError):
+            return []
+        return devices if isinstance(devices, list) else []
+
+    fleet = dashboard_upload_fleet(items, device_loader=load_devices)
+    with DASHBOARD_FLEET_CACHE_LOCK:
+        DASHBOARD_FLEET_CACHE[cache_key] = fleet
+        while len(DASHBOARD_FLEET_CACHE) > 4:
+            DASHBOARD_FLEET_CACHE.pop(next(iter(DASHBOARD_FLEET_CACHE)))
+    return fleet
 
 
 def is_final_enrichment_snapshot(item: Any) -> bool:
@@ -7658,6 +7706,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     [] if snapshot_options else history_devices,
                     change_snapshots=change_snapshots,
                     snapshot_options=snapshot_options,
+                    upload_fleet=dashboard_upload_fleet_context(snapshot_options),
                 )
                 if payload.get("compactResult") is True:
                     try:

@@ -543,6 +543,55 @@ def test_dashboard_bounds_large_filter_and_change_payloads_without_losing_kpis()
     assert len(payload["filters"]["rooms"]) == 1_000
 
 
+def test_dashboard_remains_correct_after_twenty_four_final_snapshots():
+    stable = [
+        {"internalDeviceId": "device-a", "mac": "001122334401", "vendor": "Cisco", "model": "Room Kit", "room": "Room A"},
+        {"internalDeviceId": "device-b", "mac": "001122334402", "vendor": "Poly", "model": "Studio", "room": "Room B"},
+        {"internalDeviceId": "device-c", "mac": "001122334403", "vendor": "Extron", "model": "DMP", "room": "Room C"},
+    ]
+    snapshots = [
+        {
+            "id": f"final-{index:02d}",
+            "kind": "analysis",
+            "name": f"Анализ: cycle-{index:02d}",
+            "snapshotOrder": index,
+            "createdAt": f"2026-{((index - 1) // 4) + 1:02d}-{((index - 1) % 4) + 1:02d}T08:00:00Z",
+            "devices": [dict(device) for device in stable],
+        }
+        for index in range(1, 24)
+    ]
+    current = [
+        {**stable[0], "model": "Room Kit Pro"},
+        dict(stable[2]),
+        {"internalDeviceId": "device-d", "mac": "001122334404", "vendor": "Cisco", "model": "Board", "room": "Room D"},
+    ]
+    snapshots.append({
+        "id": "final-24", "kind": "analysis", "name": "Анализ: cycle-24",
+        "snapshotOrder": 24, "createdAt": "2026-06-04T08:00:00Z", "devices": current,
+    })
+
+    payload = build_dashboard_payload(
+        current,
+        snapshots,
+        {"changeMode": "snapshots", "baselineSnapshotId": "final-23", "comparisonSnapshotId": "final-24"},
+        change_snapshots=snapshots,
+        snapshot_options=[{key: value for key, value in item.items() if key != "devices"} for item in snapshots],
+    )
+
+    assert payload["metrics"]["total"] == 3
+    assert payload["metrics"]["totalAcross"] == 4
+    assert payload["metrics"]["uniqueMacs"] == 4
+    assert payload["metrics"]["changed"] == 1
+    assert payload["metrics"]["missing"] == 1
+    assert payload["changeAnalysis"]["summary"]["modified"] == 1
+    assert payload["changeAnalysis"]["summary"]["added"] == 1
+    assert payload["changeAnalysis"]["summary"]["removed"] == 1
+    assert payload["changeAnalysis"]["summary"]["total"] == 3
+    assert len(payload["uploadFleet"]["series"]) == 24
+    assert payload["uploadFleet"]["latestCount"] == 3
+    assert {item["field"] for item in payload["changeAnalysis"]["changes"]} == {"device", "model"}
+
+
 if __name__ == "__main__":
     test_dashboard_filters_metrics_and_export()
     test_dashboard_metrics_payload_counts_known_and_invalid_records()

@@ -42,7 +42,9 @@
   }
 
   function utcDayStart(value) {
-    const text = String(value || "").trim().slice(0, 10);
+    const text = String(value || "")
+      .trim()
+      .slice(0, 10);
     return /^\d{4}-\d{2}-\d{2}$/.test(text) ? timestamp(`${text}T00:00:00.000Z`) : null;
   }
 

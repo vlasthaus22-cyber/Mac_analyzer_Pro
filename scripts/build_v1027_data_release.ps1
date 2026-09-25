@@ -1,6 +1,6 @@
 param(
     [string]$OutputDirectory = "",
-    [string]$Version = "v1.0.74",
+    [string]$Version = "v1.0.75",
     [string]$LegacyArchive = "",
     [string]$PortablePackage = ""
 )
@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $outputRoot = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $root "portable\legacy-data" }
 $legacySource = if ($LegacyArchive) { [IO.Path]::GetFullPath($LegacyArchive) } else { Join-Path $root "portable\complete\MAC-Analyzer-Pro-v1.0.27-Complete.zip" }
-$packageName = "MAC-Analyzer-$Version-Full-History"
+$packageName = "MAC-Analyzer-$Version-Full"
 $stagingRoot = Join-Path ([IO.Path]::GetTempPath()) ("mac-v1027-release-" + [Guid]::NewGuid().ToString("N"))
 $package = Join-Path $stagingRoot $packageName
 $archive = Join-Path $outputRoot "$packageName.zip"

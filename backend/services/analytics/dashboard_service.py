@@ -5,6 +5,7 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from backend.services.identity.device_identity_service import identity_key, pair_device_sets
@@ -122,7 +123,10 @@ def dashboard_snapshot_options(snapshots: list[dict[str, Any]]) -> list[dict[str
     return options
 
 
-def dashboard_upload_fleet(snapshots: list[dict[str, Any]]) -> dict[str, Any]:
+def dashboard_upload_fleet(
+    snapshots: list[dict[str, Any]],
+    device_loader: Callable[[dict[str, Any]], Iterable[dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
     unique_macs: set[str] = set()
     series: list[dict[str, Any]] = []
     usable = [
@@ -135,8 +139,11 @@ def dashboard_upload_fleet(snapshots: list[dict[str, Any]]) -> dict[str, Any]:
     ]
     selected = usable if usable else [snapshot for snapshot in snapshots if isinstance(snapshot, dict)]
     for index, snapshot in enumerate(selected):
+        devices = snapshot.get("devices", [])
+        if not devices and device_loader is not None:
+            devices = device_loader(snapshot)
         current = {
-            _mac(device) for device in snapshot.get("devices", [])
+            _mac(device) for device in devices
             if isinstance(device, dict) and _mac(device)
         }
         unique_macs.update(current)
@@ -693,6 +700,7 @@ def build_dashboard_payload(
     history_devices: list[dict[str, Any]] | None = None,
     change_snapshots: list[dict[str, Any]] | None = None,
     snapshot_options: list[dict[str, Any]] | None = None,
+    upload_fleet: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized = normalize_dashboard_settings(settings)
     comparison_snapshots = change_snapshots if change_snapshots is not None else (snapshots or [])
@@ -814,7 +822,7 @@ def build_dashboard_payload(
     filtered = status_devices[normalized["status"]]
     missing_room_scope = [device for device in current_scope if not _text(device.get("room") or device.get("room_name"))]
     chart_payload = build_chart_payload(filtered, snapshots or [])
-    fleet = dashboard_upload_fleet(snapshots or [])
+    fleet = upload_fleet or dashboard_upload_fleet(snapshots or [])
     status_charts = _status_charts({**classified, "missing": missing_scope}, filtered, normalized["chartLimit"])
     # The dashboard panel is explicitly the fleet-size timeline.  Movement
     # events belong to the changes table/field chart and must not be displayed
@@ -871,7 +879,14 @@ def build_dashboard_payload(
             "changed": len(changed_scope),
             "missing": len(missing_scope),
             "unchanged": len(unchanged_scope),
-            "uniqueMacs": len({_text(device.get("mac") or device.get("macFormatted")) for device in filtered if _text(device.get("mac") or device.get("macFormatted"))}),
+            "uniqueMacs": max(
+                int(fleet["uniqueAcrossUploads"] or 0),
+                len({
+                    _text(device.get("mac") or device.get("macFormatted"))
+                    for device in filtered
+                    if _text(device.get("mac") or device.get("macFormatted"))
+                }),
+            ),
             "vendors": len({_text(device.get("vendor")) for device in current_scope if _text(device.get("vendor")) and _text(device.get("vendor")) != "Unknown"}),
             "rooms": len({
                 _text(device.get("smartroomId") or device.get("smartroom_id") or device.get("room"))

@@ -24,6 +24,19 @@ assert.deepEqual(store.comparisonHistoryIds(null, "baseline", "current"), []);
   assert.equal(restoredSource.lastModified, 1234);
   assert.equal(await restoredSource.text(), await sourceFile.text());
 
+  const laterBatchSource = new File(["MAC,IP\nAABBCCDDEEFF,10.0.0.2"], "later.csv", {
+    type: "text/csv",
+    lastModified: 5678,
+  });
+  await store.saveSourceFile("batch-source-v1|current", sourceFile);
+  await store.saveSourceFile("batch-source-v1|later", laterBatchSource);
+  await store.pruneSourceFiles(["batch-source-v1|current", "batch-source-v1|later"]);
+  assert.equal(await (await store.loadSourceFile("batch-source-v1|later")).text(), await laterBatchSource.text(),
+    "cleanup of the current cycle must retain source files needed by later batch cycles");
+  await store.pruneSourceFiles(["batch-source-v1|later"]);
+  assert.equal(await store.loadSourceFile("batch-source-v1|current"), null);
+  assert.equal(await (await store.loadSourceFile("batch-source-v1|later")).text(), await laterBatchSource.text());
+
   const snapshots = [
     {
       id: "first",

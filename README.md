@@ -1,23 +1,21 @@
 # MAC Analyzer Pro
 
-Полный комплект v1.0.74 публикуется двумя проверяемыми архивами:
-
-- `MAC-Analyzer-v1.0.74-Full-Clean.zip` — вся программа, исходники, тесты,
-  автономный HTML, Windows runtime, OUI и чистая SQLite;
-- `MAC-Analyzer-v1.0.74-Full-History.zip` — тот же полный комплект плюс
-  очищенная историческая SQLite из v1.0.27 с MAC/model/history без секретов.
+Полный комплект v1.0.75 публикуется одним проверяемым архивом
+`MAC-Analyzer-v1.0.75-Full.zip`. В нём находятся вся программа, исходники,
+тесты, автономный HTML, готовый Windows runtime, OUI, чистая рабочая SQLite и
+очищенная историческая SQLite из v1.0.27 с MAC/model/history без секретов.
 
 Корневой `START_HERE.cmd` автоматически запускает
 `server.py` в пользовательской Python-консоли, ждёт готовности backend и открывает
 браузер без запроса прав администратора. Исправления аналитики, автоматического
 определения моделей, точного сравнения устройств, безопасного сохранения больших
 наборов и проверки всех устройств комнаты описаны в
-[`RELEASE_NOTES_v1.0.74.md`](RELEASE_NOTES_v1.0.74.md).
+[`RELEASE_NOTES_v1.0.75.md`](RELEASE_NOTES_v1.0.75.md).
 
 Размер ZIP не является признаком полноты кода. v1.0.53 весил 90,4 МБ главным
 образом из-за SQLite размером 373,1 МБ (56,9 МБ после ZIP-сжатия). Чистый полный
 пакет занимает меньше, потому что не содержит пользовательскую историю. Для
-переноса истории предназначен отдельный `Full-History`.
+Историческая база включена в единый `Full`-архив как отдельная безопасная копия.
 
 В архиве две папки по назначению: `Windows-Portable` — готовая программа,
 `Source` — полный исходный код, тесты и инструменты. Запускать файлы внутри
@@ -46,7 +44,17 @@ set "MAC_ANALYZER_PYTHON=C:\Users\User\AppData\Local\Programs\Python\Python312\p
 `py -0p`. Нужен Python 3.10 или новее с зависимостями из
 `requirements-web.txt`. При пустом значении используется автоматический поиск.
 
-## Что изменилось в v1.0.74
+## Что изменилось в v1.0.75
+
+- Массовое обогащение закрепляет выбранные browser-файлы в IndexedDB до начала
+  первого цикла и не теряет доступ к следующим CSV/XLSX/JSON на сетевом диске.
+- Источники будущих циклов больше не удаляются при очистке текущего рабочего набора.
+- Цикл получает статус «Готово» только после полного успешного создания Final;
+  ошибка анализа больше не маскируется сохранением предыдущего снимка.
+- Выпуск снова поставляется одним полным ZIP с программой, исходниками,
+  Windows runtime и очищенной исторической базой.
+
+### Исправления v1.0.74
 
 - Добавлен единый корневой `START_HERE.cmd`, поэтому входить в подпапки для запуска не нужно.
 - Структура `Windows-Portable`/`Source` и назначение HTML-файлов описаны непосредственно в архиве.
@@ -407,7 +415,7 @@ powershell -ExecutionPolicy Bypass -File scripts/build_v1027_data_release.ps1
 
 Release artifacts use short, stable names: `MAC-Analyzer-<version>-Browser.zip`,
 `MAC-Analyzer-<version>-Source.zip`, `MAC-Analyzer-<version>-Full-Clean.zip`, and
-the sanitized history package `MAC-Analyzer-<version>-Full-History.zip`. The directory at
+the unified sanitized history package `MAC-Analyzer-<version>-Full.zip`. The directory at
 the root of each ZIP uses the same short name.
 
 The migration works on an archive copy and removes saved API keys, passwords,

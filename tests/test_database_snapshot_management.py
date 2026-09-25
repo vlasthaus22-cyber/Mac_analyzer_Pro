@@ -1,15 +1,18 @@
 import json
 
-from server import dashboard_snapshot_context, database_maintenance, database_summary, db_connection, delete_snapshots, init_database, open_compact_snapshot_payload, open_snapshot_payload, resolve_payload_devices, snapshot_select_payload
+from server import dashboard_snapshot_context, dashboard_upload_fleet_context, database_maintenance, database_summary, db_connection, delete_snapshots, init_database, open_compact_snapshot_payload, open_snapshot_payload, resolve_payload_devices, snapshot_select_payload
 
 
 SNAPSHOTS = ("snapshot-mgmt-1", "snapshot-mgmt-2")
 LARGE_SNAPSHOT = "snapshot-mgmt-large"
+FLEET_SNAPSHOTS = tuple(f"snapshot-fleet-{index}" for index in range(1, 5))
 
 
 def cleanup():
     with db_connection() as conn:
         for snapshot_id in SNAPSHOTS:
+            conn.execute("DELETE FROM snapshots WHERE id = ?", (snapshot_id,))
+        for snapshot_id in FLEET_SNAPSHOTS:
             conn.execute("DELETE FROM snapshots WHERE id = ?", (snapshot_id,))
         conn.execute("DELETE FROM snapshots WHERE id = ?", (LARGE_SNAPSHOT,))
         conn.execute("DELETE FROM app_logs WHERE action = ?", ("Delete snapshots",))
@@ -176,6 +179,44 @@ def test_dashboard_context_hydrates_only_previous_and_current_final_results():
     cleanup()
 
 
+def test_dashboard_fleet_aggregates_every_stored_final_without_hydrating_context():
+    init_database()
+    cleanup()
+    rows = [
+        [{"mac": "AABBCC000001"}, {"mac": "AABBCC000002"}],
+        [{"mac": "AABBCC000001"}, {"mac": "AABBCC000003"}],
+        [{"mac": "AABBCC000001"}, {"mac": "AABBCC000003"}],
+        [{"mac": "AABBCC000001"}, {"mac": "AABBCC000004"}],
+    ]
+    with db_connection() as conn:
+        for index, devices in enumerate(rows, start=1):
+            conn.execute(
+                "INSERT INTO snapshots (id, name, source, device_count, devices_json, signature, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    FLEET_SNAPSHOTS[index - 1],
+                    f"Анализ: fleet-{index}.xlsx",
+                    f"fleet-{index}.xlsx",
+                    len(devices),
+                    json.dumps(devices),
+                    f"fleet-signature-{index}",
+                    f"2026-02-{index:02d}T00:00:00Z",
+                ),
+            )
+
+    options, hydrated, _settings = dashboard_snapshot_context(
+        [{"id": snapshot_id, "backendStored": True} for snapshot_id in FLEET_SNAPSHOTS],
+        FLEET_SNAPSHOTS[-1],
+        {"changeMode": "snapshots"},
+    )
+    fleet = dashboard_upload_fleet_context(options)
+
+    assert len(hydrated) == 2
+    assert len(fleet["series"]) == 4
+    assert fleet["uniqueAcrossUploads"] == 4
+    assert fleet["latestCount"] == 2
+    cleanup()
+
+
 def test_compact_snapshot_supports_strong_identity_without_mac():
     cleanup()
     with db_connection() as conn:
@@ -226,6 +267,7 @@ if __name__ == "__main__":
     test_snapshot_select_payload_prepares_ready_options()
     test_large_snapshot_open_is_compact_for_browser()
     test_dashboard_context_hydrates_only_previous_and_current_final_results()
+    test_dashboard_fleet_aggregates_every_stored_final_without_hydrating_context()
     test_compact_snapshot_supports_strong_identity_without_mac()
     test_dashboard_period_compares_first_and_last_final_inside_selected_range()
     print("database snapshot management test passed")
