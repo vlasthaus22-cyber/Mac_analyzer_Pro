@@ -109,6 +109,8 @@ def test_legacy_release_data_preserves_history_and_redacts_secrets():
         assert report["activeAutosaves"] == 0
         assert report["configSecretsRedacted"] == 1
         assert report["engineeringSessionsRemoved"] == 1
+        assert not (package_root / "data" / "imports" / "workspace-cache").exists()
+        assert not (package_root / "logs").exists()
 
         sanitized = json.loads(
             (package_root / "config" / "mac_analyzer_settings.json").read_text(
@@ -136,13 +138,22 @@ def test_legacy_release_data_preserves_history_and_redacts_secrets():
             connection.close()
 
 
-def test_full_release_preserves_the_original_complete_legacy_archive():
+def test_full_release_excludes_the_original_unsanitized_legacy_archive():
     script = (ROOT / "scripts" / "build_v1027_data_release.ps1").read_text(encoding="utf-8-sig")
-    assert 'Join-Path $package "Legacy-v1.0.27"' in script
-    assert '"MAC-Analyzer-Pro-v1.0.27-Complete.zip"' in script
-    assert 'legacyCompleteArchive = "Legacy-v1.0.27/MAC-Analyzer-Pro-v1.0.27-Complete.zip"' in script
+    assert 'Join-Path $package "Legacy-v1.0.27"' not in script
+    assert 'legacyCompleteArchive =' not in script
+    assert 'Raw imports, workspace caches, logs, exports' in script
+
+
+def test_legacy_extractor_only_accepts_the_historical_database():
+    source = (ROOT / "tools" / "prepare_legacy_release_data.py").read_text(encoding="utf-8-sig")
+    assert '"data/databases/mac_analyzer_web.db"' in source
+    assert '"config/mac_analyzer_settings.json"' in source
+    assert 'ALLOWED_PREFIXES' not in source
 
 
 if __name__ == "__main__":
     test_legacy_release_data_preserves_history_and_redacts_secrets()
+    test_full_release_excludes_the_original_unsanitized_legacy_archive()
+    test_legacy_extractor_only_accepts_the_historical_database()
     print("legacy release data preparation test passed")

@@ -1,17 +1,35 @@
 # MAC Analyzer Pro
 
-Полный комплект v1.0.73: `MAC-Analyzer-v1.0.73-Windows.zip` в GitHub Releases.
-Он включает исходники, автономный HTML, Windows-приложение и сохранённые
-данные v1.0.27. Основной `START_MAC_ANALYZER.cmd` автоматически запускает
+Полный комплект v1.0.74 публикуется двумя проверяемыми архивами:
+
+- `MAC-Analyzer-v1.0.74-Full-Clean.zip` — вся программа, исходники, тесты,
+  автономный HTML, Windows runtime, OUI и чистая SQLite;
+- `MAC-Analyzer-v1.0.74-Full-History.zip` — тот же полный комплект плюс
+  очищенная историческая SQLite из v1.0.27 с MAC/model/history без секретов.
+
+Корневой `START_HERE.cmd` автоматически запускает
 `server.py` в пользовательской Python-консоли, ждёт готовности backend и открывает
 браузер без запроса прав администратора. Исправления аналитики, автоматического
 определения моделей, точного сравнения устройств, безопасного сохранения больших
 наборов и проверки всех устройств комнаты описаны в
-[`RELEASE_NOTES_v1.0.73.md`](RELEASE_NOTES_v1.0.73.md).
+[`RELEASE_NOTES_v1.0.74.md`](RELEASE_NOTES_v1.0.74.md).
+
+Размер ZIP не является признаком полноты кода. v1.0.53 весил 90,4 МБ главным
+образом из-за SQLite размером 373,1 МБ (56,9 МБ после ZIP-сжатия). Чистый полный
+пакет занимает меньше, потому что не содержит пользовательскую историю. Для
+переноса истории предназначен отдельный `Full-History`.
+
+В архиве две папки по назначению: `Windows-Portable` — готовая программа,
+`Source` — полный исходный код, тесты и инструменты. Запускать файлы внутри
+`Source` обычному пользователю не требуется. Из нескольких HTML пользовательским
+является корневой `MAC-Analyzer-Pro.html`; `Windows-Portable/index.html`
+обслуживается backend, `Source/index.html` является исходником, а
+`Source/mac_analyzer_standalone.html` сохранён только как legacy-эталон.
 
 ## Запуск Python-backend без прав администратора
 
-Открывайте `START_MAC_ANALYZER.cmd`, а не `index.html`. Запускатель поднимает
+В полном архиве открывайте корневой `START_HERE.cmd`. В каталоге проекта или
+`Windows-Portable` можно открыть `START_MAC_ANALYZER.cmd`. Запускатель поднимает
 `server.py`, проверяет `http://127.0.0.1:8080/api/health` и только после этого
 открывает программу в браузере. Сам HTML не может запускать локальные программы:
 это штатное ограничение безопасности Chrome, Edge и других браузеров.
@@ -28,7 +46,14 @@ set "MAC_ANALYZER_PYTHON=C:\Users\User\AppData\Local\Programs\Python\Python312\p
 `py -0p`. Нужен Python 3.10 или новее с зависимостями из
 `requirements-web.txt`. При пустом значении используется автоматический поиск.
 
-## Что изменилось в v1.0.73
+## Что изменилось в v1.0.74
+
+- Добавлен единый корневой `START_HERE.cmd`, поэтому входить в подпапки для запуска не нужно.
+- Структура `Windows-Portable`/`Source` и назначение HTML-файлов описаны непосредственно в архиве.
+- Полный пакет с историей содержит только очищенную SQLite и не включает raw-импорты, логи, кэши и исходный несанитизированный архив.
+- Добавлена явная настройка `PYTHON_PATH.cmd` для запуска backend без прав администратора.
+
+### Исправления v1.0.73
 
 - Снят жёсткий лимит 1 ГБ для `.madb`: большие базы читаются потоково из файла или папки.
 - История из большой `.madb` восстанавливается пакетами без неограниченного роста памяти.
@@ -381,17 +406,18 @@ powershell -ExecutionPolicy Bypass -File scripts/build_v1027_data_release.ps1
 ```
 
 Release artifacts use short, stable names: `MAC-Analyzer-<version>-Browser.zip`,
-`MAC-Analyzer-<version>-Source.zip`, `MAC-Analyzer-<version>-Windows.zip`, and
-the complete data package `MAC-Analyzer-<version>-Full.zip`. The directory at
+`MAC-Analyzer-<version>-Source.zip`, `MAC-Analyzer-<version>-Full-Clean.zip`, and
+the sanitized history package `MAC-Analyzer-<version>-Full-History.zip`. The directory at
 the root of each ZIP uses the same short name.
 
 The migration works on an archive copy and removes saved API keys, passwords,
 webhooks, tokens, and engineering sessions before release packaging. The
 legacy database is preserved under `data/backups/legacy-v1.0.27`; the active
 database starts with the current schema and no orphaned snapshot references.
-The exact original complete archive is additionally stored under
-`Legacy-v1.0.27`. This prevents stale stress-test autosaves from hiding or
-inventing Final data while retaining every file of the earlier complete build.
+The original unsanitized archive, imported workbooks, logs, caches, and old
+backup copies are not placed in the public package. This prevents stale
+stress-test autosaves from hiding or inventing Final data and avoids publishing
+unrelated runtime files.
 
 `mac_analyzer_standalone.html` is a legacy parity artifact and is not the main
 application. New functionality belongs in `index.html`, `app.js`, and

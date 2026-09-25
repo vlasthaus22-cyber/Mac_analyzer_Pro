@@ -32,6 +32,9 @@ def test_everything_release_combines_runtime_autonomous_html_and_all_sources():
         fake_runtime.mkdir()
         (fake_runtime / "MACAnalyzerBackend.exe").write_bytes(b"test-runtime")
         (fake_runtime / "START_MAC_ANALYZER.cmd").write_text("@echo off\r\n", encoding="utf-8")
+        (fake_runtime / "PYTHON_PATH.cmd").write_text(
+            '@echo off\r\nset "MAC_ANALYZER_PYTHON="\r\n', encoding="utf-8"
+        )
         (fake_runtime / "PACKAGE_INFO.json").write_text("{}", encoding="utf-8")
 
         completed = subprocess.run(
@@ -61,7 +64,7 @@ def test_everything_release_combines_runtime_autonomous_html_and_all_sources():
         assert completed.returncode == 0, completed.stderr
         report = json.loads(completed.stdout.strip())
         archive = Path(report["file"])
-        assert archive.name == "MAC-Analyzer-test-Windows.zip"
+        assert archive.name == "MAC-Analyzer-test-Full-Clean.zip"
         assert len(archive.stem) <= 32
         assert report["autonomousHtmlIncluded"] is True
         assert report["fullSourceIncluded"] is True
@@ -71,11 +74,14 @@ def test_everything_release_combines_runtime_autonomous_html_and_all_sources():
 
         with zipfile.ZipFile(archive) as package:
             prefix = package.namelist()[0].split("/", 1)[0] + "/"
-            assert prefix == "MAC-Analyzer-test-Windows/"
+            assert prefix == "MAC-Analyzer-test-Full-Clean/"
             names = {name.removeprefix(prefix) for name in package.namelist()}
             assert "MAC-Analyzer-Pro.html" in names
             assert "Windows-Portable/MACAnalyzerBackend.exe" in names
             assert "Windows-Portable/START_MAC_ANALYZER.cmd" in names
+            assert "Windows-Portable/PYTHON_PATH.cmd" in names
+            assert "START_HERE.cmd" in names
+            assert "STOP_SERVER.cmd" in names
             assert "README_FIRST.txt" in names
             assert "FILE_MANIFEST.sha256" in names
             tracked = _tracked_files()

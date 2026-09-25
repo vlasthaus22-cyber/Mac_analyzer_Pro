@@ -14,7 +14,14 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 
-ALLOWED_PREFIXES = ("data/", "config/", "logs/")
+# The full-history release needs the historical SQLite knowledge base, not
+# imported workbooks, logs, workspace caches, exports, or old backup copies.
+# Keeping this allow-list exact prevents unrelated user files from entering a
+# public release while preserving MAC/model/history records in the database.
+ALLOWED_RUNTIME_FILES = {
+    "data/databases/mac_analyzer_web.db",
+    "config/mac_analyzer_settings.json",
+}
 SENSITIVE_PARTS = ("api_key", "apikey", "password", "secret", "token", "webhook")
 
 
@@ -56,7 +63,7 @@ def extract_runtime_data(legacy_archive: Path, package_root: Path) -> int:
             if not item.filename.startswith(root_prefix):
                 raise RuntimeError(f"Unexpected archive root: {item.filename}")
             relative = item.filename[len(root_prefix) :]
-            if not relative.startswith(ALLOWED_PREFIXES):
+            if relative not in ALLOWED_RUNTIME_FILES:
                 continue
             path = PurePosixPath(relative)
             if path.is_absolute() or ".." in path.parts:
@@ -232,6 +239,16 @@ def prepare(
             sys.path.remove(str(package_root))
         except ValueError:
             pass
+
+    # Importing the backend may initialize empty runtime caches and log files.
+    # They are machine-local state, not part of the historical database.
+    for generated_directory in (
+        package_root / "data" / "imports" / "workspace-cache",
+        package_root / "data" / "runtime",
+        package_root / "logs",
+    ):
+        if generated_directory.exists():
+            shutil.rmtree(generated_directory)
 
     integrity, tables, active_counts = database_counts(database)
 

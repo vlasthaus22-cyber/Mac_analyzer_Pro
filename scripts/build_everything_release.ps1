@@ -1,6 +1,6 @@
 param(
     [string]$OutputDirectory = "",
-    [string]$Version = "v1.0.73",
+    [string]$Version = "v1.0.74",
     [string]$PortablePackage = "",
     [switch]$SkipCleanDatabase
 )
@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $outputRoot = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $root "portable\everything" }
-$packageName = "MAC-Analyzer-$Version-Windows"
+$packageName = "MAC-Analyzer-$Version-Full-Clean"
 $stagingRoot = Join-Path $outputRoot ".everything-staging"
 $package = Join-Path $stagingRoot $packageName
 $archive = Join-Path $outputRoot "$packageName.zip"
@@ -35,7 +35,7 @@ try {
         & (Join-Path $root "scripts\build_portable.ps1") -OutputDirectory $runtimeBuildRoot | Out-Null
         Join-Path $runtimeBuildRoot "dist\MACAnalyzerBackend"
     }
-    foreach ($required in @("MACAnalyzerBackend.exe", "START_MAC_ANALYZER.cmd", "PACKAGE_INFO.json")) {
+    foreach ($required in @("MACAnalyzerBackend.exe", "START_MAC_ANALYZER.cmd", "PYTHON_PATH.cmd", "PACKAGE_INFO.json")) {
         if (-not (Test-Path -LiteralPath (Join-Path $runtimePackage $required) -PathType Leaf)) {
             throw "Windows portable runtime is incomplete: $required"
         }
@@ -51,6 +51,17 @@ try {
     Copy-DirectoryContents $runtimePackage (Join-Path $package "Windows-Portable")
     Copy-DirectoryContents $sourcePackage (Join-Path $package "Source")
     Copy-Item -LiteralPath (Join-Path $sourcePackage "MAC-Analyzer-Pro.html") -Destination (Join-Path $package "MAC-Analyzer-Pro.html") -Force
+
+    @(
+        "@echo off"
+        "cd /d `"%~dp0Windows-Portable`""
+        "call START_MAC_ANALYZER.cmd %*"
+    ) | Set-Content -LiteralPath (Join-Path $package "START_HERE.cmd") -Encoding ASCII
+    @(
+        "@echo off"
+        "cd /d `"%~dp0Windows-Portable`""
+        "call STOP_MAC_ANALYZER.cmd"
+    ) | Set-Content -LiteralPath (Join-Path $package "STOP_SERVER.cmd") -Encoding ASCII
 
     $databaseReport = $null
     if (-not $SkipCleanDatabase) {
@@ -74,22 +85,25 @@ try {
     }
 
     @(
-        "MAC ANALYZER PRO - EVERYTHING PACKAGE"
+        "MAC ANALYZER PRO - FULL PACKAGE"
         ""
-        "1. No installation or Python: open MAC-Analyzer-Pro.html in a Chromium browser."
-        "2. Ready Windows version with backend: open Windows-Portable and run START_MAC_ANALYZER.cmd."
-        "3. Complete source code, tests, and tools: open Source."
+        "START: run START_HERE.cmd. It starts the backend without administrator rights and opens the browser."
+        "BROWSER-ONLY: open MAC-Analyzer-Pro.html. Browser data is stored in IndexedDB."
+        "WINDOWS-PORTABLE: ready runtime, backend, launcher, clean SQLite, and OUI database."
+        "SOURCE: complete source code, tests, tools, and developer HTML files. Do not start the program there."
         ""
-        "A clean initialized SQLite database and the OUI reference are included."
-        "User history, imports, exports, logs, secrets, and caches are not included."
+        "Why several HTML files: the root MAC-Analyzer-Pro.html is autonomous; Windows-Portable/index.html is served by the backend; Source/index.html is source code; Source/mac_analyzer_standalone.html is a legacy parity reference."
+        "This clean package includes an initialized SQLite database and the OUI reference."
+        "User history, imports, exports, logs, secrets, and caches are excluded."
     ) | Set-Content -LiteralPath (Join-Path $package "README_FIRST.txt") -Encoding UTF8
 
     $sourceInfo = Get-Content -LiteralPath (Join-Path $sourcePackage "PACKAGE_INFO.json") -Raw -Encoding UTF8 | ConvertFrom-Json
     $runtimeFiles = @(Get-ChildItem -LiteralPath (Join-Path $package "Windows-Portable") -Recurse -File -Force)
     [ordered]@{
-        package = "MAC Analyzer Pro everything package for Windows"
+        package = "MAC Analyzer Pro full clean package for Windows"
         version = $Version
         autonomousEntryPoint = "MAC-Analyzer-Pro.html"
+        primaryLauncher = "START_HERE.cmd"
         windowsLauncher = "Windows-Portable/START_MAC_ANALYZER.cmd"
         windowsBackend = "Windows-Portable/MACAnalyzerBackend.exe"
         sourceDirectory = "Source"
@@ -101,6 +115,10 @@ try {
         cleanDatabaseIntegrity = if ($databaseReport) { $databaseReport.integrity } else { $null }
         cleanDatabaseTables = if ($databaseReport) { $databaseReport.tables } else { 0 }
         userRuntimeDataIncluded = $false
+        packageLayout = [ordered]@{
+            "Windows-Portable" = "Ready application and backend"
+            "Source" = "Complete source code, tests, and tools"
+        }
         runtimeDataPolicy = "A clean initialized database is included; user history, imports, exports, logs, secrets, and caches are excluded."
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $package "PACKAGE_INFO.json") -Encoding UTF8
 
