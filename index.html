@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
   <meta name="application-build" content="2026.09.13.1">
-  <meta name="application-version" content="1.0.75">
+  <meta name="application-version" content="1.0.76">
   <link rel="stylesheet" href="styles.css?v=1064">
 </head>
 <body>
@@ -675,15 +675,6 @@
             <div class="mapping-list" id="taskList"></div>
           </div>
           <div class="tool-panel">
-            <h2>Уведомления</h2>
-            <label>Канал<select id="notificationChannel"><option value="email">Email</option><option value="telegram">Telegram</option><option value="slack">Slack</option></select></label>
-            <label>Конфигурация JSON<textarea id="notificationConfig" rows="5" placeholder='{"to":"admin@example.com"}'></textarea></label>
-            <label class="check"><input id="notificationEnabled" type="checkbox"> Включить уведомления</label>
-            <button class="button primary full" id="saveNotificationButton">Сохранить уведомления</button>
-            <button class="button secondary full" id="testNotificationButton">Тестировать канал</button>
-            <button class="button secondary full" id="testAnalysisNotificationButton">Тест события анализа</button>
-          </div>
-          <div class="tool-panel">
             <h2>API-обогащение</h2>
             <p class="muted">Обогащает неизвестных производителей через server-side API с rate-limit и кэшем.</p>
             <button class="button secondary full" id="openApiSettingsDialogButton">Настройка API</button>
@@ -977,7 +968,7 @@
   <script src="frontend/room-location.js?v=1058"></script>
   <script src="frontend/smartroom-ui.js?v=1064"></script>
   <script src="frontend/table-sorter.js?v=1055"></script>
-  <script src="app.js?v=1067"></script>
+  <script src="app.js?v=1076"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;
@@ -998,7 +989,7 @@
         analytics: ["Аналитика", "Дашборды и качество данных."],
         history: ["История", "Сохранённые снимки и изменения."],
         data: ["Данные", "Справочники, база данных и импорт."],
-        automation: ["Автоматизация", "Задачи, уведомления и API-обогащение."],
+        automation: ["Автоматизация", "Задачи планировщика и API-обогащение."],
         settings: ["Настройки", "Параметры, колонки и статус переноса."],
         guide: ["Руководство", "Назначение программы и рабочие сценарии для пользователя и инженера."]
       };

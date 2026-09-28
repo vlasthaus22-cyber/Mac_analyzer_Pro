@@ -52,7 +52,6 @@ def test_project_structure_and_maintenance_commands_exist():
         "backend/services/analytics/topology_service.py",
         "backend/services/integrations/__init__.py",
         "backend/services/integrations/external_api_service.py",
-        "backend/services/integrations/notification_service.py",
         "backend/services/integrations/scheduler_service.py",
         "backend/services/comparison/__init__.py",
         "backend/services/comparison/comparison_service.py",
@@ -167,7 +166,6 @@ def test_project_structure_and_maintenance_commands_exist():
         assert "backend.services.analytics" in adapter
     for integration_adapter in (
         "external_api_service.py",
-        "notification_service.py",
         "scheduler_service.py",
     ):
         adapter = (ROOT / integration_adapter).read_text(encoding="utf-8-sig")

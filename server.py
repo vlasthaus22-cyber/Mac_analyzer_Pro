@@ -19,7 +19,6 @@ import mimetypes
 import os
 import re
 import signal
-import smtplib
 import sqlite3
 import sys
 import threading
@@ -30,8 +29,6 @@ import urllib.request
 import uuid
 import base64
 from datetime import datetime, timedelta, timezone
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -71,7 +68,6 @@ from backend.services.analytics.topology_service import build_compact_topology, 
 from backend.services.analytics.cluster_service import build_clusters, export_clusters_csv
 from backend.services.analytics.device_analytics_service import build_device_analytics, build_model_analytics, export_device_analytics_html
 from backend.services.integrations.external_api_service import external_api_provider_options, external_enrich_devices, normalize_external_api_settings, test_mac_vendor_api
-from backend.services.integrations.notification_service import build_analysis_event, dispatch_notification_event
 from backend.services.integrations.scheduler_service import prepare_queue_files, queue_summary, run_file_queue
 from backend.services.analytics.data_quality_service import analyze_data_quality
 from backend.services.analytics.analytics_report_service import build_analytics_report, export_analytics_report_txt
@@ -1723,21 +1719,25 @@ def dashboard_upload_fleet_context(snapshots: Any) -> dict[str, Any]:
         if cached is not None:
             return cached
 
-    def load_devices(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
-        snapshot_id = as_text(snapshot.get("id") or snapshot.get("snapshotId"))
-        if not snapshot_id:
-            return []
-        with db_connection() as conn:
+    # Reuse one SQLite connection for the complete series.  Opening one
+    # connection per Final made Analytics progressively slower as snapshots
+    # accumulated.  Bodies are still decoded one at a time, so memory stays
+    # bounded by the largest individual Final rather than the whole history.
+    with db_connection() as conn:
+        def load_devices(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+            snapshot_id = as_text(snapshot.get("id") or snapshot.get("snapshotId"))
+            if not snapshot_id:
+                return []
             row = conn.execute("SELECT devices_json FROM snapshots WHERE id = ?", (snapshot_id,)).fetchone()
-        if row is None:
-            return []
-        try:
-            devices = json.loads(row["devices_json"] or "[]")
-        except (TypeError, json.JSONDecodeError):
-            return []
-        return devices if isinstance(devices, list) else []
+            if row is None:
+                return []
+            try:
+                devices = json.loads(row["devices_json"] or "[]")
+            except (TypeError, json.JSONDecodeError):
+                return []
+            return devices if isinstance(devices, list) else []
 
-    fleet = dashboard_upload_fleet(items, device_loader=load_devices)
+        fleet = dashboard_upload_fleet(items, device_loader=load_devices)
     with DASHBOARD_FLEET_CACHE_LOCK:
         DASHBOARD_FLEET_CACHE[cache_key] = fleet
         while len(DASHBOARD_FLEET_CACHE) > 4:
@@ -1774,7 +1774,7 @@ def dashboard_snapshot_context(
     client_items = [dict(item) for item in snapshots if isinstance(item, dict)] if isinstance(snapshots, list) else []
     current_id = as_text(current_snapshot_id)
     use_stored_items = bool(current_id) or any(bool(item.get("backendStored")) for item in client_items)
-    stored_items = snapshot_state_items(200) if use_stored_items else []
+    stored_items = snapshot_state_items(500) if use_stored_items else []
     merged: dict[str, dict[str, Any]] = {}
     anonymous: list[dict[str, Any]] = []
     for item in client_items:
@@ -1871,6 +1871,28 @@ def dashboard_snapshot_context(
         hydrated = hydrate_snapshot_devices(selected) if len(selected_ids) >= 2 else []
         hydrated.sort(key=lambda item: option_ids.index(as_text(item.get("id") or item.get("snapshotId"))))
     return options, hydrated, normalized_settings
+
+
+def dashboard_comparison_devices(
+    change_snapshots: Any,
+    settings: dict[str, Any] | None,
+    fallback: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]] | None:
+    """Return the device set represented by the selected comparison side.
+
+    Analytics previously compared A -> B while building cards and charts from
+    the globally active snapshot C.  That produced correct-looking controls
+    with unrelated totals and empty drill-downs after several enrichments.
+    """
+    comparison_id = as_text((settings or {}).get("comparisonSnapshotId"))
+    for item in change_snapshots if isinstance(change_snapshots, list) else []:
+        if not isinstance(item, dict):
+            continue
+        snapshot_id = as_text(item.get("id") or item.get("snapshotId"))
+        devices = item.get("devices")
+        if snapshot_id == comparison_id and isinstance(devices, list):
+            return devices
+    return fallback if isinstance(fallback, list) else None
 
 
 def open_snapshot_payload(snapshot_id: str, snapshots: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -4932,11 +4954,27 @@ def statistics_summary(limit: int = 100, source: str = "") -> dict[str, Any]:
 
     trends = []
     previous_macs: set[str] = set()
-    all_devices: list[dict[str, Any]] = []
+    all_macs: set[str] = set()
+    distribution_counts: dict[str, dict[str, int]] = {"vendor": {}, "model": {}, "room": {}}
     for row in snapshot_rows:
-        devices = json.loads(row["devices_json"] or "[]")
-        macs = {as_text(device.get("mac")) for device in devices if as_text(device.get("mac"))}
-        all_devices.extend(devices)
+        try:
+            devices = json.loads(row["devices_json"] or "[]")
+        except (TypeError, json.JSONDecodeError):
+            devices = []
+        if not isinstance(devices, list):
+            devices = []
+        macs = {
+            as_text(device.get("mac") or device.get("macFormatted"))
+            for device in devices
+            if isinstance(device, dict) and as_text(device.get("mac") or device.get("macFormatted"))
+        }
+        all_macs.update(macs)
+        for device in devices:
+            if not isinstance(device, dict):
+                continue
+            for field in distribution_counts:
+                value = as_text(device.get(field)) or "Unknown"
+                distribution_counts[field][value] = distribution_counts[field].get(value, 0) + 1
         trends.append({
             "id": row["id"],
             "name": row["name"],
@@ -4953,10 +4991,7 @@ def statistics_summary(limit: int = 100, source: str = "") -> dict[str, Any]:
         previous_macs = macs
 
     def grouped(field: str) -> list[dict[str, Any]]:
-        counts: dict[str, int] = {}
-        for device in all_devices:
-            value = as_text(device.get(field)) or "Unknown"
-            counts[value] = counts.get(value, 0) + 1
+        counts = distribution_counts[field]
         return [{"name": name, "count": count} for name, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:20]]
 
     operation_totals: dict[str, dict[str, Any]] = {}
@@ -4980,7 +5015,7 @@ def statistics_summary(limit: int = 100, source: str = "") -> dict[str, Any]:
         "summary": {
             "snapshots": len(snapshot_rows),
             "devices": sum(row["device_count"] for row in snapshot_rows),
-            "uniqueMacs": len({as_text(device.get("mac")) for device in all_devices if as_text(device.get("mac"))}),
+            "uniqueMacs": len(all_macs),
             "metrics": len(metric_rows),
         },
         "trends": trends,
@@ -5203,9 +5238,8 @@ def topology_nodes_html(nodes: list[dict[str, Any]]) -> str:
 
 def statistics_panel_payload(source: str = "") -> dict[str, Any]:
     summary_data = statistics_summary(limit=100, source=source)
-    snapshot_history = statistics_snapshot_history(source=source, limit=25)
     performance_data = performance_statistics(limit=200)
-    temporal_data = temporal_statistics(period="day", source=source, limit=365)
+    all_trends = summary_data.get("trends", [])
 
     trends = summary_data.get("trends", [])[-5:]
     trend_max = max((int(item.get("deviceCount") or 0) for item in trends), default=1)
@@ -5231,7 +5265,18 @@ def statistics_panel_payload(source: str = "") -> dict[str, Any]:
             "detail": f"{int(item.get('count') or 0)} runs · avg {item.get('avgMs') or 0} ms · max {item.get('maxMs') or 0} ms",
         })
 
-    periods = (temporal_data.get("periods") or [])[-8:]
+    # Reuse the exact per-snapshot pass above instead of decoding all snapshot
+    # JSON a second and third time for the side panels.
+    period_buckets: dict[str, dict[str, Any]] = {}
+    for item in all_trends:
+        period = as_text(item.get("createdAt"))[:10] or "unknown"
+        bucket = period_buckets.setdefault(period, {"period": period, "snapshotCount": 0, "maxDevices": 0, "uniqueMacs": 0, "added": 0, "removed": 0})
+        bucket["snapshotCount"] += 1
+        bucket["maxDevices"] = max(bucket["maxDevices"], int(item.get("deviceCount") or 0))
+        bucket["uniqueMacs"] = max(bucket["uniqueMacs"], int(item.get("uniqueMacs") or 0))
+        bucket["added"] += int(item.get("added") or 0)
+        bucket["removed"] += int(item.get("removed") or 0)
+    periods = [period_buckets[key] for key in sorted(period_buckets)][-8:]
     period_max = max((int(item.get("maxDevices") or item.get("deviceTotal") or 0) for item in periods), default=1)
     temporal_rows = []
     for item in periods:
@@ -5244,7 +5289,12 @@ def statistics_panel_payload(source: str = "") -> dict[str, Any]:
             "percent": round(devices / max(1, period_max) * 100),
         })
 
-    history_summary = snapshot_history.get("summary", {})
+    history_summary = {
+        "snapshots": len(all_trends),
+        "devices": sum(int(item.get("deviceCount") or 0) for item in all_trends),
+        "uniqueMacs": int(summary_data.get("summary", {}).get("uniqueMacs") or 0),
+        "sources": len({as_text(item.get("source")) for item in all_trends if as_text(item.get("source"))}),
+    }
     performance_summary = performance_data.get("summary", {})
     statistics_detail = (
         f"{history_summary.get('snapshots', 0)} recent snapshots В· "
@@ -5260,7 +5310,12 @@ def statistics_panel_payload(source: str = "") -> dict[str, Any]:
         ),
         "trendRows": trend_rows,
         "performanceRows": performance_rows,
-        "temporalSummary": temporal_data.get("summary", {}),
+        "temporalSummary": {
+            "periods": len(period_buckets),
+            "snapshots": len(all_trends),
+            "uniqueMacs": history_summary["uniqueMacs"],
+            "deviceTotal": history_summary["devices"],
+        },
         "temporalRows": temporal_rows,
         "statisticsHtml": statistics_panel_html(summary_data.get("summary", {}), statistics_detail, trend_rows, performance_rows),
         "temporalHtml": temporal_statistics_html(temporal_rows),
@@ -5553,81 +5608,6 @@ def external_lookup_client(mac: str, settings: dict[str, Any]) -> Optional[str]:
         return None
 
 
-def notification_channels() -> list[dict[str, Any]]:
-    with db_connection() as conn:
-        rows = conn.execute("SELECT channel, config_json, enabled, updated_at FROM notification_settings ORDER BY channel").fetchall()
-    channels = []
-    for row in rows:
-        try:
-            config = json.loads(row["config_json"] or "{}")
-        except json.JSONDecodeError:
-            config = {}
-        channels.append({"channel": row["channel"], "config": config, "enabled": bool(row["enabled"]), "updatedAt": row["updated_at"]})
-    return channels
-
-
-def notification_config_from_payload(payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    channel = as_text(payload.get("channel")).strip().lower() or "email"
-    if channel not in {"email", "telegram", "slack"}:
-        raise ValueError("Поддерживаются каналы email, telegram и slack")
-    if isinstance(payload.get("config"), dict):
-        return channel, payload["config"]
-    if "configText" in payload:
-        config_text = as_text(payload.get("configText")).strip()
-        if not config_text:
-            return channel, {}
-        try:
-            config = json.loads(config_text)
-        except json.JSONDecodeError as error:
-            raise ValueError(f"Invalid notification config JSON: {error.msg}") from error
-        if not isinstance(config, dict):
-            raise ValueError("notification config must be a JSON object")
-        return channel, config
-    return channel, {key: value for key, value in payload.items() if key not in {"channel", "enabled"}}
-
-
-def send_notification_message(channel: str, config: dict[str, Any], event: dict[str, Any]) -> None:
-    subject = as_text(event.get("subject")) or "MAC Analyzer notification"
-    text = as_text(event.get("text")) or subject
-    if channel == "email":
-        host, sender, password, recipient = (as_text(config.get(name)) for name in ("smtpHost", "from", "password", "to"))
-        port = int(config.get("smtpPort", 587))
-        message = MIMEMultipart()
-        message["From"], message["To"], message["Subject"] = sender, recipient, subject
-        message.attach(MIMEText(text, "plain", "utf-8"))
-        with smtplib.SMTP(host, port, timeout=15) as smtp:
-            smtp.starttls()
-            smtp.login(sender, password)
-            smtp.send_message(message)
-        return
-    if channel == "telegram":
-        body = json.dumps({"chat_id": as_text(config.get("chatId")), "text": text}).encode("utf-8")
-        request = urllib.request.Request(
-            f"https://api.telegram.org/bot{as_text(config.get('botToken'))}/sendMessage",
-            data=body,
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(request, timeout=15):
-            return
-    if channel == "slack":
-        body = json.dumps({"text": text}).encode("utf-8")
-        request = urllib.request.Request(
-            as_text(config.get("webhookUrl")),
-            data=body,
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(request, timeout=15):
-            return
-    raise ValueError("Unsupported notification channel")
-
-
-def notify_analysis_completed(devices: list[dict[str, Any]], invalid: list[Any], source: str) -> dict[str, Any]:
-    event = build_analysis_event(devices, invalid, source)
-    result = dispatch_notification_event(event, notification_channels(), send_notification_message)
-    log_action("Analysis notification event", json.dumps({"sent": result["sent"], "errors": result["errors"], "skipped": result["skipped"]}, ensure_ascii=False))
-    return result
-
-
 def task_queue(task_id: str = "") -> list[dict[str, Any]]:
     sql = "SELECT * FROM task_file_queue"
     params: list[Any] = []
@@ -5803,7 +5783,6 @@ def services_panel_payload() -> dict[str, Any]:
     return {
         "ip": ip_payload,
         "tasks": task_payload,
-        "notifications": {"channels": notification_channels()},
         "logs": log_payload,
         "metrics": metric_payload,
         "database": database_payload,
@@ -6277,11 +6256,6 @@ def process_single_file_analysis(
             source=filename,
             created_at=created_at,
         )
-    if notify:
-        try:
-            notify_analysis_completed(valid, invalid, filename)
-        except Exception as error:  # noqa: BLE001
-            log_action("Analysis notification failed", str(error))
     duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
     save_performance_metric("single_file_analyze", duration_ms, f"source={filename}, devices={len(valid)}, invalid={len(invalid)}")
     log_action("Single file analysis", f"source={filename}, devices={len(valid)}, invalid={len(invalid)}, duration_ms={duration_ms}")
@@ -6704,8 +6678,6 @@ class AppHandler(BaseHTTPRequestHandler):
             view_name = parsed.path.rsplit("/", 1)[-1]
             preferences = load_column_preferences(view_name)
             self.json_response({"columns": preferences["visible"], "preferences": preferences})
-        elif parsed.path == "/api/notifications":
-            self.json_response({"channels": notification_channels()})
         elif parsed.path == "/api/settings":
             keys = []
             for raw_value in query.get("key", []):
@@ -7069,11 +7041,6 @@ class AppHandler(BaseHTTPRequestHandler):
                         save_history(valid, source, source_created_at, ddio_overlay, switch_ip_changes)
                     except (sqlite3.Error, ValueError, TypeError) as error:
                         log_action("Legacy MAC history synchronization failed", str(error))
-                if payload.get("notify", True):
-                    try:
-                        notify_analysis_completed(valid, invalid, source)
-                    except Exception as error:  # noqa: BLE001
-                        log_action("Analysis notification failed", str(error))
                 progress_payload = {
                     **merged["progress"], "fields": enrichment_field_summary(fields),
                     "status": "completed", "stage": "completed", "percent": 100,
@@ -7138,11 +7105,6 @@ class AppHandler(BaseHTTPRequestHandler):
                 source_created_at = as_text(payload.get("createdAt"))
                 if payload.get("saveHistory", True):
                     save_history(valid, source, source_created_at)
-                if payload.get("notify", True):
-                    try:
-                        notify_analysis_completed(valid, invalid, source)
-                    except Exception as error:  # noqa: BLE001
-                        log_action("Analysis notification failed", str(error))
                 duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
                 save_performance_metric("analyze", duration_ms, f"source={source}, devices={len(valid)}, invalid={len(invalid)}")
                 log_action("Анализ завершён", f"source={source}, devices={len(valid)}, duration_ms={duration_ms}")
@@ -7685,12 +7647,9 @@ class AppHandler(BaseHTTPRequestHandler):
                     as_text(payload.get("snapshotId") or payload.get("resultSnapshotId")),
                     settings,
                 )
-                current_snapshot_id = as_text(payload.get("snapshotId") or payload.get("resultSnapshotId"))
-                current_snapshot = next((
-                    item for item in change_snapshots
-                    if as_text(item.get("id") or item.get("snapshotId")) == current_snapshot_id
-                ), None)
-                devices = current_snapshot.get("devices", []) if current_snapshot else resolve_payload_devices(payload)
+                devices = dashboard_comparison_devices(change_snapshots, settings)
+                if devices is None:
+                    devices = resolve_payload_devices(payload)
                 if not isinstance(devices, list):
                     self.error_response("devices must be an array")
                     return
@@ -7807,11 +7766,6 @@ class AppHandler(BaseHTTPRequestHandler):
                 result = external_enrich_devices(devices, settings, api_cache_get, api_cache_set, external_lookup_client, [as_text(mac) for mac in selected_macs])
                 if payload.get("saveHistory"):
                     save_history([item for item in result["devices"] if item.get("valid", True)], "external-api-enrichment", as_text(payload.get("createdAt")))
-                if payload.get("notify"):
-                    try:
-                        notify_analysis_completed([item for item in result["devices"] if item.get("valid", True)], [], "external-api-enrichment")
-                    except Exception as error:  # noqa: BLE001
-                        log_action("Analysis notification failed", str(error))
                 if payload.get("compactResult") is True:
                     source_created_at = as_text(payload.get("createdAt")) or utc_now()
                     snapshot = save_statistics_snapshot(
@@ -7878,32 +7832,6 @@ class AppHandler(BaseHTTPRequestHandler):
                         (view_name, json.dumps(columns, ensure_ascii=False), utc_now()),
                     )
                 self.json_response({"ok": True})
-            elif parsed.path == "/api/notifications":
-                if not self.require_engineering("write:settings"):
-                    return
-                channel = as_text(payload.get("channel")).strip().lower()
-                if channel not in {"email", "telegram", "slack"}:
-                    self.error_response("Поддерживаются каналы email, telegram и slack")
-                    return
-                if "configText" in payload and not isinstance(payload.get("config"), dict):
-                    config_text = as_text(payload.get("configText")).strip()
-                    try:
-                        config = json.loads(config_text or "{}")
-                    except json.JSONDecodeError as error:
-                        self.error_response(f"Invalid notification config JSON: {error.msg}")
-                        return
-                else:
-                    config = payload.get("config", {})
-                if not isinstance(config, dict):
-                    self.error_response("config должен быть объектом")
-                    return
-                with db_connection() as conn:
-                    conn.execute(
-                        "INSERT INTO notification_settings (channel, config_json, enabled, updated_at) VALUES (?, ?, ?, ?) "
-                        "ON CONFLICT(channel) DO UPDATE SET config_json=excluded.config_json, enabled=excluded.enabled, updated_at=excluded.updated_at",
-                        (channel, json.dumps(config), int(bool(payload.get("enabled"))), utc_now()),
-                    )
-                self.json_response({"ok": True, "channel": channel, "config": config, "enabled": bool(payload.get("enabled"))})
             elif parsed.path == "/api/settings":
                 if not self.require_engineering("write:settings"):
                     return
@@ -7949,30 +7877,6 @@ class AppHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/engineering/logout":
                 revoked = revoke_engineering_session(self.engineering_token())
                 self.json_response({"ok": True, "revoked": revoked})
-            elif parsed.path == "/api/notifications/test":
-                try:
-                    channel, config = notification_config_from_payload(payload)
-                except ValueError as error:
-                    self.error_response(str(error))
-                    return
-                event = {"type": "test", "subject": "MAC Analyzer Pro Web: test", "text": "MAC Analyzer Pro Web: test notification"}
-                result = dispatch_notification_event(event, [{"channel": channel, "config": config, "enabled": True}], send_notification_message)
-                if result["errors"]:
-                    self.error_response("; ".join("; ".join(item.get("errors", [])) for item in result["results"] if item["status"] == "error"), HTTPStatus.BAD_GATEWAY)
-                    return
-                self.json_response({"ok": True, **result})
-            elif parsed.path == "/api/notifications/event":
-                event_type = as_text(payload.get("type")) or "analysis_completed"
-                if event_type != "analysis_completed":
-                    self.error_response("Unsupported notification event type")
-                    return
-                devices = resolve_payload_devices(payload)
-                invalid = payload.get("invalid", [])
-                if not isinstance(devices, list):
-                    devices = []
-                if not isinstance(invalid, list):
-                    invalid = []
-                self.json_response(notify_analysis_completed(devices, invalid, as_text(payload.get("source"))))
             else:
                 self.error_response("Неизвестный API-метод", HTTPStatus.NOT_FOUND)
         except Exception as error:  # noqa: BLE001
@@ -8072,77 +7976,6 @@ class AppHandler(BaseHTTPRequestHandler):
             self.json_response({"ok": True, "job": cancel_enrichment_job(job_id)})
         else:
             self.error_response("Неизвестный API-метод", HTTPStatus.NOT_FOUND)
-
-    def send_test_notification(self, payload: dict[str, Any]) -> None:
-        channel = as_text(payload.get("channel", "email"))
-        if channel == "telegram":
-            self.send_test_telegram(payload)
-            return
-        if channel == "slack":
-            self.send_test_slack(payload)
-            return
-        self.send_test_email(payload)
-
-    def send_test_email(self, payload: dict[str, Any]) -> None:
-        host, sender, password, recipient = (as_text(payload.get(name)) for name in ("smtpHost", "from", "password", "to"))
-        port = int(payload.get("smtpPort", 587))
-        if not all((host, sender, password, recipient)):
-            self.error_response("Для теста SMTP укажите сервер, отправителя, пароль и получателя")
-            return
-        message = MIMEMultipart()
-        message["From"], message["To"], message["Subject"] = sender, recipient, "MAC Analyzer Pro Web: тест"
-        message.attach(MIMEText("SMTP-служба MAC Analyzer Pro Web успешно настроена.", "plain", "utf-8"))
-        try:
-            with smtplib.SMTP(host, port, timeout=15) as smtp:
-                smtp.starttls()
-                smtp.login(sender, password)
-                smtp.send_message(message)
-        except (OSError, smtplib.SMTPException) as error:
-            self.error_response("Не удалось отправить письмо: " + str(error), HTTPStatus.BAD_GATEWAY)
-            return
-        self.json_response({"ok": True})
-
-    def send_test_telegram(self, payload: dict[str, Any]) -> None:
-        token, chat_id = as_text(payload.get("botToken")), as_text(payload.get("chatId"))
-        if not token or not chat_id:
-            self.error_response("Для Telegram укажите botToken и chatId")
-            return
-        body = json.dumps({"chat_id": chat_id, "text": "MAC Analyzer Pro Web: тестовое сообщение"}).encode("utf-8")
-        request = urllib.request.Request(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            data=body,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=15) as response:
-                if response.status != 200:
-                    raise urllib.error.URLError(f"HTTP {response.status}")
-        except (urllib.error.URLError, TimeoutError) as error:
-            self.error_response("Не удалось отправить Telegram: " + str(error), HTTPStatus.BAD_GATEWAY)
-            return
-        self.json_response({"ok": True})
-
-    def send_test_slack(self, payload: dict[str, Any]) -> None:
-        webhook_url = as_text(payload.get("webhookUrl"))
-        if not webhook_url.startswith("https://hooks.slack.com/"):
-            self.error_response("Укажите корректный Slack webhookUrl")
-            return
-        request = urllib.request.Request(
-            webhook_url,
-            data=json.dumps({"text": "MAC Analyzer Pro Web: тестовое сообщение"}).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=15) as response:
-                if response.status not in {200, 204}:
-                    raise urllib.error.URLError(f"HTTP {response.status}")
-        except (urllib.error.URLError, TimeoutError) as error:
-            self.error_response("Не удалось отправить Slack: " + str(error), HTTPStatus.BAD_GATEWAY)
-            return
-        self.json_response({"ok": True})
-
 
 def main() -> None:
     init_database()

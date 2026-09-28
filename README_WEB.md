@@ -130,7 +130,6 @@ PowerShell, Python и неизвестные исполняемые файлы, 
 - GET /api/history?mac=001122334455
 - GET /api/lookup?mac=001122334455
 - GET, POST, DELETE /api/tasks
-- POST /api/notifications/test
 - GET /api/legacy/import/status
 - POST /api/legacy/import
 - GET /api/parity/status

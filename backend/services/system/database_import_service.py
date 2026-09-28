@@ -20,7 +20,6 @@ IMPORTABLE_TABLES = (
     "ip_address_mappings",
     "smartroom_room_mappings",
     "column_preferences",
-    "notification_settings",
     "api_cache",
     "data_quality_reports",
     "scheduled_tasks",

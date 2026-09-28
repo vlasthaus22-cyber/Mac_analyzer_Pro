@@ -5,12 +5,12 @@ def test_services_panel_payload_aggregates_backend_services():
     init_database()
     panel = services_panel_payload()
 
-    for key in ("ip", "tasks", "notifications", "logs", "metrics", "database", "autosaves", "signals", "legacy"):
+    for key in ("ip", "tasks", "logs", "metrics", "database", "autosaves", "signals", "legacy"):
         assert key in panel
     assert "mappings" in panel["ip"]
     assert "statistics" in panel["ip"]
     assert "tasks" in panel["tasks"]
-    assert "channels" in panel["notifications"]
+    assert "notifications" not in panel
     assert "logs" in panel["logs"]
     assert "metrics" in panel["metrics"]
     assert "summary" in panel["database"]

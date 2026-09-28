@@ -594,6 +594,8 @@
   let batchPlan=null,batchRunStopRequested=false,batchRunActive=false,batchMappingReviewContext=null;
   const batchMappingOverrides=new Map();
   const batchStagedSourceIds=new Set();
+  const batchPreparedFileCache=new Map();
+  function rememberPreparedBatchFile(key,record){if(!key||!record?.fileToken)return;batchPreparedFileCache.delete(key);batchPreparedFileCache.set(key,record);while(batchPreparedFileCache.size>8)batchPreparedFileCache.delete(batchPreparedFileCache.keys().next().value);}
   const sourceFilesById = new Map();
   const workspacePreviewDataRows = 100;
   function releaseTransientAnalysisMemory(){
@@ -920,6 +922,7 @@
     return supported.length?`${folder} · файлов: ${supported.length}`:"Поддерживаемых файлов нет";
   }
   function setBatchFolderFiles(role,inputFiles){
+    batchPreparedFileCache.clear();
     batchFolderFiles[role]=Array.from(inputFiles||[]).filter(BatchEnrichment.isSupportedFile);
     const status=$(role==="primary"?"#batchPrimaryFolderStatus":role==="smartroom"?"#batchSmartroomFolderStatus":"#batchDdioFolderStatus");
     if(status)status.textContent=batchFolderLabel(batchFolderFiles[role]);
@@ -997,7 +1000,7 @@
     if(!paths.primary){toast("Укажите путь к папке основных файлов.");return null;}
     const token=UiFeedback?.start("Сканирование папок Python…"),button=$("#batchScanPathsButton");if(button)button.disabled=true;
     try{
-      const result=await api("/batch/folders/scan",{method:"POST",body:JSON.stringify({paths})});
+      batchPreparedFileCache.clear();const result=await api("/batch/folders/scan",{method:"POST",body:JSON.stringify({paths})});
       state.batchSettings={...state.batchSettings,pairingMode:$("#batchPairingMode")?.value||"nearest",toleranceHours:Number($("#batchToleranceHours")?.value??24),enrichmentStrategy:EnrichmentStrategy.normalize($("#batchEnrichmentStrategy")?.value||"NO_EXPANSION")};save({immediate:true});
       batchPlan=BatchEnrichment.buildPlan(result.files||[],{mode:state.batchSettings.pairingMode,toleranceHours:state.batchSettings.toleranceHours});
       batchPlan.groups.forEach((group)=>{group.status="pending";group.error="";});
@@ -1014,13 +1017,16 @@
   }
   async function batchFileRecord(item,role,onProgress=()=>{}){
     if(!item)throw new Error(`Файл ${role} не назначен`);
+    const cacheKey=role==="primary"?"":`${role}|${String(item.id||item.backendToken||item.sourceStorageId||item.name)}`;
+    const cloneRecord=(record)=>({...record,headers:(record.headers||[]).map((header)=>({...header})),mapping:{...(record.mapping||{})},rows:(record.rows||[]).map((row)=>Array.isArray(row)?row.slice():row),columnDetection:{...(record.columnDetection||{})},mappingSummary:{...(record.mappingSummary||{})}});
+    if(cacheKey&&backendAvailable&&batchPreparedFileCache.has(cacheKey)){onProgress(100,"Повторно использован подготовленный "+item.name);return cloneRecord(batchPreparedFileCache.get(cacheKey));}
     if(item.backendToken){
       if(!backendAvailable)throw new Error(`Backend недоступен для файла «${item.name}»; повторно просканируйте папки после запуска Python`);
       onProgress(10,"Backend читает "+item.name);
       const data=await api("/batch/folders/import",{method:"POST",body:JSON.stringify({token:item.backendToken})}),headers=(data.headers||[]).map((name,index)=>({name:String(name||headerName(index)),index}));
       const record={id:crypto.randomUUID(),name:item.name,sheet:data.sheet||"",rows:[data.headers||[],...(data.rows||[])],headers,mapping:{...defaultColumnMapping(),...(data.mapping||{})},createdAt:item.date,fileDateSource:item.dateSource,sourceBytes:Number(item.size||0),fileToken:data.fileToken||"",rowCount:Number(data.rowCount||0),rowsComplete:false,role,columnDetection:data.detection||{}};
       record.mapping=role==="ddio"?ColumnPresets.mappingForRole(record.headers,"ddio"):ColumnPresets.mappingForRole(record.headers,role,record.mapping);
-      localMappingSummary(record);onProgress(100,"Файл прочитан backend");return record;
+      localMappingSummary(record);rememberPreparedBatchFile(cacheKey,cloneRecord(record));onProgress(100,"Файл прочитан backend");return record;
     }
     const sourceFile=await restoreBatchSourceFile(item);
     let record=null;
@@ -1030,11 +1036,12 @@
     record.mapping=role==="ddio"?ColumnPresets.mappingForRole(record.headers,"ddio"):ColumnPresets.mappingForRole(record.headers,role,record.mapping||localAutoMapping(record.headers,role));
     sourceFilesById.set(record.id,sourceFile);record.sourceStorageId=item.sourceStorageId||sourceFileStorageId(sourceFile);
     if(!item.sourceStorageId)await rememberSourceFile(record,sourceFile);
+    if(cacheKey&&backendAvailable)rememberPreparedBatchFile(cacheKey,cloneRecord(record));
     return record;
   }
   async function prepareBatchGroup(group,groupIndex,totalGroups){
     await releaseRetainedWorkspaceRows();await releaseTransientAnalysisMemory();
-    const oldTokens=analysisFileRecords().map((file)=>file.fileToken).filter(Boolean);
+    const retainedTokens=new Set([...batchPreparedFileCache.values()].map((file)=>file.fileToken).filter(Boolean)),oldTokens=analysisFileRecords().map((file)=>file.fileToken).filter((token)=>token&&!retainedTokens.has(token));
     if(oldTokens.length&&backendAvailable)await api("/workspace/cache/discard",{method:"POST",body:JSON.stringify({tokens:oldTokens})}).catch(()=>{});
     state.files=[];state.ddioFile=null;state.ddioOverlay={};state.ddioSummary=null;state.importErrors=[];
     const progress=(value,detail)=>{$("#batchEnrichmentSummary").dataset.detail=detail;const cycle=Array.from(document.querySelectorAll("[data-batch-group]")).find((element)=>element.dataset.batchGroup===String(group.id));if(cycle)cycle.dataset.progress=String(processPercent(value));};
@@ -2424,7 +2431,7 @@
   function renderAnalyticsReport(report,source="local"){const preview=$("#analyticsReportPreview"),status=$("#analyticsReportStatus"),occupancy=report?.roomOccupancy||{};if(preview)preview.textContent=report?.reportText||"Нет данных";if(status)status.textContent=`${report?.total||0} устройств · ${source==="backend"?"расчёт backend":"локальный расчёт"}`;if($("#roomOccupancyStatus"))$("#roomOccupancyStatus").textContent=`Распределено ${Number(occupancy.assignedDevices||0).toLocaleString("ru-RU")} из ${Number(report?.total||0).toLocaleString("ru-RU")} (${Number(occupancy.assignedPercent||0).toFixed(1)}%) · без помещения ${Number(occupancy.unassignedDevices||0).toLocaleString("ru-RU")} · среднее ${Number(occupancy.averageDevicesPerRoom||0).toFixed(1)}`;if($("#roomOccupancyChart"))$("#roomOccupancyChart").innerHTML=localChartHtml((occupancy.rooms||[]).slice(0,20).map((item)=>[`${item.label} · ${Number(item.percentOfAssigned||0).toFixed(1)}%`,item.count]),"Нет данных о помещениях.");return report;}
   async function refreshAnalyticsReport(preferSharedPanel=false){
     if(browserDashboardCache?.report)return renderAnalyticsReport(browserDashboardCache.report,"local");
-    const local=buildLocalAnalyticsReport(state.devices);renderAnalyticsReport(local,"local");
+    const local=buildLocalAnalyticsReport(state.devices),durable=Boolean(state.resultBrowserSnapshotId||state.resultSnapshotId);if(!durable)renderAnalyticsReport(local,"local");else if($("#analyticsReportStatus"))$("#analyticsReportStatus").textContent="Загрузка полного финального результата…";
     if(browserOnlyMode&&state.resultBrowserSnapshotId){
       try{const cache=await loadBrowserDashboardCache(dashboardSettings());if(cache?.report)return renderAnalyticsReport(cache.report,"local");}catch{}
       return local;
@@ -2469,9 +2476,9 @@
   }
   function renderAnalysisDashboard(){
     const root=$("#analysisDashboardPanel");if(!root)return;
-    const immediate=analysisDashboardLocalPayload(state.devices,state.resultSummary);renderAnalysisDashboardPayload(immediate,currentDeviceCount()?"Обновление полной статистики…":"Запустите анализ, чтобы построить dashboard.");
     const key=[state.resultBrowserSnapshotId||"",state.resultSnapshotId||"",currentDeviceCount(),state.lastAnalysis||""].join("|");
-    if(state.resultBrowserSnapshotId||state.resultSnapshotId)void refreshAnalysisDashboard(key);else{$("#analysisDashboardStatus").textContent=currentDeviceCount()?"Dashboard построен по текущему полному результату.":"Запустите анализ, чтобы построить dashboard.";}
+    if(state.resultBrowserSnapshotId||state.resultSnapshotId){if(analysisDashboardCache?.key===key)renderAnalysisDashboardPayload(analysisDashboardCache.payload,"Dashboard построен по полному финальному результату.");else if($("#analysisDashboardStatus"))$("#analysisDashboardStatus").textContent="Загрузка полной статистики Final…";void refreshAnalysisDashboard(key);return;}
+    const immediate=analysisDashboardLocalPayload(state.devices,state.resultSummary);renderAnalysisDashboardPayload(immediate,currentDeviceCount()?"Dashboard построен по текущему полному результату.":"Запустите анализ, чтобы построить dashboard.");
   }
   async function renderPrimaryCharts(){
     try{
@@ -2524,10 +2531,20 @@
     $("#dashboardRoomFilter").innerHTML=filterOptionsHtml.rooms||'<option value="">Все помещения</option>';
     applyDashboardSettings({...settings,vendor:$("#dashboardVendorFilter").value,room:$("#dashboardRoomFilter").value});
   }
-  function renderLocalDashboardFilterOptions(settings=dashboardSettings()){const vendorOptions=['<option value="">Все производители</option>',...localTally(state.devices,"vendor",200).map(([value])=>`<option value="${esc(value)}" ${value===settings.vendor?"selected":""}>${esc(value)}</option>`)].join(""),roomOptions=['<option value="">Все помещения</option>',...localTally(state.devices,"room",200).map(([value])=>`<option value="${esc(value)}" ${value===settings.room?"selected":""}>${esc(value)}</option>`)].join("");$("#dashboardVendorFilter").innerHTML=vendorOptions;$("#dashboardRoomFilter").innerHTML=roomOptions;applyDashboardSettings(settings);}
-  function dashboardStatusContext(){
-    const current=new Map((state.devices||[]).map((device)=>[normalize(device.mac||device.macFormatted),device]).filter(([mac])=>mac));
+  function renderLocalDashboardFilterOptions(settings=dashboardSettings(),devices=state.devices){const vendorOptions=['<option value="">Все производители</option>',...localTally(devices,"vendor",200).map(([value])=>`<option value="${esc(value)}" ${value===settings.vendor?"selected":""}>${esc(value)}</option>`)].join(""),roomOptions=['<option value="">Все помещения</option>',...localTally(devices,"room",200).map(([value])=>`<option value="${esc(value)}" ${value===settings.room?"selected":""}>${esc(value)}</option>`)].join("");$("#dashboardVendorFilter").innerHTML=vendorOptions;$("#dashboardRoomFilter").innerHTML=roomOptions;applyDashboardSettings(settings);}
+  function localDashboardComparisonDevices(settings=dashboardSettings()){
+    const snapshots=finalDashboardSnapshots(),pair=dashboardSnapshotPair(settings,dashboardSnapshotOptions()),target=snapshots.find((snapshot,index)=>dashboardSnapshotId(snapshot,index)===pair.comparisonId);
+    return Array.isArray(target?.devices)&&target.devices.length?target.devices:state.devices||[];
+  }
+  function dashboardStatusContext(devices=state.devices,analysis=null){
+    const identity=(device)=>dashboardDeviceIdentity(device)||normalize(device?.mac||device?.macFormatted),current=new Map((devices||[]).map((device)=>[identity(device),device]).filter(([key])=>key));
     if(!current.size)return{all:[],changed:[],missing:[],unchanged:[]};
+    if(analysis?.changes){
+      const modified=new Set(),added=new Set(),missingDevices=[];
+      for(const item of analysis.changes){const key=dashboardChangeIdentity(item);if(!key)continue;if(item.type==="modified")modified.add(key);else if(item.type==="added")added.add(key);else if(item.type==="removed")missingDevices.push({...item.beforeDevice,mac:item.beforeDevice?.mac||item.mac,macFormatted:item.beforeDevice?.macFormatted||formatMac(item.mac),dashboardStatus:"missing"});}
+      const changedDevices=[],unchangedDevices=[];current.forEach((device,key)=>{const row={...device,dashboardStatus:modified.has(key)?"changed":"unchanged"};if(modified.has(key))changedDevices.push(row);else if(!added.has(key))unchangedDevices.push(row);});
+      return{all:[...current.values()],changed:changedDevices,missing:missingDevices,unchanged:unchangedDevices};
+    }
     const changed=new Set((state.movementHistory||[]).map((item)=>normalize(item.mac||item.macFormatted)).filter((mac)=>mac&&current.has(mac)));
     const latestHistory=new Map();
     (state.snapshots||[]).forEach((snapshot)=>(snapshot.devices||[]).forEach((device)=>{const mac=normalize(device.mac||device.macFormatted);if(mac&&!latestHistory.has(mac))latestHistory.set(mac,device);}));
@@ -2674,13 +2691,13 @@
   }
   async function loadBrowserDashboardCache(settings=dashboardSettings()){
     if(!state.resultBrowserSnapshotId||!BrowserSnapshots?.aggregate)return null;
-    const options=dashboardSnapshotOptions(),currentId=state.resultBrowserSnapshotId,pair=dashboardSnapshotPair(settings,options),baselineId=pair.baselineId,comparisonId=pair.comparisonId;
+    const options=dashboardSnapshotOptions(),activeId=state.resultBrowserSnapshotId,pair=dashboardSnapshotPair(settings,options),baselineId=pair.baselineId,comparisonId=pair.comparisonId,targetId=comparisonId||activeId;
     const effectiveSettings={...settings,baselineSnapshotId:baselineId,comparisonSnapshotId:comparisonId,changeDateFrom:pair.dateFrom,changeDateTo:pair.dateTo};
-    const fleetCacheKey=JSON.stringify({snapshots:options.map((item)=>[item.id,item.date,item.savedAt]),query:settings.query,vendor:settings.vendor,room:settings.room,showUnknown:settings.showUnknown}),cacheKey=JSON.stringify({fleetCacheKey,currentId,baselineId,comparisonId,mode:settings.changeMode,dateFrom:pair.dateFrom,dateTo:pair.dateTo});
+    const fleetCacheKey=JSON.stringify({snapshots:options.map((item)=>[item.id,item.date,item.savedAt]),query:settings.query,vendor:settings.vendor,room:settings.room,showUnknown:settings.showUnknown}),cacheKey=JSON.stringify({fleetCacheKey,targetId,baselineId,comparisonId,mode:settings.changeMode,dateFrom:pair.dateFrom,dateTo:pair.dateTo});
     if(browserDashboardCache?.cacheKey===cacheKey)return{...browserDashboardCache,settings:effectiveSettings};
     const comparison=baselineId&&comparisonId&&baselineId!==comparisonId&&BrowserSnapshots.compareSnapshots?await BrowserSnapshots.compareSnapshots(baselineId,comparisonId,{limit:MemoryGuard.limits.movementRows||5000,historySnapshots:finalDashboardSnapshots()}):null;
-    const aggregate=await BrowserSnapshots.aggregate(currentId,{limit:200,vendor:settings.vendor,room:settings.room,query:settings.query,showUnknown:settings.showUnknown});if(!aggregate)return null;
-    const filterAggregate=settings.query||settings.vendor||settings.room||settings.showUnknown===false?await BrowserSnapshots.aggregate(currentId,{limit:200}):aggregate;
+    const aggregate=await BrowserSnapshots.aggregate(targetId,{limit:200,vendor:settings.vendor,room:settings.room,query:settings.query,showUnknown:settings.showUnknown});if(!aggregate)return null;
+    const filterAggregate=settings.query||settings.vendor||settings.room||settings.showUnknown===false?await BrowserSnapshots.aggregate(targetId,{limit:200}):aggregate;
     const cachedFleet=state.dashboardFleetCache?.key===fleetCacheKey?state.dashboardFleetCache.value:null,fleet=cachedFleet||metadataDashboardFleet(options,aggregate);
     const changeAnalysis=comparison?browserSnapshotChangeAnalysis(comparison,options,effectiveSettings):localDashboardChangeAnalysis(effectiveSettings),roomRows=(aggregate.rooms||[]).map((item)=>({label:item.label,count:item.value,percentOfAssigned:Number((item.value/Math.max(1,aggregate.withRoom)*100).toFixed(1)),percentOfAll:Number((item.value/Math.max(1,aggregate.devices)*100).toFixed(1))}));
     changeAnalysis.summary=mergeReliableChangeSummary(changeAnalysis.summary,changeAnalysis.changes||[]);
@@ -2692,8 +2709,8 @@
     if(!cache)return false;browserDashboardCache=cache;const {aggregate,comparison,changeAnalysis,report}=cache,filterAggregate=cache.filterAggregate||aggregate,fleet=cache.fleet||{uniqueAcrossUploads:aggregate.uniqueMacs,latestCount:aggregate.devices,series:[]},settings=cache.settings||dashboardSettings(),summary=changeAnalysis.summary||{},status=settings.status||"all",changeDevices=(type)=>groupDashboardChanges(changeAnalysis.changes||[]).filter((item)=>item.types.has(type)).map((item)=>item.device||{}),vendorCounts=(devices)=>{const counts=new Map();for(const device of devices){const vendor=String(device.vendor||"Unknown");counts.set(vendor,(counts.get(vendor)||0)+1);}return[...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,20).map(([label,value])=>({label,value}));},vendorRows=status==="changed"?(comparison?.changedVendors||vendorCounts(changeDevices("modified"))):status==="missing"?(comparison?.missingVendors||vendorCounts(changeDevices("removed"))):status==="unchanged"?(comparison?.unchangedVendors||[]):aggregate.vendors||[];
     state.dashboardSettings=normalizeDashboardSettings({...state.dashboardSettings,...settings});dashboardFilteredDevices=state.devices;
     const optionHtml=(emptyLabel,rows,selected)=>`<option value="">${emptyLabel}</option>`+(rows||[]).map((item)=>`<option value="${esc(item.label)}" ${item.label===selected?"selected":""}>${esc(item.label)}</option>`).join("");$("#dashboardVendorFilter").innerHTML=optionHtml("Все производители",filterAggregate.vendors,settings.vendor);$("#dashboardRoomFilter").innerHTML=optionHtml("Все помещения",filterAggregate.rooms,settings.room);
-    const modifiedDevices=Number(summary.modifiedDevices??summary.modified??0),addedDevices=Number(summary.added||0),unchangedDevices=Math.max(0,Number(fleet.latestCount||aggregate.devices)-modifiedDevices-addedDevices),fieldCounts=new Map();for(const item of changeAnalysis.changes||[]){const label=item.fieldLabel||item.field||"Устройство";fieldCounts.set(label,(fieldCounts.get(label)||0)+1);}const derivedFields=[...fieldCounts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,20).map(([label,value])=>({label,value}));
-    const metrics={devices:aggregate.devices,total:Number(fleet.latestCount||aggregate.devices),totalAcross:Number(fleet.uniqueAcrossUploads||aggregate.uniqueMacs),changed:modifiedDevices,missing:Number(summary.removed||0),unchanged:unchangedDevices,vendors:aggregate.uniqueVendors,rooms:aggregate.uniqueRooms,missingRoomDevices:Number(aggregate.missingRoomDevices||0),uniqueMacs:Number(fleet.uniqueAcrossUploads||aggregate.uniqueMacs),switches:aggregate.uniqueSwitches},statusCharts={dynamics:(fleet.series||[]).slice(-20).map((item)=>({label:String(item.name||item.date||item.id).slice(0,28),value:Number(item.count||0)})),vendors:vendorRows,fields:comparison?.fieldCounts||changeAnalysis.fieldCounts||derivedFields,missing:comparison?.missingVendors||vendorCounts(changeDevices("removed")),missingRoomVendors:aggregate.missingRoomVendors||[],missingRoomModels:aggregate.missingRoomModels||[]};
+    const modifiedDevices=Number(summary.modifiedDevices??summary.modified??0),addedDevices=Number(summary.added||0),unchangedDevices=Math.max(0,Number(aggregate.devices||0)-modifiedDevices-addedDevices),fieldCounts=new Map();for(const item of changeAnalysis.changes||[]){const label=item.fieldLabel||item.field||"Устройство";fieldCounts.set(label,(fieldCounts.get(label)||0)+1);}const derivedFields=[...fieldCounts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,20).map(([label,value])=>({label,value}));
+    const metrics={devices:aggregate.devices,total:Number(aggregate.devices||0),totalAcross:Number(fleet.uniqueAcrossUploads||aggregate.uniqueMacs),changed:modifiedDevices,missing:Number(summary.removed||0),unchanged:unchangedDevices,vendors:aggregate.uniqueVendors,rooms:aggregate.uniqueRooms,missingRoomDevices:Number(aggregate.missingRoomDevices||0),uniqueMacs:Number(fleet.uniqueAcrossUploads||aggregate.uniqueMacs),switches:aggregate.uniqueSwitches},statusCharts={dynamics:(fleet.series||[]).map((item)=>({label:String(item.name||item.date||item.id).slice(0,28),value:Number(item.count||0)})),vendors:vendorRows,fields:comparison?.fieldCounts||changeAnalysis.fieldCounts||derivedFields,missing:comparison?.missingVendors||vendorCounts(changeDevices("removed")),missingRoomVendors:aggregate.missingRoomVendors||[],missingRoomModels:aggregate.missingRoomModels||[]};
     renderDashboardStatus({metrics,settings:state.dashboardSettings,changeAnalysis,statusCharts});$("#snapshotMetric").textContent=finalDashboardSnapshots().length;$("#uniqueMacMetric").textContent=fleet.uniqueAcrossUploads||aggregate.uniqueMacs;$("#switchMetric").textContent=aggregate.uniqueSwitches;$("#roomMetric").textContent=aggregate.uniqueRooms;
     $("#vendorChart").innerHTML=localChartHtml((aggregate.vendors||[]).slice(0,20).map((item)=>[item.label,item.value]));$("#modelChart").innerHTML=localChartHtml((aggregate.models||[]).slice(0,20).map((item)=>[item.label,item.value]),"Нет данных моделей.");$("#qualityChart").innerHTML=localChartHtml([["Опознано",aggregate.known],["Unknown",aggregate.unknown],["Ошибки",aggregate.invalid]].filter((item)=>item[1]>0));$("#timelineChart").innerHTML=localChartHtml((fleet.series||[]).slice(-20).map((item)=>[String(item.name||item.date||item.id).slice(0,28),Number(item.count||0)]));renderAnalyticsReport(report,"local");
     const overview=[["Устройств",aggregate.devices],["Производителей",aggregate.uniqueVendors],["Моделей",aggregate.uniqueModels],["Помещений",aggregate.uniqueRooms],["Коммутаторов",aggregate.uniqueSwitches]];$("#backendChartsPanel").innerHTML=localChartHtml(overview);$("#backendStatisticsChart").innerHTML=localChartHtml([["Финальных снимков",finalDashboardSnapshots().length],["Текущих устройств",aggregate.devices],["Изменений",Number(summary.total||0)]]);$("#temporalStatisticsChart").innerHTML=localChartHtml(dashboardSnapshotOptions().slice(-12).map((item)=>[item.date?.slice(0,10)||item.name,Number(finalDashboardSnapshots().find((snapshot,index)=>dashboardSnapshotId(snapshot,index)===item.id)?.deviceCount||0)]),"Снимков пока нет.");$("#clusterChart").innerHTML=localChartHtml((aggregate.rooms||[]).slice(0,12).map((item)=>[item.label,item.value]),"Нет данных для кластеров помещений.");$("#topologyGraph").innerHTML=localChartHtml([["Коммутаторов",aggregate.uniqueSwitches],["Устройств с коммутатором",aggregate.withSwitch],["Без коммутатора",Math.max(0,aggregate.devices-aggregate.withSwitch)]]);$("#qualityInsights").innerHTML=localChartHtml([["Не определён производитель",aggregate.unknown],["Нет IP",Math.max(0,aggregate.devices-aggregate.withIp)],["Нет помещения",Math.max(0,aggregate.devices-aggregate.withRoom)],["Ошибки MAC",aggregate.invalid]].filter((item)=>item[1]>0),"Проблем качества не найдено.");$("#qualityReportsList").innerHTML='<p class="muted">Показан потоковый анализ текущего финального снимка.</p>';return true;
@@ -2770,11 +2787,11 @@
     renderDashboardChanges(payload.changeAnalysis||localDashboardChangeAnalysis(settings));
   }
   function applyLocalDashboard(settings=dashboardSettings()){
-    renderLocalDashboardFilterOptions(settings);
-    const context=dashboardStatusContext(),scope={all:dashboardScope(context.all,settings),changed:dashboardScope(context.changed,settings),missing:dashboardScope(context.missing,settings),unchanged:dashboardScope(context.unchanged,settings)};
+    const analysis=localDashboardChangeAnalysis(settings),comparisonDevices=localDashboardComparisonDevices(settings);renderLocalDashboardFilterOptions(settings,comparisonDevices);
+    const context=dashboardStatusContext(comparisonDevices,analysis),scope={all:dashboardScope(context.all,settings),changed:dashboardScope(context.changed,settings),missing:dashboardScope(context.missing,settings),unchanged:dashboardScope(context.unchanged,settings)};
     dashboardFilteredDevices=scope[settings.status]||scope.all;
-    const devices=dashboardFilteredDevices,unique=new Set(devices.map((device)=>normalize(device.mac||device.macFormatted)).filter(Boolean)),analysis=localDashboardChangeAnalysis(settings),fleet=localDashboardFleet(),added=Number(analysis.summary.added||0),changed=Number(analysis.summary.modified||0),missingRoomRows=scope.all.filter((device)=>!String(device.room||"").trim()),metrics={devices:devices.length,total:fleet.latestCount||scope.all.length,totalAcross:fleet.uniqueAcrossUploads||scope.all.length,changed,missing:Number(analysis.summary.removed||0),unchanged:Math.max(0,(fleet.latestCount||scope.all.length)-changed-added),vendors:new Set(scope.all.map((device)=>device.vendor).filter((value)=>value&&value!=="Unknown")).size,rooms:new Set(scope.all.map((device)=>device.room).filter((value)=>value&&value!=="Unknown")).size,missingRoomDevices:missingRoomRows.length,switches:new Set(devices.map((device)=>device.switchIp||device.switch_ip).filter(Boolean)).size};
-    const chartRows=dashboardMovementCharts(devices,scope.missing,settings.chartLimit),statusCharts=Object.fromEntries(Object.entries(chartRows).map(([key,items])=>[key,items.map(([label,value])=>({label,value}))]));statusCharts.dynamics=fleet.series.slice(-20).map((item)=>({label:String(item.name||item.date).slice(0,28),value:item.count}));statusCharts.missingRoomVendors=localTally(missingRoomRows,"vendor").map(([label,value])=>({label,value}));statusCharts.missingRoomModels=localTally(missingRoomRows,"model").map(([label,value])=>({label,value}));
+    const devices=dashboardFilteredDevices,unique=new Set(devices.map((device)=>normalize(device.mac||device.macFormatted)).filter(Boolean)),fleet=localDashboardFleet(),added=Number(analysis.summary.added||0),changed=Number(analysis.summary.modified||0),missingRoomRows=scope.all.filter((device)=>!String(device.room||"").trim()),metrics={devices:devices.length,total:scope.all.length,totalAcross:fleet.uniqueAcrossUploads||scope.all.length,changed,missing:Number(analysis.summary.removed||0),unchanged:Math.max(0,scope.all.length-changed-added),vendors:new Set(scope.all.map((device)=>device.vendor).filter((value)=>value&&value!=="Unknown")).size,rooms:new Set(scope.all.map((device)=>device.room).filter((value)=>value&&value!=="Unknown")).size,missingRoomDevices:missingRoomRows.length,switches:new Set(devices.map((device)=>device.switchIp||device.switch_ip).filter(Boolean)).size};
+    const chartRows=dashboardMovementCharts(devices,scope.missing,settings.chartLimit),statusCharts=Object.fromEntries(Object.entries(chartRows).map(([key,items])=>[key,items.map(([label,value])=>({label,value}))]));statusCharts.dynamics=fleet.series.map((item)=>({label:String(item.name||item.date).slice(0,28),value:item.count}));statusCharts.missingRoomVendors=localTally(missingRoomRows,"vendor").map(([label,value])=>({label,value}));statusCharts.missingRoomModels=localTally(missingRoomRows,"model").map(([label,value])=>({label,value}));
     browserDashboardCache={fleet,changeAnalysis:analysis,settings,local:true};renderDashboardStatus({metrics,settings,changeAnalysis:analysis,statusCharts});
     $("#snapshotMetric").textContent=finalDashboardSnapshots().length||0;$("#uniqueMacMetric").textContent=fleet.uniqueAcrossUploads||unique.size;$("#switchMetric").textContent=metrics.switches;$("#roomMetric").textContent=new Set(devices.map((device)=>device.room).filter(Boolean)).size;renderLocalAnalytics(devices);return devices;
   }
@@ -3018,7 +3035,7 @@
     if(!force&&analyticsRenderCache.signature===signature&&Date.now()-analyticsRenderCache.at<30000){void refreshPresenceChurn();return;}
     const revision=++analyticsRenderRevision;
     initializeAnalyticsExpanders();
-    applyLocalDashboard(dashboardSettings());
+    const durable=Boolean(state.resultBrowserSnapshotId||state.resultSnapshotId);if(!durable)applyLocalDashboard(dashboardSettings());
     renderAnalysisDashboard();
     await new Promise((resolve)=>requestAnimationFrame(resolve));
     if(browserOnlyMode&&state.resultBrowserSnapshotId&&BrowserSnapshots?.aggregate){
@@ -3548,11 +3565,9 @@
   }
   async function renderServices(){
     try {
-      const serviceData=await api("/services/panel"),notificationData=serviceData.notifications||{},html=serviceData.html||{};
+      const serviceData=await api("/services/panel"),html=serviceData.html||{};
       $("#ipMappingList").innerHTML=html.ipRowsHtml||'<p class="muted">Соответствия пока не добавлены.</p>';
       $("#taskList").innerHTML=html.taskRowsHtml||'<p class="muted">Задачи пока не созданы.</p>';
-      const channel=notificationData.channels.find((item)=>item.channel===$("#notificationChannel").value);
-      if(channel){$("#notificationEnabled").checked=Boolean(channel.enabled);$("#notificationConfig").value=JSON.stringify(channel.config||{},null,2);}
       $("#appLogList").innerHTML=html.logRowsHtml||'<p class="muted">Журнал пока пуст.</p>';
       $("#metricList").innerHTML=html.metricRowsHtml||'<p class="muted">Метрики пока пусты.</p>';
       $("#timeStatsSummary").innerHTML=html.timeStatsSummaryHtml||'<div class="bar-label"><span>Operations</span><strong>0</strong></div>';
@@ -3864,7 +3879,7 @@
     const widths=normalizeColumnWidths(overrides.widths||state.columnWidths);
     return {order,visible,custom,widths};
   }
-  const viewConfig={workspace:["Поиск устройств","Введите hostname, IP, IP коммутатора, MAC, физический адрес или серийный номер."],single:["Анализ одного файла","Загрузите файл и перейдите к основному анализу."],compare:["Сравнение снимков","Сопоставьте результаты двух загрузок."],analytics:["Аналитика","Сводка по текущему набору, критическим изменениям и истории."],history:["История","Снимки результатов и хронология изменений."],rooms:["Помещения","Smartroom ID — основной ключ помещения и оборудования."],roomhistory:["Хронология помещения","Полная цепочка замен оборудования по Smartroom ID."],data:["Данные","IP-маппинг, колонки результатов и SQLite-данные."],automation:["Автоматизация","Планировщик, уведомления и API-обогащение."],settings:["Настройки","Справочники и резервная копия приложения."],guide:["Руководство","Назначение программы и рабочие сценарии для пользователя и инженера."]};
+  const viewConfig={workspace:["Поиск устройств","Введите hostname, IP, IP коммутатора, MAC, физический адрес или серийный номер."],single:["Анализ одного файла","Загрузите файл и перейдите к основному анализу."],compare:["Сравнение снимков","Сопоставьте результаты двух загрузок."],analytics:["Аналитика","Сводка по текущему набору, критическим изменениям и истории."],history:["История","Снимки результатов и хронология изменений."],rooms:["Помещения","Smartroom ID — основной ключ помещения и оборудования."],roomhistory:["Хронология помещения","Полная цепочка замен оборудования по Smartroom ID."],data:["Данные","IP-маппинг, колонки результатов и SQLite-данные."],automation:["Автоматизация","Задачи планировщика и API-обогащение."],settings:["Настройки","Справочники и резервная копия приложения."],guide:["Руководство","Назначение программы и рабочие сценарии для пользователя и инженера."]};
   const renderedViewSignatures=new Map();
   function viewContentSignature(name){return[name,resultStateRevision,state.resultSnapshotId,state.resultBrowserSnapshotId,currentDeviceCount(),state.files?.length||0,state.snapshots?.length||0,state.lastAnalysis||""].join("|");}
   function normalizeViewName(name){if(name==="iphistory")return"analytics";return Object.prototype.hasOwnProperty.call(viewConfig,name)?name:"workspace";}
@@ -4193,10 +4208,6 @@
   $("#ouiLengthSelect").addEventListener("change",(e)=>{saveOuiPreference({length:Number(e.target.value),style:state.ouiStyle});});
   $("#ouiStyleSelect").value=state.ouiStyle||"plain";
   $("#ouiStyleSelect").addEventListener("change",(e)=>{saveOuiPreference({length:state.ouiLength,style:e.target.value});});
-  $("#saveNotificationButton").addEventListener("click",async()=>{try{await api("/notifications",{method:"POST",body:JSON.stringify({channel:$("#notificationChannel").value,configText:$("#notificationConfig").value,enabled:$("#notificationEnabled").checked})});toast("Настройки уведомлений сохранены.");}catch(error){toast("Проверьте JSON: "+error.message);}});
-  $("#testNotificationButton").addEventListener("click",async()=>{try{const channel=$("#notificationChannel").value;await api("/notifications/test",{method:"POST",body:JSON.stringify({channel,configText:$("#notificationConfig").value})});toast("Тестовое уведомление отправлено.");}catch(error){toast("Тест не выполнен: "+error.message);}});
-  $("#testAnalysisNotificationButton").addEventListener("click",async()=>{try{const result=await api("/notifications/event",{method:"POST",body:JSON.stringify(currentDevicePayload({type:"analysis_completed",invalid:state.invalid,source:"manual notification test"}))});toast("Событие анализа: отправлено "+result.sent+", ошибок "+result.errors+", пропущено "+result.skipped);}catch(error){toast("Событие не отправлено: "+error.message);}});
-  $("#notificationChannel").addEventListener("change",()=>{renderServices();});
   $("#saveExternalApiSettingsButton").addEventListener("click",saveExternalApiSettings);
   $("#openApiSettingsDialogButton").addEventListener("click",showApiSettingsDialog);
   $("#closeApiSettingsDialog").addEventListener("click",()=>$("#apiSettingsDialog").close());

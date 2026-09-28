@@ -36,7 +36,7 @@ Mac_analyzer_Pro/
         reference_data_service.py импорт IEEE/corporate OUI TXT/CSV и синхронизация SQLite
       workspace/           XLSX/CSV, enrichment, single-file и кэш
       analytics/           графики, dashboard, отчёты, топология и кластеры
-      integrations/        внешние API, уведомления и планировщик
+      integrations/        внешние API и планировщик
       comparison/          сравнение двух и нескольких выгрузок
       exporting/           CSV/TXT/HTML/JSON/YAML/XLSX/PDF экспорт
       system/              пути хранения, доступ, legacy-миграция и parity-аудит

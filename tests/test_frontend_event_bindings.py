@@ -827,7 +827,7 @@ def test_dashboard_settings_are_loaded_from_backend():
     assert 'dashboardFilteredDevices=data.devices||state.devices;' in app
     assert 'renderDashboardFilterOptions(data.filters||{},data.settings||settings,data.filterOptionsHtml||{});' in app
     assert 'renderDashboardStatus(data);' in app
-    assert 'function dashboardStatusContext()' in app
+    assert 'function dashboardStatusContext(devices=state.devices,analysis=null)' in app
     assert 'function dashboardMovementCharts(displayed,missing,limit=8)' in app
     assert 'id="dashboardStatusFilter"' in Path("index.html").read_text(encoding="utf-8")
     assert 'function normalizeDashboardSettings(settings={})' in app
@@ -919,13 +919,17 @@ def test_backup_export_restore_use_backend_service():
     assert 'contentBase64:await fileToBase64(file)' in app
 
 
-def test_notification_config_json_is_parsed_by_backend():
+def test_notification_runtime_is_removed_from_primary_frontend():
     app = read_app_js()
+    html = read_index_html()
 
-    assert 'api("/notifications",{method:"POST",body:JSON.stringify({channel:$("#notificationChannel").value,configText:$("#notificationConfig").value,enabled:$("#notificationEnabled").checked})})' in app
-    assert 'api("/notifications/test",{method:"POST",body:JSON.stringify({channel,configText:$("#notificationConfig").value})})' in app
-    assert 'JSON.parse($("#notificationConfig").value||"{}")' not in app
-    assert 'body:JSON.stringify({...config,channel})' not in app
+    assert "/notifications" not in app
+    assert "notificationChannel" not in app
+    assert "notificationChannel" not in html
+    assert "saveNotificationButton" not in html
+    assert "уведомления" not in app.lower()
+    assert "уведомления" not in html.lower()
+    assert 'app.js?v=1076' in html
 
 
 def test_column_auto_mapping_uses_backend_detector():
@@ -2187,6 +2191,20 @@ def test_dashboard_change_period_snapshot_drilldown_is_wired_backend_and_local()
     assert ".dashboard-changes-table { flex:1 1 260px;" in styles
 
 
+def test_dashboard_uses_selected_comparison_final_and_reuses_batch_sources():
+    app = read_app_js()
+
+    for marker in (
+        "targetId=comparisonId||activeId",
+        "BrowserSnapshots.aggregate(targetId",
+        "total:Number(aggregate.devices||0)",
+        "function localDashboardComparisonDevices",
+        "const batchPreparedFileCache=new Map()",
+        "Повторно использован подготовленный",
+    ):
+        assert marker in app
+
+
 def test_search_dashboard_smartroom_and_unified_exports_are_wired():
     html = read_index_html()
     app = read_app_js()
@@ -2210,7 +2228,7 @@ def test_search_dashboard_smartroom_and_unified_exports_are_wired():
     for marker in (
         "async function runGlobalSearch()", "function dashboardSnapshotPair(",
         "current.vendor=vendor.value", "current.room=room.value",
-        "BrowserSnapshots.aggregate(currentId,{limit:200,vendor:settings.vendor,room:settings.room",
+        "BrowserSnapshots.aggregate(targetId,{limit:200,vendor:settings.vendor,room:settings.room",
         "async function exportFullJson()", "FullJsonReport.createReport({",
         "function initializeAnalyticsExpanders()",
         "function renderDashboardAllChangedRooms()", "function showDashboardAllChangedRooms()",
@@ -2583,7 +2601,7 @@ if __name__ == "__main__":
     test_autosave_delete_is_exposed_in_web_ui()
     test_device_dialog_shows_mac_chronology()
     test_backup_export_restore_use_backend_service()
-    test_notification_config_json_is_parsed_by_backend()
+    test_notification_runtime_is_removed_from_primary_frontend()
     test_column_auto_mapping_uses_backend_detector()
     test_main_file_import_uses_backend_service()
     test_browser_mode_enrichment_keeps_basic_workflow_alive()
@@ -2620,6 +2638,7 @@ if __name__ == "__main__":
     test_pyqt_analytics_dialog_report_is_available_in_web_ui()
     test_pyqt_mac_history_dialog_keeps_separate_history_and_movement_tables()
     test_dashboard_change_period_snapshot_drilldown_is_wired_backend_and_local()
+    test_dashboard_uses_selected_comparison_final_and_reuses_batch_sources()
     test_search_dashboard_smartroom_and_unified_exports_are_wired()
     test_pyqt_single_device_analytics_text_report_is_rendered_locally_and_from_api()
     test_primary_and_enrichment_files_are_grouped_in_browser_only_html()

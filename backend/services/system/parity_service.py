@@ -28,7 +28,6 @@ PYQT_WEB_EQUIVALENTS: list[dict[str, Any]] = [
     {"name": "Comparison fields", "pyqt": "class FieldsSelectionDialog", "web": [("server.py", "/api/compare"), ("index.html", "comparisonFilters"), ("index.html", "compareButton")]},
     {"name": "File comparison", "pyqt": "class FileComparisonDialog", "web": [("server.py", "/api/compare"), ("server.py", "export_comparison"), ("index.html", "comparisonBody")]},
     {"name": "Time statistics", "pyqt": "class TimeStatsDialog", "web": [("server.py", "/api/statistics/temporal"), ("index.html", "temporalStatisticsChart"), ("app.js", "renderTemporalStatistics")]},
-    {"name": "Notifications", "pyqt": "class NotificationSettingsDialog", "web": [("server.py", "/api/notifications"), ("server.py", "/api/notifications/event"), ("index.html", "notificationChannel")]},
     {"name": "Scheduler", "pyqt": "class SchedulerDialog", "web": [("server.py", "/api/tasks"), ("server.py", "/api/tasks/queue"), ("index.html", "taskList")]},
     {"name": "API enrichment", "pyqt": "class APIEnrichmentDialog", "web": [("server.py", "/api/external-enrichment/run"), ("server.py", "/api/external-enrichment/test"), ("index.html", "apiEnrichButton")]},
     {"name": "Clustering", "pyqt": "class ClusteringDialog", "web": [("server.py", "/api/clusters"), ("index.html", "clusterChart"), ("app.js", "renderBackendClusters")]},

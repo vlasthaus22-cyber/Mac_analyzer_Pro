@@ -32,7 +32,7 @@ def test_parity_registry_and_pyqt_equivalents_are_complete():
     assert "Database management" in status["detailsHtml"]
     assert "Нет данных parity" in status["emptyDetailsHtml"]
     assert "Status: complete." in audit
-    assert "PyQt blocks covered by web equivalents: 31/31." in audit
+    assert f"PyQt blocks covered by web equivalents: {status['summary']['pyqtBlocks']}/{status['summary']['pyqtBlocks']}." in audit
     assert f"PARITY_REGISTRY.md requirements: {registry_total}/{registry_total}." in audit
     assert "missingEquivalents=0" in audit
     assert status_file == expected_report

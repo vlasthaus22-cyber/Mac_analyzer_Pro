@@ -1,6 +1,6 @@
 import json
 
-from server import dashboard_snapshot_context, dashboard_upload_fleet_context, database_maintenance, database_summary, db_connection, delete_snapshots, init_database, open_compact_snapshot_payload, open_snapshot_payload, resolve_payload_devices, snapshot_select_payload
+from server import build_dashboard_payload, dashboard_comparison_devices, dashboard_snapshot_context, dashboard_upload_fleet_context, database_maintenance, database_summary, db_connection, delete_snapshots, init_database, open_compact_snapshot_payload, open_snapshot_payload, resolve_payload_devices, snapshot_select_payload
 
 
 SNAPSHOTS = ("snapshot-mgmt-1", "snapshot-mgmt-2")
@@ -260,6 +260,67 @@ def test_dashboard_period_compares_first_and_last_final_inside_selected_range():
     assert [item["id"] for item in hydrated] == ["first", "last"]
 
 
+def test_dashboard_cards_use_selected_comparison_snapshot_not_active_snapshot():
+    selected = [{"mac": "AABBCC000002", "vendor": "Selected", "room": "Room B"}]
+    active = [
+        {"mac": "AABBCC000003", "vendor": "Active"},
+        {"mac": "AABBCC000004", "vendor": "Active"},
+    ]
+    result = dashboard_comparison_devices(
+        [
+            {"id": "snapshot-a", "devices": [{"mac": "AABBCC000001"}]},
+            {"id": "snapshot-b", "devices": selected},
+        ],
+        {"comparisonSnapshotId": "snapshot-b"},
+        active,
+    )
+    assert result == selected
+    assert result is not active
+
+
+def test_dashboard_remains_correct_after_many_final_snapshots():
+    snapshots = []
+    for index in range(8):
+        devices = [
+            {
+                "mac": f"AABBCC{index:02X}{_item:04X}",
+                "vendor": f"Vendor {index}",
+                "room": f"Room {index}",
+            }
+            for _item in range(index + 1)
+        ]
+        snapshots.append({
+            "id": f"many-{index}",
+            "name": f"Анализ: many-{index}",
+            "kind": "analysis",
+            "createdAt": f"2026-08-{index + 1:02d}T00:00:00Z",
+            "deviceCount": len(devices),
+            "devices": devices,
+        })
+    options, hydrated, settings = dashboard_snapshot_context(
+        snapshots,
+        "many-7",
+        {
+            "changeMode": "snapshots",
+            "baselineSnapshotId": "many-5",
+            "comparisonSnapshotId": "many-6",
+        },
+    )
+    selected = dashboard_comparison_devices(hydrated, settings, snapshots[-1]["devices"])
+    payload = build_dashboard_payload(
+        selected,
+        options,
+        settings,
+        change_snapshots=hydrated,
+        snapshot_options=options,
+    )
+    assert len(selected) == 7
+    assert payload["metrics"]["total"] == 7
+    assert payload["metrics"]["vendors"] == 1
+    assert len(payload["statusCharts"]["dynamics"]) == 8
+    assert payload["settings"]["comparisonSnapshotId"] == "many-6"
+
+
 if __name__ == "__main__":
     test_database_snapshot_bulk_delete()
     test_database_summary_and_maintenance()
@@ -270,4 +331,6 @@ if __name__ == "__main__":
     test_dashboard_fleet_aggregates_every_stored_final_without_hydrating_context()
     test_compact_snapshot_supports_strong_identity_without_mac()
     test_dashboard_period_compares_first_and_last_final_inside_selected_range()
+    test_dashboard_cards_use_selected_comparison_snapshot_not_active_snapshot()
+    test_dashboard_remains_correct_after_many_final_snapshots()
     print("database snapshot management test passed")

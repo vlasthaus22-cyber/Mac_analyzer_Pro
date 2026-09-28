@@ -1,1 +1,1 @@
-"""External API, notification and scheduler integrations."""
+"""External API and scheduler integrations."""

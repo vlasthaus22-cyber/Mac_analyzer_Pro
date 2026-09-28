@@ -9,8 +9,8 @@ SQLite persistence. The machine-checkable source of truth is
 
 ## Current Coverage
 
-- PyQt blocks covered by web equivalents: 31/31.
-- PARITY_REGISTRY.md requirements: 149/149.
+- PyQt blocks covered by web equivalents: 30/30.
+- PARITY_REGISTRY.md requirements: 150/150.
 - Missing web equivalents: 0.
 - Unchecked items in `PARITY_REGISTRY.md`: 0.
 - Legacy SQLite import: available through `GET /api/legacy/import/status` and
@@ -44,7 +44,7 @@ SQLite persistence. The machine-checkable source of truth is
 - Two-file and multi-file comparison with exports.
 - Time statistics, charts, dashboard, topology and clustering.
 - Data quality analysis and saved reports.
-- Notifications, scheduler, queued files and API enrichment.
+- Scheduler, queued files and API enrichment. Пользовательские оповещения удалены по требованию продукта.
 - Export to CSV, TXT, HTML, JSON, YAML, XLSX and PDF.
 - Single-device and model/prefix analytics.
 - Theme selection, engineering mode, settings, autosave and logging.
@@ -118,7 +118,7 @@ SQLite persistence. The machine-checkable source of truth is
   metadata rather than serializing the live dataset. Standalone queue rows are
   shared without cloning and released after completion. External API enrichment
   resolves server datasets by snapshot ID and returns a bounded result page.
-- Snapshot creation, IP mapping, analysis notifications and scheduler queueing
+- Snapshot creation, IP mapping and scheduler queueing
   now resolve compact `snapshotId`/`fileToken` references. Applying IP mappings
   writes a new full SQLite snapshot and returns only a bounded page. Browser-only
   export stops with a controlled memory-limit message before building an unsafe

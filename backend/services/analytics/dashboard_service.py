@@ -832,7 +832,7 @@ def build_dashboard_payload(
             "label": _text(item.get("name") or item.get("date") or item.get("id"))[:28],
             "value": int(item.get("count") or 0),
         }
-        for item in (fleet.get("series") or [])[-20:]
+        for item in (fleet.get("series") or [])
     ]
     status_charts["missingRoomVendors"] = [
         {"label": label, "value": count}

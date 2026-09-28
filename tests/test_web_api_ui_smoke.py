@@ -72,7 +72,6 @@ def cleanup():
         conn.execute("DELETE FROM model_mappings WHERE prefix = ?", (LEARN_VENDOR_PREFIX_4BYTE,))
         conn.execute("DELETE FROM model_mappings WHERE prefix = ?", (LEARN_VENDOR_PREFIX_5BYTE,))
         conn.execute("DELETE FROM column_preferences WHERE view_name = ?", (COLUMN_VIEW,))
-        conn.execute("DELETE FROM notification_settings WHERE channel = ?", ("telegram",))
         conn.execute("DELETE FROM app_settings WHERE key IN ('theme', 'oui_format', 'external_api', 'dashboard', 'vendor_detector', 'history_enrichment', 'enhanced_history_columns')")
 
 
@@ -842,7 +841,7 @@ def test_rest_api_and_ui_controls_smoke():
         assert status == 200
         assert "ip" in services_panel
         assert "tasks" in services_panel
-        assert "notifications" in services_panel
+        assert "notifications" not in services_panel
         assert "database" in services_panel
         assert "legacy" in services_panel
         assert "html" in services_panel
@@ -853,6 +852,9 @@ def test_rest_api_and_ui_controls_smoke():
         assert "timeStatsRowsHtml" in services_panel["html"]
         assert "Operations" in services_panel["html"]["timeStatsSummaryHtml"]
         assert "SQLite file" in services_panel["html"]["databaseSummaryHtml"]
+
+        status, _removed_notifications = request_json(app.base_url, "GET", "/api/notifications")
+        assert status == 404
         assert "Legacy rows" in services_panel["html"]["legacySummaryHtml"]
         assert "Autosave" in services_panel["html"]["autosaveStatusText"]
 
@@ -1167,35 +1169,6 @@ def test_rest_api_and_ui_controls_smoke():
         assert deleted_device_history["ok"] is True
         assert "historyRowsHtml" in deleted_device_history
         assert 'colspan="5"' in deleted_device_history["historyRowsHtml"]
-
-        notification_config = {"botToken": "smoke-token", "chatId": "smoke-chat"}
-        status, saved_notification = request_json(
-            app.base_url,
-            "POST",
-            "/api/notifications",
-            {"channel": "telegram", "configText": json.dumps(notification_config), "enabled": False},
-            token=session["token"],
-        )
-        assert status == 200
-        assert saved_notification["channel"] == "telegram"
-        assert saved_notification["config"] == notification_config
-        assert saved_notification["enabled"] is False
-
-        status, notifications = request_json(app.base_url, "GET", "/api/notifications")
-        assert status == 200
-        telegram = next(item for item in notifications["channels"] if item["channel"] == "telegram")
-        assert telegram["config"] == notification_config
-        assert telegram["enabled"] is False
-
-        status, invalid_notification = request_json(
-            app.base_url,
-            "POST",
-            "/api/notifications",
-            {"channel": "telegram", "configText": "{bad-json", "enabled": False},
-            token=session["token"],
-        )
-        assert status == 400
-        assert "Invalid notification config JSON" in invalid_notification["error"]
 
         ip_mapping_content = base64.b64encode("switch_ip,physical_address\n203.0.113.77,Smoke rack\n".encode("utf-8")).decode("ascii")
         status, imported_ip_mapping = request_json(
