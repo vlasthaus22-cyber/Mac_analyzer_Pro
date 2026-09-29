@@ -40,7 +40,7 @@ def test_worker_uses_chunked_ingestion_and_full_timeline_fields():
     assert "changedMacs" in source
 
 
-def test_smartroom_history_filters_and_monthly_chart_are_wired():
+def test_smartroom_history_filters_and_weekly_chart_are_wired():
     ui = read("frontend/smartroom-ui.js")
     app = read("app.js")
     location = read("frontend/room-location.js")
@@ -62,7 +62,9 @@ def test_smartroom_history_filters_and_monthly_chart_are_wired():
     assert "Все устройства изменились: НЕТ" in ui
     assert 'button.dataset.allChanged' in ui
     assert "function compareLatest" in timeline
-    assert "function monthlyRows" in charts
+    assert "function weeklyRows" in charts
+    assert "const weeks = weeklyRows(report)" in charts
+    assert "Динамика изменения MAC-адресов по неделям" in read("index.html")
     assert "Переговорных:" in charts
     assert "MAC-адресов:" in charts
 
@@ -111,7 +113,7 @@ def test_portable_build_embeds_new_runtime_modules():
 if __name__ == "__main__":
     test_smartroom_tabs_and_chart_canvases_are_present()
     test_worker_uses_chunked_ingestion_and_full_timeline_fields()
-    test_smartroom_history_filters_and_monthly_chart_are_wired()
+    test_smartroom_history_filters_and_weekly_chart_are_wired()
     test_virtual_scroll_keeps_twenty_visible_rows()
     test_indexeddb_contract_has_requested_stores()
     test_lazy_tabs_keep_detached_content_in_document_fragments()

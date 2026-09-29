@@ -121,34 +121,41 @@
       }));
   }
 
-  function monthKey(value) {
-    const direct = String(value || "").match(/^(\d{4})-(\d{2})/);
-    if (direct) return `${direct[1]}-${direct[2]}`;
-    const timestamp = Date.parse(String(value || ""));
-    if (!Number.isFinite(timestamp)) return "";
-    const date = new Date(timestamp);
-    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+  function weekKey(value) {
+    const direct = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const date = direct
+      ? new Date(Date.UTC(Number(direct[1]), Number(direct[2]) - 1, Number(direct[3])))
+      : new Date(Date.parse(String(value || "")));
+    if (!Number.isFinite(date.getTime())) return "";
+    const dayFromMonday = (date.getUTCDay() + 6) % 7;
+    date.setUTCDate(date.getUTCDate() - dayFromMonday);
+    return date.toISOString().slice(0, 10);
   }
 
-  function monthLabel(key) {
-    const match = String(key).match(/^(\d{4})-(\d{2})$/);
-    if (!match) return "Без даты";
-    const formatted = new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric", timeZone: "UTC" }).format(
-      new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1)),
-    );
-    return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+  function weekLabel(key) {
+    const start = new Date(`${key}T00:00:00Z`);
+    if (!Number.isFinite(start.getTime())) return "Без даты";
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + 6);
+    const format = (date) =>
+      `${String(date.getUTCDate()).padStart(2, "0")}.${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+    const year =
+      start.getUTCFullYear() === end.getUTCFullYear()
+        ? String(start.getUTCFullYear())
+        : `${start.getUTCFullYear()}/${end.getUTCFullYear()}`;
+    return `${format(start)}–${format(end)}.${year}`;
   }
 
-  function monthlyRows(report) {
-    const source = Array.isArray(report?.charts) ? report.charts : [];
+  function weeklyRows(report) {
+    const source = (Array.isArray(report?.charts) ? report.charts : [])
+      .filter((row) => row && typeof row === "object" && weekKey(row.date))
+      .sort((left, right) => String(left.date || "").localeCompare(String(right.date || "")));
     const buckets = new Map();
     for (const row of source) {
-      if (!row || typeof row !== "object") continue;
-      const key = monthKey(row.date);
-      if (!key) continue;
+      const key = weekKey(row.date);
       const bucket = buckets.get(key) || {
         date: key,
-        label: monthLabel(key),
+        label: weekLabel(key),
         changes: 0,
         added: 0,
         removed: 0,
@@ -168,14 +175,14 @@
     }
     const keys = Array.from(buckets.keys()).sort();
     if (!keys.length) return [];
-    const cursor = new Date(`${keys[0]}-01T00:00:00Z`);
+    const cursor = new Date(`${keys[0]}T00:00:00Z`);
     const last = keys.at(-1);
     const result = [];
-    while (`${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, "0")}` <= last) {
-      const key = `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, "0")}`;
+    while (cursor.toISOString().slice(0, 10) <= last) {
+      const key = cursor.toISOString().slice(0, 10);
       const bucket = buckets.get(key) || {
         date: key,
-        label: monthLabel(key),
+        label: weekLabel(key),
         changes: 0,
         added: 0,
         removed: 0,
@@ -188,7 +195,7 @@
         changedRooms: Array.from(bucket.changedRooms),
         changedMacs: Array.from(bucket.changedMacs),
       });
-      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+      cursor.setUTCDate(cursor.getUTCDate() + 7);
     }
     return result;
   }
@@ -198,10 +205,11 @@
   }
 
   async function render(report = {}) {
-    const rows = monthlyRows(report);
+    const rows = normalizeRows(report);
+    const weeks = weeklyRows(report);
     const finals = snapshotRows(report);
     const ids = ["smartroomChangesChart", "smartroomAddedRemovedChart", "smartroomTotalChart"];
-    if (!rows.length) {
+    if (!rows.length && !finals.length) {
       ids.forEach((id) => {
         destroy(id);
         chartState(id, "Нет данных для построения графика.");
@@ -212,25 +220,31 @@
     await nextFrame();
     const c = colors();
     const rendered = [];
-    const changesOptions = options(c);
-    changesOptions.plugins.tooltip = {
-      callbacks: {
-        afterLabel(context) {
-          const row = rows[context.dataIndex] || {};
-          return `Переговорных: ${(row.changedRooms || []).length.toLocaleString("ru-RU")} · MAC-адресов: ${(row.changedMacs || []).length.toLocaleString("ru-RU")}`;
+    if (weeks.length) {
+      const changesOptions = options(c);
+      changesOptions.plugins.tooltip = {
+        callbacks: {
+          afterLabel(context) {
+            const row = weeks[context.dataIndex] || {};
+            return `Переговорных: ${(row.changedRooms || []).length.toLocaleString("ru-RU")} · MAC-адресов: ${(row.changedMacs || []).length.toLocaleString("ru-RU")}`;
+          },
         },
-      },
-    };
-    rendered.push(
-      upsert("smartroomChangesChart", {
-        type: "bar",
-        data: {
-          labels: rows.map((row) => row.label),
-          datasets: [{ label: "Изменений", data: rows.map((row) => row.changes), backgroundColor: c.yellow }],
-        },
-        options: changesOptions,
-      }),
-    );
+      };
+      rendered.push(
+        upsert("smartroomChangesChart", {
+          type: "bar",
+          data: {
+            labels: weeks.map((row) => row.label),
+            datasets: [{ label: "Изменений", data: weeks.map((row) => row.changes), backgroundColor: c.yellow }],
+          },
+          options: changesOptions,
+        }),
+      );
+    } else {
+      destroy("smartroomChangesChart");
+      chartState("smartroomChangesChart", "Нет данных для недельной динамики изменений.");
+      rendered.push(true);
+    }
     const changesByFinal = finals.slice(1);
     if (changesByFinal.length)
       rendered.push(
@@ -292,5 +306,11 @@
     return rendered.every(Boolean);
   }
 
-  window.MacAnalyzerSmartroomCharts = Object.freeze({ destroy, normalizeRows, snapshotRows, monthlyRows, render });
+  window.MacAnalyzerSmartroomCharts = Object.freeze({
+    destroy,
+    normalizeRows,
+    snapshotRows,
+    weeklyRows,
+    render,
+  });
 })();

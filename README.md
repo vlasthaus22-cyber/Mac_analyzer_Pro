@@ -1,21 +1,23 @@
 # MAC Analyzer Pro
 
-Полный комплект v1.0.76 публикуется одним проверяемым архивом
-`MAC-Analyzer-v1.0.76-Full.zip`. В нём находятся вся программа, исходники,
-тесты, автономный HTML, готовый Windows runtime, OUI, чистая рабочая SQLite и
-очищенная историческая SQLite из v1.0.27 с MAC/model/history без секретов.
+Полный комплект v1.0.77 разделён на два проверяемых файла без потери данных:
+`MAC-Analyzer-v1.0.77-Full-Program.zip` содержит всю программу, исходники,
+тесты, автономный HTML, готовый Windows runtime, OUI и чистую рабочую SQLite;
+`MAC-Analyzer-v1.0.77-History-Database.zip` содержит очищенную историческую
+SQLite из v1.0.27 с MAC/model/history без секретов. Программа работает без
+исторического файла, а его данные можно добавить штатным импортом SQLite.
 
 Корневой `START_HERE.cmd` автоматически запускает
 `server.py` в пользовательской Python-консоли, ждёт готовности backend и открывает
 браузер без запроса прав администратора. Исправления аналитики, автоматического
 определения моделей, точного сравнения устройств, безопасного сохранения больших
 наборов и проверки всех устройств комнаты описаны в
-[`RELEASE_NOTES_v1.0.76.md`](RELEASE_NOTES_v1.0.76.md).
+[`RELEASE_NOTES_v1.0.77.md`](RELEASE_NOTES_v1.0.77.md).
 
 Размер ZIP не является признаком полноты кода. v1.0.53 весил 90,4 МБ главным
-образом из-за SQLite размером 373,1 МБ (56,9 МБ после ZIP-сжатия). Чистый полный
-пакет занимает меньше, потому что не содержит пользовательскую историю. Для
-Историческая база включена в единый `Full`-архив как отдельная безопасная копия.
+образом из-за SQLite размером 373,1 МБ. В v1.0.77 эта база вынесена в отдельный
+архив, поэтому основной пакет программы стал меньше, сохранив весь функционал,
+исходники, runtime и чистую рабочую базу.
 
 В архиве две папки по назначению: `Windows-Portable` — готовая программа,
 `Source` — полный исходный код, тесты и инструменты. Запускать файлы внутри
@@ -44,7 +46,18 @@ set "MAC_ANALYZER_PYTHON=C:\Users\User\AppData\Local\Programs\Python\Python312\p
 `py -0p`. Нужен Python 3.10 или новее с зависимостями из
 `requirements-web.txt`. При пустом значении используется автоматический поиск.
 
-## Что изменилось в v1.0.76
+## Что изменилось в v1.0.77
+
+- График «Динамика изменения MAC-адресов» агрегирует изменения по календарным
+  неделям с понедельника по воскресенье; недели без выгрузок показываются нулём.
+- Несколько Final одной недели суммируются, а tooltip показывает количество
+  затронутых переговорных и уникальных MAC.
+- Полная программа и историческая SQLite публикуются отдельными файлами: это
+  уменьшает основной архив без удаления функций или данных.
+- Историческая база импортируется через «Инженерный режим → Данные → Загрузить
+  базу SQLite» и объединяется с текущей базой без удаления существующих данных.
+
+### Исправления v1.0.76
 
 - Карточки, графики, фильтры и список изменений теперь используют одну и ту же
   выбранную пару Final-снимков; активный последний снимок больше не подмешивается
@@ -427,10 +440,17 @@ database, history, mappings, imports, and backups from v1.0.27, run:
 powershell -ExecutionPolicy Bypass -File scripts/build_v1027_data_release.ps1
 ```
 
+To create the smaller full program archive and the optional historical database
+as two independent release assets, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build_split_data_release.ps1
+```
+
 Release artifacts use short, stable names: `MAC-Analyzer-<version>-Browser.zip`,
-`MAC-Analyzer-<version>-Source.zip`, `MAC-Analyzer-<version>-Full-Clean.zip`, and
-the unified sanitized history package `MAC-Analyzer-<version>-Full.zip`. The directory at
-the root of each ZIP uses the same short name.
+`MAC-Analyzer-<version>-Source.zip`, `MAC-Analyzer-<version>-Full-Program.zip`,
+and `MAC-Analyzer-<version>-History-Database.zip`. The older combined builder
+remains available for compatibility.
 
 The migration works on an archive copy and removes saved API keys, passwords,
 webhooks, tokens, and engineering sessions before release packaging. The

@@ -58,7 +58,9 @@ Mac_analyzer_Pro/
     html/MAC-Analyzer-Pro.html один автономный файл без EXE, CMD, Python и backend
     complete/MAC-Analyzer-*-Browser.zip безопасный пакет: автономный HTML и исходники без EXE/DLL/CMD
     everything/MAC-Analyzer-*-Windows.zip Windows runtime, чистая SQLite-база, OUI, HTML и полный Git-проект
-    legacy-data/MAC-Analyzer-*-Full.zip полная программа со всей рабочей базой v1.0.27; секреты удалены из копии
+    split-data/MAC-Analyzer-*-Full-Program.zip полная программа с чистой рабочей базой
+    split-data/MAC-Analyzer-*-History-Database.zip отдельная очищенная историческая SQLite из v1.0.27
+    legacy-data/MAC-Analyzer-*-Full.zip прежний объединённый формат программы и исторической базы
     full-project/MAC-Analyzer-*-Source.zip полный Git-проект, HTML и все tracked-файлы без пользовательских данных
     dist/MACAnalyzerBackend/ единый пакет: исходный server.py, Python-first лаунчер и резервный asInvoker backend
   START_MAC_ANALYZER.cmd    основной CMD-запуск Python/backend без повышения прав с автоматическим открытием браузера
