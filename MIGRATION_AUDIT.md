@@ -10,7 +10,7 @@ SQLite persistence. The machine-checkable source of truth is
 ## Current Coverage
 
 - PyQt blocks covered by web equivalents: 30/30.
-- PARITY_REGISTRY.md requirements: 150/150.
+- PARITY_REGISTRY.md requirements: 154/154.
 - Missing web equivalents: 0.
 - Unchecked items in `PARITY_REGISTRY.md`: 0.
 - Legacy SQLite import: available through `GET /api/legacy/import/status` and

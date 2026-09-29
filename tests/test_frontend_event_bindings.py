@@ -823,7 +823,7 @@ def test_dashboard_settings_are_loaded_from_backend():
     assert 'loadEngineeringSession();' in app
     assert 'let dashboardFilteredDevices = null;' in app
     assert 'function dashboardDevices(){return dashboardFilteredDevices||state.devices;}' in app
-    assert 'async function loadDashboardPayload(settings=dashboardSettings())' in app
+    assert 'async function loadDashboardPayload(settings=dashboardSettings(),revision=analyticsRenderRevision)' in app
     assert 'dashboardFilteredDevices=data.devices||state.devices;' in app
     assert 'renderDashboardFilterOptions(data.filters||{},data.settings||settings,data.filterOptionsHtml||{});' in app
     assert 'renderDashboardStatus(data);' in app
@@ -929,7 +929,7 @@ def test_notification_runtime_is_removed_from_primary_frontend():
     assert "saveNotificationButton" not in html
     assert "уведомления" not in app.lower()
     assert "уведомления" not in html.lower()
-    assert 'app.js?v=1076' in html
+    assert 'app.js?v=1078' in html
 
 
 def test_column_auto_mapping_uses_backend_detector():
@@ -1125,7 +1125,8 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert 'await BrowserSnapshots?.saveSourceFile?.(fileRecord.sourceStorageId,file)' in app
     assert 'LocalFolderStore.loadImport(localFolderStructure,storageId,fileRecord.name)' in app
     assert 'const renderedViewSignatures=new Map();' in app
-    assert 'if(renderedViewSignatures.get(name)===signature)return;' in app
+    assert 'if(same&&name!=="analytics")return;' in app
+    assert 'if(same&&name==="analytics"){void renderAnalytics({force:true});return;}' in app
     assert 'BrowserSnapshots.page?.(state.resultBrowserSnapshotId,{offset:0,limit:resultPageSize})' in app
     assert 'if(state.resultBrowserSnapshotId&&BrowserSnapshots)' in app
     assert 'if(state.resultBrowserSnapshotId&&!state.devices.length&&BrowserSnapshots)' not in app
@@ -1441,7 +1442,7 @@ def test_quality_reports_are_backend_first():
     assert 'reports.map((report)=>' not in app
     assert 'panel.summaryText||"0 devices' not in app
     assert 'await renderQualityReportsHistory();' in app
-    assert 'renderQualityReportsHistory();refreshAnalyticsReport(true);' in app
+    assert 'renderQualityReportsHistory();refreshAnalyticsReport(true,revision);' in app
     assert 'bars("#qualityInsights",insights)' not in app
     assert 'const duplicateCount=state.devices.length-new Set(state.devices.map((item)=>item.mac)).size' not in app
     assert 'Math.min(100,Math.max(5,issue.count/Math.max(1,summary.devices||1)*100))' not in app
@@ -1545,7 +1546,7 @@ def test_primary_analytics_charts_use_backend_payload():
 
     assert 'function loadAnalyticsPanel(devices=dashboardDevices())' in app
     assert 'analyticsPanelPromise=loadAnalyticsPanel(devices);' in app
-    assert 'async function renderPrimaryCharts()' in app
+    assert 'async function renderPrimaryCharts(revision=analyticsRenderRevision)' in app
     assert 'const data=await(analyticsPanelPromise||loadAnalyticsPanel()),charts=data.primaryChartsHtml||{};' in app
     assert '$("#vendorChart").innerHTML=charts.vendors' in app
     assert '$("#modelChart").innerHTML=charts.models' in app
@@ -1553,7 +1554,7 @@ def test_primary_analytics_charts_use_backend_payload():
     assert '$("#timelineChart").innerHTML=charts.timeline' in app
     assert 'const data=await(analyticsPanelPromise||loadAnalyticsPanel());' in app
     assert 'const data=await(analyticsPanelPromise||loadAnalyticsPanel(devices));' in app
-    assert 'renderPrimaryCharts();renderBackendStatistics();' in app
+    assert 'renderPrimaryCharts(revision);renderBackendStatistics();' in app
     assert 'function renderChartBarsFromItems' not in app
     assert 'function bars(' not in app
     assert 'function tally(' not in app
@@ -2114,11 +2115,11 @@ def test_pyqt_analytics_dialog_report_is_available_in_web_ui():
     for marker in (
         "function buildLocalAnalyticsReport(devices=state.devices)",
         "function renderAnalyticsReport(report,source=\"local\")",
-        "async function refreshAnalyticsReport(preferSharedPanel=false)",
+        "async function refreshAnalyticsReport(preferSharedPanel=false,revision=analyticsRenderRevision)",
         "async function exportAnalyticsReport()",
         'api("/analytics/report"',
         'exportFormat:"txt"',
-        '$("#refreshAnalyticsReportButton").addEventListener("click",refreshAnalyticsReport)',
+        '$("#refreshAnalyticsReportButton").addEventListener("click",()=>refreshAnalyticsReport(false))',
         '$("#exportAnalyticsReportButton").addEventListener("click",exportAnalyticsReport)',
     ):
         assert marker in app

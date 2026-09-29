@@ -20,6 +20,7 @@
   const FullXlsxReport = window.MacAnalyzerFullXlsxReport;
   const FullJsonReport = window.MacAnalyzerFullJsonReport;
   const LocalAnalytics = window.MacAnalyzerLocalAnalytics;
+  const AnalyticsLifecycle = window.MacAnalyzerAnalyticsLifecycle;
   const MemoryGuard = window.MacAnalyzerMemoryGuard;
   const Guide = window.MacAnalyzerGuide;
   const PortableDatabase = window.MacAnalyzerPortableDatabase;
@@ -46,6 +47,7 @@
   if(!FullXlsxReport)throw new Error("Модуль frontend/full-xlsx-report.js не загружен");
   if(!FullJsonReport)throw new Error("Модуль frontend/full-json-report.js не загружен");
   if(!LocalAnalytics)throw new Error("Модуль frontend/local-analytics.js не загружен");
+  if(!AnalyticsLifecycle)throw new Error("Модуль frontend/analytics-lifecycle.js не загружен");
   if(!MacChronology)throw new Error("Модуль frontend/mac-chronology.js не загружен");
   if(!PresenceChurn)throw new Error("Модуль frontend/presence-churn.js не загружен");
   if(!WorkspaceFileLifecycle)throw new Error("Модуль frontend/workspace-file-lifecycle.js не загружен");
@@ -573,6 +575,8 @@
   let dashboardChangeTypeFilter = "all";
   let dashboardCodecOnly = false;
   let browserDashboardCache = null;
+  let backendDashboardCache = null;
+  let analyticsReportCache = null;
   let localAnalyticsCache = null;
   let analysisDashboardCache = null;
   let analysisDashboardPromise = null;
@@ -601,6 +605,8 @@
   function releaseTransientAnalysisMemory(){
     dashboardFilteredDevices=null;
     browserDashboardCache=null;
+    backendDashboardCache=null;
+    analyticsReportCache=null;
     localAnalyticsCache=null;
     dashboardChangeAnalysis={summary:{total:0,critical:0,added:0,removed:0,modified:0},changes:[],snapshotOptions:[]};
     historyPanelPromise=null;
@@ -1974,7 +1980,9 @@
   }
   function currentDeviceCount(){return state.resultSnapshotId||state.resultBrowserSnapshotId?Number(state.resultDeviceCount||0):(state.devices||[]).length;}
   function currentDevicePayload(extra={}){return state.resultSnapshotId?{...extra,snapshotId:state.resultSnapshotId,devices:[]}:{...extra,devices:state.devices||[]};}
-  function clearResultReference(){state.resultSnapshotId="";state.resultBrowserSnapshotId="";state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=0;state.resultInvalidCount=0;state.resultSummary=null;browserDashboardCache=null;localAnalyticsCache=null;resultResponseCache.clear();deviceDialogCache.clear();}
+  function analyticsSourceKey(settings={}){return AnalyticsLifecycle.sourceKey(state,settings);}
+  function incompleteAnalyticsPreview(){return AnalyticsLifecycle.partialPreview(state);}
+  function clearResultReference(){state.resultSnapshotId="";state.resultBrowserSnapshotId="";state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=0;state.resultInvalidCount=0;state.resultSummary=null;browserDashboardCache=null;backendDashboardCache=null;analyticsReportCache=null;localAnalyticsCache=null;resultResponseCache.clear();deviceDialogCache.clear();}
   function syncEnrichmentStrategyUi(value=state.enrichmentStrategy){
     const strategy=EnrichmentStrategy.normalize(value);state.enrichmentStrategy=strategy;
     if($("#strategySelect"))$("#strategySelect").value=strategy;
@@ -2429,16 +2437,23 @@
     return{total,vendors,models,rooms,roomOccupancy,coverage:{uniqueVendors:vendors.length,uniqueModels:models.length,address:{count:address,percent:percent(address)},room:{count:room,percent:percent(room)},ip:{count:ip,percent:percent(ip)},switch:{count:switchCount,percent:percent(switchCount)}},reportText:lines.join("\n")};
   }
   function renderAnalyticsReport(report,source="local"){const preview=$("#analyticsReportPreview"),status=$("#analyticsReportStatus"),occupancy=report?.roomOccupancy||{};if(preview)preview.textContent=report?.reportText||"Нет данных";if(status)status.textContent=`${report?.total||0} устройств · ${source==="backend"?"расчёт backend":"локальный расчёт"}`;if($("#roomOccupancyStatus"))$("#roomOccupancyStatus").textContent=`Распределено ${Number(occupancy.assignedDevices||0).toLocaleString("ru-RU")} из ${Number(report?.total||0).toLocaleString("ru-RU")} (${Number(occupancy.assignedPercent||0).toFixed(1)}%) · без помещения ${Number(occupancy.unassignedDevices||0).toLocaleString("ru-RU")} · среднее ${Number(occupancy.averageDevicesPerRoom||0).toFixed(1)}`;if($("#roomOccupancyChart"))$("#roomOccupancyChart").innerHTML=localChartHtml((occupancy.rooms||[]).slice(0,20).map((item)=>[`${item.label} · ${Number(item.percentOfAssigned||0).toFixed(1)}%`,item.count]),"Нет данных о помещениях.");return report;}
-  async function refreshAnalyticsReport(preferSharedPanel=false){
-    if(browserDashboardCache?.report)return renderAnalyticsReport(browserDashboardCache.report,"local");
-    const local=buildLocalAnalyticsReport(state.devices),durable=Boolean(state.resultBrowserSnapshotId||state.resultSnapshotId);if(!durable)renderAnalyticsReport(local,"local");else if($("#analyticsReportStatus"))$("#analyticsReportStatus").textContent="Загрузка полного финального результата…";
-    if(browserOnlyMode&&state.resultBrowserSnapshotId){
-      try{const cache=await loadBrowserDashboardCache(dashboardSettings());if(cache?.report)return renderAnalyticsReport(cache.report,"local");}catch{}
-      return local;
+  async function refreshAnalyticsReport(preferSharedPanel=false,revision=analyticsRenderRevision){
+    const settings=dashboardSettings(),key=analyticsSourceKey({...settings,panel:"report"});
+    const local=buildLocalAnalyticsReport(state.devices),durable=AnalyticsLifecycle.durable(state);if(!durable)renderAnalyticsReport(local,"local");else if($("#analyticsReportStatus"))$("#analyticsReportStatus").textContent="Загрузка полного финального результата…";
+    if(state.resultBrowserSnapshotId&&BrowserSnapshots?.aggregate){
+      try{const cache=await loadBrowserDashboardCache(settings);if(revision!==analyticsRenderRevision)return null;if(cache?.report){analyticsReportCache={key,report:cache.report,source:"local"};return renderAnalyticsReport(cache.report,"local");}}catch{}
+      if(analyticsReportCache?.key===key)return renderAnalyticsReport(analyticsReportCache.report,analyticsReportCache.source);
+      if($("#analyticsReportStatus"))$("#analyticsReportStatus").textContent="Полный Final временно недоступен; неполный предпросмотр не используется.";
+      return null;
     }
-    try{const panel=preferSharedPanel?await(analyticsPanelPromise||loadAnalyticsPanel()):null;const report=panel?.analyticsReport||await api("/analytics/report",{method:"POST",body:JSON.stringify(currentDevicePayload())});return renderAnalyticsReport(report,"backend");}catch{return local;}
+    try{const panel=preferSharedPanel?await(analyticsPanelPromise||loadAnalyticsPanel()):null;const report=panel?.analyticsReport||await api("/analytics/report",{method:"POST",body:JSON.stringify(currentDevicePayload())});if(revision!==analyticsRenderRevision)return null;analyticsReportCache={key,report,source:"backend"};return renderAnalyticsReport(report,"backend");}catch{
+      if(revision!==analyticsRenderRevision)return null;
+      if(analyticsReportCache?.key===key)return renderAnalyticsReport(analyticsReportCache.report,analyticsReportCache.source);
+      if(incompleteAnalyticsPreview()){if($("#analyticsReportStatus"))$("#analyticsReportStatus").textContent="Полный Final временно недоступен; сохранён полный счётчик "+currentDeviceCount().toLocaleString("ru-RU")+" устройств.";return null;}
+      return renderAnalyticsReport(local,"local");
+    }
   }
-  async function exportAnalyticsReport(){try{const report=await api("/analytics/report",{method:"POST",body:JSON.stringify(currentDevicePayload({exportFormat:"txt"}))});if(!report.export)throw new Error("TXT export is empty");download(report.export.filename||"analytics_report.txt",report.export.content,report.export.mimeType||"text/plain");renderAnalyticsReport(report,"backend");toast("Аналитический отчёт экспортирован.");}catch{const report=renderAnalyticsReport(buildLocalAnalyticsReport(state.devices),"local");download(`analytics_report_${new Date().toISOString().slice(0,19).replace(/[-:T]/g,"")}.txt`,report.reportText,"text/plain");toast("Аналитический отчёт экспортирован локально.");}}
+  async function exportAnalyticsReport(){try{const report=await api("/analytics/report",{method:"POST",body:JSON.stringify(currentDevicePayload({exportFormat:"txt"}))});if(!report.export)throw new Error("TXT export is empty");download(report.export.filename||"analytics_report.txt",report.export.content,report.export.mimeType||"text/plain");renderAnalyticsReport(report,"backend");toast("Аналитический отчёт экспортирован.");}catch{const settings=dashboardSettings(),key=analyticsSourceKey({...settings,panel:"report"});let report=null,source="local";if(state.resultBrowserSnapshotId&&BrowserSnapshots?.aggregate)try{report=(await loadBrowserDashboardCache(settings))?.report||null;}catch{}if(!report&&analyticsReportCache?.key===key){report=analyticsReportCache.report;source=analyticsReportCache.source;}if(!report&&incompleteAnalyticsPreview()){toast("Полный Final временно недоступен. Экспорт неполных 50 строк отменён.");return;}report=report||buildLocalAnalyticsReport(state.devices);renderAnalyticsReport(report,source);download(`analytics_report_${new Date().toISOString().slice(0,19).replace(/[-:T]/g,"")}.txt`,report.reportText,"text/plain");toast("Аналитический отчёт экспортирован локально.");}}
   function localAnalyticsPayload(devices=dashboardDevices()){const known=devices.filter((device)=>device.vendor&&device.vendor!=="Unknown").length,unknown=Math.max(0,devices.length-known),invalid=state.invalid.length;return{vendors:localChartHtml(localTally(devices,"vendor")),models:localChartHtml(localTally(devices,"model")),quality:localChartHtml([["Опознано",known],["Unknown",unknown],["Ошибки",invalid]].filter((item)=>item[1]>0),"Ошибок качества не найдено."),timeline:localChartHtml((state.snapshots||[]).slice(-8).map((snap)=>[String(snap.name||snap.createdAt||"snapshot").slice(0,24),(snap.devices||[]).length]),"Снимков пока нет.")};}
   function renderLocalAnalytics(devices=dashboardDevices()){const charts=localAnalyticsPayload(devices);$("#vendorChart").innerHTML=charts.vendors;$("#modelChart").innerHTML=charts.models;$("#qualityChart").innerHTML=charts.quality;$("#timelineChart").innerHTML=charts.timeline;}
   function analysisHeaderMetrics(devices=state.devices){if(state.resultSnapshotId&&state.resultSummary){const summary=state.resultSummary;return{models:Number(summary.models||0),oui3:Number(summary.oui3||0),oui4:Number(summary.oui4||0),oui5:Number(summary.oui5||0),autoVendors:Number(summary.autoVendors||0),autoModels:Number(summary.autoModels||0)};}const knownVendor=(device)=>device.vendor&&device.vendor!=="Unknown"&&device.vendor!=="Не определено",models=new Set(devices.map((item)=>item.model).filter(Boolean)),oui3=new Set(devices.map((item)=>formatOuiValue(item.mac||item.macFormatted||item.oui,3,"plain")).filter(Boolean)),oui4=new Set(devices.map((item)=>formatOuiValue(item.mac||item.macFormatted||item.oui,4,"plain")).filter(Boolean)),oui5=new Set(devices.map((item)=>formatOuiValue(item.mac||item.macFormatted||item.oui,5,"plain")).filter(Boolean)),autoVendors=devices.filter((item)=>knownVendor(item)&&(item.vendorMatchedPrefix||!item.vendorSource||!["file","history"].includes(item.vendorSource))).length,autoModels=devices.filter((item)=>item.model&&(item.modelMatchedPrefix||!item.modelSource||!["file","history"].includes(item.modelSource))).length;return{models:models.size,oui3:oui3.size,oui4:oui4.size,oui5:oui5.size,autoVendors,autoModels};}
@@ -2480,14 +2495,16 @@
     if(state.resultBrowserSnapshotId||state.resultSnapshotId){if(analysisDashboardCache?.key===key)renderAnalysisDashboardPayload(analysisDashboardCache.payload,"Dashboard построен по полному финальному результату.");else if($("#analysisDashboardStatus"))$("#analysisDashboardStatus").textContent="Загрузка полной статистики Final…";void refreshAnalysisDashboard(key);return;}
     const immediate=analysisDashboardLocalPayload(state.devices,state.resultSummary);renderAnalysisDashboardPayload(immediate,currentDeviceCount()?"Dashboard построен по текущему полному результату.":"Запустите анализ, чтобы построить dashboard.");
   }
-  async function renderPrimaryCharts(){
+  async function renderPrimaryCharts(revision=analyticsRenderRevision){
     try{
       const data=await(analyticsPanelPromise||loadAnalyticsPanel()),charts=data.primaryChartsHtml||{};
+      if(revision!==analyticsRenderRevision)return;
       $("#vendorChart").innerHTML=charts.vendors||'<p class="muted">Недостаточно данных.</p>';
       $("#modelChart").innerHTML=charts.models||'<p class="muted">Недостаточно данных.</p>';
       $("#qualityChart").innerHTML=charts.quality||'<p class="muted">Недостаточно данных.</p>';
       $("#timelineChart").innerHTML=charts.timeline||'<p class="muted">Недостаточно данных.</p>';
     }catch(error){
+      if(revision!==analyticsRenderRevision||incompleteAnalyticsPreview())return;
       renderLocalAnalytics(dashboardDevices());
     }
   }
@@ -2795,14 +2812,24 @@
     browserDashboardCache={fleet,changeAnalysis:analysis,settings,local:true};renderDashboardStatus({metrics,settings,changeAnalysis:analysis,statusCharts});
     $("#snapshotMetric").textContent=finalDashboardSnapshots().length||0;$("#uniqueMacMetric").textContent=fleet.uniqueAcrossUploads||unique.size;$("#switchMetric").textContent=metrics.switches;$("#roomMetric").textContent=new Set(devices.map((device)=>device.room).filter(Boolean)).size;renderLocalAnalytics(devices);return devices;
   }
-  async function loadDashboardPayload(settings=dashboardSettings()){
+  async function loadDashboardPayload(settings=dashboardSettings(),revision=analyticsRenderRevision){
     const data=await api("/dashboard",{method:"POST",body:JSON.stringify(currentDevicePayload({snapshots:state.snapshots,movements:state.movementHistory,settings,compactResult:Boolean(state.resultSnapshotId),resultPageSize:500}))});
+    if(revision!==analyticsRenderRevision)return null;
+    backendDashboardCache={key:analyticsSourceKey({...settings,panel:"dashboard"}),data};
     dashboardFilteredDevices=data.devices||state.devices;
     renderDashboardStatus(data);
     if(data.metrics){$("#snapshotMetric").textContent=finalDashboardSnapshots().length||0;$("#uniqueMacMetric").textContent=data.metrics.uniqueMacs||data.metrics.totalAcross||0;$("#switchMetric").textContent=data.metrics.switches||0;$("#roomMetric").textContent=data.metrics.rooms||0;}
     await new Promise((resolve)=>requestAnimationFrame(resolve));
     renderDashboardFilterOptions(data.filters||{},data.settings||settings,data.filterOptionsHtml||{});
     return data;
+  }
+  function restoreBackendDashboard(settings=dashboardSettings()){
+    const key=analyticsSourceKey({...settings,panel:"dashboard"});
+    if(backendDashboardCache?.key!==key||!backendDashboardCache.data)return false;
+    const data=backendDashboardCache.data;dashboardFilteredDevices=data.devices||state.devices;renderDashboardStatus(data);renderDashboardFilterOptions(data.filters||{},data.settings||settings,data.filterOptionsHtml||{});
+    if(data.metrics){$("#snapshotMetric").textContent=finalDashboardSnapshots().length||0;$("#uniqueMacMetric").textContent=data.metrics.uniqueMacs||data.metrics.totalAcross||0;$("#switchMetric").textContent=data.metrics.switches||0;$("#roomMetric").textContent=data.metrics.rooms||0;}
+    if($("#analysisDashboardStatus"))$("#analysisDashboardStatus").textContent="Показан последний полный расчёт; выполняется повторное подключение к источнику.";
+    return true;
   }
   function loadAnalyticsPanel(devices=dashboardDevices()){
     const snapshots=finalDashboardSnapshots();
@@ -2820,7 +2847,8 @@
       renderDashboardStatus(data);
       return data;
     }catch(error){
-      applyLocalDashboard(dashboardSettings());
+      const settings=dashboardSettings(),key=analyticsSourceKey({...settings,panel:"dashboard"}),mode=AnalyticsLifecycle.fallbackMode(state,backendDashboardCache,key);
+      if(mode==="cached")restoreBackendDashboard(settings);else if(mode==="local")applyLocalDashboard(settings);
       return null;
     }
   }
@@ -2831,7 +2859,9 @@
       applyDashboardSettings(result.settings||state.dashboardSettings);
       toast("Настройки dashboard сохранены.");
     }catch(error){
-      applyLocalDashboard(state.dashboardSettings);save();toast("Настройки dashboard сохранены локально.");
+      const settings=dashboardSettings(),key=analyticsSourceKey({...settings,panel:"dashboard"}),mode=AnalyticsLifecycle.fallbackMode(state,backendDashboardCache,key);
+      if(mode==="cached")restoreBackendDashboard(settings);else if(mode==="local")applyLocalDashboard(settings);else if($("#analysisDashboardStatus"))$("#analysisDashboardStatus").textContent="Настройки сохранены локально; полный Final будет пересчитан после восстановления источника.";
+      save();toast("Настройки dashboard сохранены локально.");
     }
     $("#dashboardSettingsDialog")?.close();renderAnalytics();
   }
@@ -3019,12 +3049,12 @@
   function scheduleAnalyticsSecondaryPanels(revision,devices){
     const run=()=>{
       if(revision!==analyticsRenderRevision||!$("#analyticsView")?.classList.contains("active"))return;
-      if(browserOnlyMode&&state.resultBrowserSnapshotId){
+      if(state.resultBrowserSnapshotId&&BrowserSnapshots?.aggregate){
         analyticsPanelPromise=null;
-        refreshAnalyticsReport(false);refreshPresenceChurn();
+        refreshAnalyticsReport(false,revision);refreshPresenceChurn();
         return;
       }
-      analyticsPanelPromise=loadAnalyticsPanel(devices);renderPrimaryCharts();renderBackendStatistics();renderTemporalStatistics();renderBackendCharts();renderBackendClusters(devices);renderBackendTopology(devices,true);renderQualityReportsHistory();refreshAnalyticsReport(true);refreshPresenceChurn();
+      analyticsPanelPromise=loadAnalyticsPanel(devices);renderPrimaryCharts(revision);renderBackendStatistics();renderTemporalStatistics();renderBackendCharts();renderBackendClusters(devices);renderBackendTopology(devices,true);renderQualityReportsHistory();refreshAnalyticsReport(true,revision);refreshPresenceChurn();
     };
     if(typeof window.requestIdleCallback==="function")window.requestIdleCallback(run,{timeout:350});else setTimeout(run,60);
   }
@@ -3038,7 +3068,7 @@
     const durable=Boolean(state.resultBrowserSnapshotId||state.resultSnapshotId);if(!durable)applyLocalDashboard(dashboardSettings());
     renderAnalysisDashboard();
     await new Promise((resolve)=>requestAnimationFrame(resolve));
-    if(browserOnlyMode&&state.resultBrowserSnapshotId&&BrowserSnapshots?.aggregate){
+    if(state.resultBrowserSnapshotId&&BrowserSnapshots?.aggregate){
       try{
         const cache=await loadBrowserDashboardCache(dashboardSettings());
         if(revision===analyticsRenderRevision&&renderBrowserDashboardCache(cache)){
@@ -3050,7 +3080,8 @@
         }
       }catch(error){analyticsRenderCache={signature:"",at:0};toast("Не удалось построить полный локальный dashboard: "+error.message);}
     }
-    try{await loadDashboardPayload();}catch(error){applyLocalDashboard(dashboardSettings());analyticsRenderCache={signature:"",at:0};}if(revision!==analyticsRenderRevision)return;analyticsRenderCache={signature,at:Date.now()};scheduleAnalyticsSecondaryPanels(revision,dashboardDevices());
+    let complete=true;
+    try{await loadDashboardPayload(dashboardSettings(),revision);}catch(error){if(revision!==analyticsRenderRevision||!$("#analyticsView")?.classList.contains("active"))return;const settings=dashboardSettings(),key=analyticsSourceKey({...settings,panel:"dashboard"}),mode=AnalyticsLifecycle.fallbackMode(state,backendDashboardCache,key);if(mode==="cached")restoreBackendDashboard(settings);else if(mode==="preserve"){complete=false;if($("#analysisDashboardStatus"))$("#analysisDashboardStatus").textContent=`Полный Final временно недоступен; предпросмотр из ${AnalyticsLifecycle.previewCount(state).toLocaleString("ru-RU")} строк не используется.`;}else applyLocalDashboard(settings);analyticsRenderCache={signature:"",at:0};complete=false;}if(revision!==analyticsRenderRevision)return;if(complete)analyticsRenderCache={signature,at:Date.now()};scheduleAnalyticsSecondaryPanels(revision,dashboardDevices());
   }
   function historyQueryParams(query="", from="", to="", limit="500"){
     const params=new URLSearchParams({limit});
@@ -3886,8 +3917,8 @@
   function viewFromHash(){return normalizeViewName((location.hash||"").replace(/^#/,""));}
   function renderViewContent(name){if(name==="workspace"){renderFiles();renderMapping();renderMetrics();renderResults();return Promise.resolve();}if(name==="data"){renderServices();loadDatabaseHistoryManagement();}else if(name==="automation"){renderServices();renderBatchPlan();}if(name==="settings"){renderParityStatus();renderArchiveList();}if(name==="analytics")renderAnalytics();if(name==="history")renderHistory();const smartroomTask=["analytics","rooms","roomhistory"].includes(name)?SmartroomUI?.render(name):null;if(name==="single")renderSingleMappingGrid();if(name==="compare")renderSnapshots();if(name==="guide"){Guide.syncMode(engineeringSessionActive(),state.engineeringExpiresAt,document);if(!$("#systemDiagnosticsSummary")?.dataset.loaded)runSystemDiagnostics();}return Promise.resolve(smartroomTask);}
   let viewRenderRevision=0;
-  function scheduleViewContent(name){const revision=++viewRenderRevision,signature=viewContentSignature(name);if(renderedViewSignatures.get(name)===signature)return;const token=UiFeedback?.start("Открытие вкладки…");(window.requestAnimationFrame||((callback)=>setTimeout(callback,0)))(()=>{if(revision!==viewRenderRevision||activeViewName()!==name){UiFeedback?.stop(token);return;}renderViewContent(name).then(()=>{if(revision===viewRenderRevision&&activeViewName()===name)renderedViewSignatures.set(name,viewContentSignature(name));}).catch((error)=>{UiFeedback?.showError(error);toast(error.message);}).finally(()=>UiFeedback?.stop(token));});}
-  function activateView(name,{updateHash=true,render=true}={}){name=normalizeViewName(name);if(!engineeringSessionActive()&&engineeringOnlyViews.has(name))name="history";LazyTabs?.activate(name);$$(".nav-item").forEach((b)=>{const active=b.dataset.view===name;b.classList.toggle("active",active);b.setAttribute("aria-selected",active?"true":"false");});$$(".view").forEach((panel)=>{const active=panel.id===name+"View";panel.classList.toggle("active",active);panel.hidden=!active;});const title=viewConfig[name];$("#viewTitle").textContent=title[0];$("#viewSubtitle").textContent=title[1];if(updateHash&&location.hash!=="#"+name)history.pushState(null,"","#"+name);if(render)scheduleViewContent(name);return name;}
+  function scheduleViewContent(name){const revision=++viewRenderRevision,signature=viewContentSignature(name),same=renderedViewSignatures.get(name)===signature;if(same&&name!=="analytics")return;if(same&&name==="analytics"){void renderAnalytics({force:true});return;}const token=UiFeedback?.start("Открытие вкладки…");(window.requestAnimationFrame||((callback)=>setTimeout(callback,0)))(()=>{if(revision!==viewRenderRevision||activeViewName()!==name){UiFeedback?.stop(token);return;}renderViewContent(name).then(()=>{if(revision===viewRenderRevision&&activeViewName()===name)renderedViewSignatures.set(name,viewContentSignature(name));}).catch((error)=>{UiFeedback?.showError(error);toast(error.message);}).finally(()=>UiFeedback?.stop(token));});}
+  function activateView(name,{updateHash=true,render=true}={}){name=normalizeViewName(name);if(!engineeringSessionActive()&&engineeringOnlyViews.has(name))name="history";if(activeViewName()==="analytics"&&name!=="analytics")analyticsRenderRevision++;LazyTabs?.activate(name);$$(".nav-item").forEach((b)=>{const active=b.dataset.view===name;b.classList.toggle("active",active);b.setAttribute("aria-selected",active?"true":"false");});$$(".view").forEach((panel)=>{const active=panel.id===name+"View";panel.classList.toggle("active",active);panel.hidden=!active;});const title=viewConfig[name];$("#viewTitle").textContent=title[0];$("#viewSubtitle").textContent=title[1];if(updateHash&&location.hash!=="#"+name)history.pushState(null,"","#"+name);if(render)scheduleViewContent(name);return name;}
   function view(name,options={}){return activateView(name,options);}
   let lastComparisonResult=null;
   function comparisonPayload(exportFormat=""){
@@ -4240,7 +4271,7 @@
   $("#databaseMaintenanceButton").addEventListener("click",async()=>{try{const result=await api("/database/maintenance",{method:"POST",body:JSON.stringify({integrity:true,optimize:true,vacuum:false})});renderServices();toast("SQLite integrity: "+result.integrity+", reclaimed "+Math.round((result.reclaimedBytes||0)/1024)+" KB");}catch(error){toast(error.message);}});
   $("#legacyImportButton").addEventListener("click",async()=>{try{const result=await api("/legacy/import",{method:"POST",body:JSON.stringify({dryRun:false})});renderServices();toast("Legacy SQLite: imported "+(result.summary?.imported||0)+", skipped "+(result.summary?.skipped||0));}catch(error){toast(error.message);}});
   $("#qualityAnalysisButton").addEventListener("click",()=>{analyzeQuality();toast("Анализ качества данных завершён.");});
-  $("#refreshAnalyticsReportButton").addEventListener("click",refreshAnalyticsReport);
+  $("#refreshAnalyticsReportButton").addEventListener("click",()=>refreshAnalyticsReport(false));
   $("#exportAnalyticsReportButton").addEventListener("click",exportAnalyticsReport);
   $("#dashboardVendorFilter").addEventListener("change",()=>renderAnalytics({force:true}));
   $("#dashboardSearchInput").addEventListener("input",debounce(()=>renderAnalytics({force:true}),180));
