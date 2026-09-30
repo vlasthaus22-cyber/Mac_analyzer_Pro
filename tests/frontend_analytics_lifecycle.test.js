@@ -34,4 +34,41 @@ assert.equal(
   "an in-memory complete result may use local analytics",
 );
 
+const lostReference = {
+  resultDeviceCount: 12_249,
+  devices: Array.from({ length: 50 }, (_, index) => ({ id: index })),
+  snapshots: [
+    { id: "older", kind: "analysis", snapshotOrder: 13, browserStored: true, deviceCount: 11_573 },
+    { id: "latest", kind: "analysis", snapshotOrder: 14, browserStored: true, deviceCount: 12_249 },
+  ],
+};
+assert.equal(lifecycle.durable(lostReference), true, "a lost reference must not turn a preview into a complete result");
+assert.equal(lifecycle.total(lostReference), 12_249);
+assert.equal(lifecycle.partialPreview(lostReference), true);
+assert.equal(lifecycle.fallbackMode(lostReference, null, "lost"), "preserve");
+assert.equal(lifecycle.finalCandidates(lostReference)[0].id, "latest");
+
+assert.deepEqual(
+  lifecycle.restoredReferences({
+    activeSnapshotId: "browser-final",
+    activeSnapshotStorage: "browser",
+  }),
+  { backend: "", browser: "browser-final" },
+);
+assert.deepEqual(
+  lifecycle.restoredReferences({
+    activeSnapshotId: "legacy-unknown",
+  }),
+  { backend: "", browser: "" },
+  "an old untyped autosave must not be misclassified as a backend snapshot",
+);
+assert.deepEqual(
+  lifecycle.restoredReferences({
+    resultSnapshotId: "misclassified-browser-final",
+    snapshots: [{ id: "misclassified-browser-final", browserStored: true, backendStored: false }],
+  }),
+  { backend: "", browser: "misclassified-browser-final" },
+  "a legacy browser snapshot stored in resultSnapshotId must be repaired",
+);
+
 console.log("frontend analytics lifecycle test passed");

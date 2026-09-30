@@ -127,6 +127,7 @@
   }
   BrowserSnapshots?.removeLegacyWorkspace?.().catch(()=>{});
   let browserStateSaveTimer=null,browserStateSaveRevision=0,browserStateQueuedRevision=0,browserStatePersistedRevision=0,browserStateSavePromise=Promise.resolve(),browserStatePendingSavedAt="";
+  let activeFinalRecoveryPromise=null;
   let portableDatabaseHandle=null,portableDatabaseSaveTimer=null,portableDatabaseSaveRevision=0,portableDatabaseQueuedRevision=0,portableDatabasePersistedRevision=0,portableDatabaseSavePromise=Promise.resolve();
   let localFolderHandle=null,localFolderStructure=null;
   function openBrowserStateDb(){
@@ -298,6 +299,7 @@
     state.resultDeviceCount=Math.max(0,Number(data.deviceCount??data.header?.counts?.devices??state.devices.length)||0);
     state.resultInvalidCount=Math.max(0,Number(data.invalidCount??data.header?.counts?.invalid??state.invalid.length)||0);
     state.lastAnalysis=data.header?.savedAt||state.lastAnalysis||new Date().toISOString();
+    await recoverActiveFinalReference({allowBackend:false,persist:false});
     try{localStorage.setItem(localFolderSavedAtKey,data.header?.savedAt||"");}catch{}
     save({immediate:true,portable:false});
     await flushBrowserStateSave().catch(()=>{});
@@ -501,8 +503,9 @@
       if(state.resultBrowserSnapshotId&&BrowserSnapshots){
         const stored=await BrowserSnapshots.page?.(state.resultBrowserSnapshotId,{offset:0,limit:resultPageSize}).catch(()=>null);
         if(stored){state.devices=(stored.items||[]).filter((item)=>item?.valid!==false&&!item?.invalid);state.invalid=(stored.items||[]).filter((item)=>item?.valid===false||item?.invalid);state.resultDeviceCount=Number(stored.metadata?.deviceCount||stored.summary?.devices||state.devices.length);state.resultInvalidCount=Number(stored.metadata?.invalidCount||stored.summary?.invalid||state.invalid.length);state.resultSummary=stored.summary||null;state.resultBrowserSnapshotDirty=false;}
-        else{const metadata=(state.snapshots||[]).find((item)=>item.id===state.resultBrowserSnapshotId);state.devices=metadata?.devices||[];state.invalid=[];state.resultBrowserSnapshotId="";state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=state.devices.length;state.resultInvalidCount=0;}
+        else{const metadata=(state.snapshots||[]).find((item)=>item.id===state.resultBrowserSnapshotId),expected=Math.max(Number(state.resultDeviceCount||0),Number(metadata?.deviceCount||0));state.devices=metadata?.devices||state.devices||[];state.invalid=[];state.resultBrowserSnapshotId="";state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=Math.max(expected,state.devices.length);state.resultInvalidCount=Number(metadata?.invalidCount||state.resultInvalidCount||0);}
       }
+      await recoverActiveFinalReference({allowBackend:false,persist:false});
       return true;
     }catch{return false;}
   }
@@ -575,6 +578,7 @@
   let dashboardChangeTypeFilter = "all";
   let dashboardCodecOnly = false;
   let browserDashboardCache = null;
+  let browserComparisonCache = {key:"",data:null};
   let backendDashboardCache = null;
   let analyticsReportCache = null;
   let localAnalyticsCache = null;
@@ -734,10 +738,12 @@
     throw lastError||new TypeError("Backend недоступен");
   };
   function compactAnalysisAutosaveState(){
-    const activeSnapshot=state.snapshots?.[0];
+    const activeSnapshotId=String(state.resultSnapshotId||state.resultBrowserSnapshotId||"");
+    const activeSnapshotStorage=state.resultSnapshotId?"backend":state.resultBrowserSnapshotId?"browser":"";
     return {
       ...state,
-      activeSnapshotId:activeSnapshot?.id||state.resultSnapshotId||"",
+      activeSnapshotId,
+      activeSnapshotStorage,
       files:(state.files||[]).map((file)=>({...file,rows:[]})),
       devices:[],
       invalid:[],
@@ -795,8 +801,11 @@
     merged.columnWidths=normalizeColumnWidths(merged.columnWidths);
     merged.vendorDetectorSettings=normalizeVendorDetectorSettings(merged.vendorDetectorSettings||{});
     merged.historyEnrichmentSettings=normalizeHistoryEnrichmentSettings(merged.historyEnrichmentSettings||{});
-    if(!merged.resultSnapshotId&&merged.activeSnapshotId)merged.resultSnapshotId=String(merged.activeSnapshotId);
-    if(merged.resultSnapshotId&&!merged.resultDeviceCount){const snapshot=merged.snapshots.find((item)=>item.id===merged.resultSnapshotId);merged.resultDeviceCount=Number(snapshot?.deviceCount||0);}
+    const references=AnalyticsLifecycle.restoredReferences(merged);
+    merged.resultSnapshotId=references.backend;
+    merged.resultBrowserSnapshotId=references.browser;
+    const activeId=merged.resultSnapshotId||merged.resultBrowserSnapshotId;
+    if(activeId&&!merged.resultDeviceCount){const snapshot=merged.snapshots.find((item)=>String(item.id)===String(activeId));merged.resultDeviceCount=Number(snapshot?.deviceCount||0);}
     return merged;
   }
   function shouldRestoreBootstrapAutosave(autosave){
@@ -816,7 +825,9 @@
     if(!Object.keys(restored.localModelMappings||{}).length)restored.localModelMappings=state.localModelMappings||{};
     if(!(restored.ipMappings||[]).length)restored.ipMappings=state.ipMappings||[];
     if(!Object.keys(restored.smartroomMappings||{}).length)restored.smartroomMappings=state.smartroomMappings||{};
+    const localReference={resultSnapshotId:state.resultSnapshotId,resultBrowserSnapshotId:state.resultBrowserSnapshotId,resultDeviceCount:state.resultDeviceCount,resultInvalidCount:state.resultInvalidCount,resultSummary:state.resultSummary};
     state={...state,...restored,backendAutosaveUpdatedAt:autosave.updatedAt||"",bootstrapAutosaveRestoredAt:autosave.updatedAt||new Date().toISOString()};
+    if(!state.resultSnapshotId&&!state.resultBrowserSnapshotId&&(localReference.resultSnapshotId||localReference.resultBrowserSnapshotId))Object.assign(state,localReference);
     applyVendorDetectorSettings(state.vendorDetectorSettings||{});
     applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});
     const status=$("#autosaveStatus");
@@ -858,8 +869,7 @@
         const retained=(state.snapshots||[]).filter((item)=>item?.browserStored||!item?.backendStored);
         state.snapshots=mergeSnapshotMetadata(retained,data.snapshots);
       }
-      const finalSnapshotsByRecency=(items=state.snapshots||[])=>items.filter((item)=>String(item.kind||"").toLowerCase()==="analysis"||String(item.name||"").toLowerCase().startsWith("анализ:")).sort((a,b)=>String(b.savedAt||b.createdAt||"").localeCompare(String(a.savedAt||a.createdAt||""))||Number(b.snapshotOrder||0)-Number(a.snapshotOrder||0));
-      const backendFinals=finalSnapshotsByRecency((state.snapshots||[]).filter((item)=>item.backendStored));
+      const backendFinals=AnalyticsLifecycle.finalCandidates({...state,snapshots:(state.snapshots||[]).filter((item)=>item.backendStored)});
       const latestBackend=backendFinals[0],activeBrowser=(state.snapshots||[]).find((item)=>item.id===state.resultBrowserSnapshotId&&item.browserStored);
       const browserTime=Date.parse(activeBrowser?.savedAt||activeBrowser?.createdAt||"")||0,backendTime=Date.parse(latestBackend?.savedAt||latestBackend?.createdAt||"")||0;
       if(latestBackend&&(!activeBrowser||backendTime>browserTime)){state.resultSnapshotId=String(latestBackend.id||"");state.resultBrowserSnapshotId="";state.resultBrowserSnapshotDirty=false;}
@@ -885,7 +895,7 @@
           state.resultSummary=opened.resultSummary||opened.resultPage?.summary||null;
           state.devices=opened.resultPage?.items||opened.devices||state.devices||[];
           state.invalid=opened.invalid||[];
-        }catch(error){if(error.status!==404)throw error;clearResultReference();}
+        }catch(error){if(error.status!==404)throw error;clearResultReference();await recoverActiveFinalReference({allowBackend:false,persist:false});}
       }
       if (data.columns) {
         state.visibleColumns = data.columns.visible || state.visibleColumns;
@@ -1480,7 +1490,7 @@
     const page=await BrowserSnapshots.page(sourceId,{offset:0,limit:resultPageSize}),items=page?.items||[];
     state.resultSnapshotId="";state.resultBrowserSnapshotId=sourceId;state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=metadata.deviceCount;state.resultInvalidCount=metadata.invalidCount;state.resultSummary=page?.summary||null;
     state.devices=items.filter((item)=>item?.valid!==false&&!item?.invalid);state.invalid=items.filter((item)=>item?.valid===false||item?.invalid);
-    browserDashboardCache=null;localAnalyticsCache=null;state.dashboardFleetCache=null;
+    browserDashboardCache=null;browserComparisonCache={key:"",data:null};localAnalyticsCache=null;state.dashboardFleetCache=null;
     return{...result,updated:true,snapshot:metadata};
   }
   function createLocalComparisonIndex(devices=[]){const fields=["vendor","model","deviceType","ip","address","room","smartroomId","switchIp","switchPort"],index=new Map();for(const device of devices||[]){const mac=normalize(device.mac||device.macFormatted);if(!mac)continue;const values=[];for(const field of fields)values.push(String(device[field]??""));index.set(mac,JSON.stringify(values));}return{fields,index};}
@@ -1978,11 +1988,75 @@
     const totalBytes=analysisFileRecords().reduce((sum,file)=>sum+Math.max(0,Number(file.sourceBytes||0)),0);
     return totalRows<=(MemoryGuard.limits.browserEnrichmentRows||220000)&&totalBytes<=(MemoryGuard.limits.browserInputBatchBytes||96*1024*1024);
   }
-  function currentDeviceCount(){return state.resultSnapshotId||state.resultBrowserSnapshotId?Number(state.resultDeviceCount||0):(state.devices||[]).length;}
-  function currentDevicePayload(extra={}){return state.resultSnapshotId?{...extra,snapshotId:state.resultSnapshotId,devices:[]}:{...extra,devices:state.devices||[]};}
+  function currentDeviceCount(){return AnalyticsLifecycle.total(state);}
+  function currentDevicePayload(extra={}){
+    const preview=(state.devices||[]).length,expected=currentDeviceCount(),partial=expected>preview;
+    return state.resultSnapshotId
+      ?{...extra,snapshotId:state.resultSnapshotId,devices:[],expectedDeviceCount:expected,partialPreview:false}
+      :{...extra,devices:state.devices||[],expectedDeviceCount:expected,partialPreview:partial};
+  }
   function analyticsSourceKey(settings={}){return AnalyticsLifecycle.sourceKey(state,settings);}
   function incompleteAnalyticsPreview(){return AnalyticsLifecycle.partialPreview(state);}
-  function clearResultReference(){state.resultSnapshotId="";state.resultBrowserSnapshotId="";state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=0;state.resultInvalidCount=0;state.resultSummary=null;browserDashboardCache=null;backendDashboardCache=null;analyticsReportCache=null;localAnalyticsCache=null;resultResponseCache.clear();deviceDialogCache.clear();}
+  function applyBrowserFinalReference(snapshotId,page){
+    const metadata=page?.metadata||{},items=page?.items||[];
+    state.resultSnapshotId="";
+    state.resultBrowserSnapshotId=String(snapshotId||metadata.id||"");
+    state.resultBrowserSnapshotDirty=false;
+    state.devices=items.filter((item)=>item?.valid!==false&&!item?.invalid);
+    state.invalid=items.filter((item)=>item?.valid===false||item?.invalid);
+    state.resultDeviceCount=Number(metadata.deviceCount||page?.summary?.devices||state.devices.length);
+    state.resultInvalidCount=Number(metadata.invalidCount||page?.summary?.invalid||state.invalid.length);
+    state.resultSummary=page?.summary||state.resultSummary||null;
+    return Boolean(state.resultBrowserSnapshotId);
+  }
+  function applyBackendFinalReference(snapshotId,opened){
+    const reference=opened?.resultReference||{},page=opened?.resultPage||{};
+    state.resultSnapshotId=String(reference.snapshotId||snapshotId||"");
+    state.resultBrowserSnapshotId="";
+    state.resultBrowserSnapshotDirty=false;
+    state.resultDeviceCount=Number(reference.deviceCount||page.summary?.devices||0);
+    state.resultInvalidCount=Number(reference.invalidCount||page.summary?.invalid||0);
+    state.resultSummary=opened?.resultSummary||page.summary||null;
+    state.devices=page.items||opened?.devices||[];
+    state.invalid=opened?.invalid||[];
+    return Boolean(state.resultSnapshotId);
+  }
+  async function recoverActiveFinalReference({allowBackend=true,persist=true}={}){
+    if(activeFinalRecoveryPromise)return activeFinalRecoveryPromise;
+    activeFinalRecoveryPromise=(async()=>{
+      const originalBackend=String(state.resultSnapshotId||""),originalBrowser=String(state.resultBrowserSnapshotId||"");
+      if(originalBrowser&&BrowserSnapshots?.page){
+        const stored=await BrowserSnapshots.page(originalBrowser,{offset:0,limit:resultPageSize}).catch(()=>null);
+        if(stored){applyBrowserFinalReference(originalBrowser,stored);return true;}
+        state.resultBrowserSnapshotId="";
+      }
+      if(originalBackend&&allowBackend&&backendAvailable){
+        try{
+          const opened=await api("/snapshots/open",{method:"POST",body:JSON.stringify({id:originalBackend,compactResult:true,resultPageSize})});
+          applyBackendFinalReference(originalBackend,opened);return true;
+        }catch(error){if(error.status!==404&&!networkUnavailable(error))throw error;state.resultSnapshotId="";}
+      }
+      const candidates=AnalyticsLifecycle.finalCandidates(state);
+      for(const snapshot of candidates){
+        const id=String(snapshot.id||snapshot.snapshotId||"");if(!id)continue;
+        if(allowBackend&&backendAvailable&&snapshot.backendStored){
+          try{
+            const opened=await api("/snapshots/open",{method:"POST",body:JSON.stringify({id,compactResult:true,resultPageSize})});
+            applyBackendFinalReference(id,opened);if(persist)save();return true;
+          }catch(error){if(error.status!==404&&!networkUnavailable(error))throw error;}
+        }
+        if(BrowserSnapshots?.page&&(snapshot.backendStored!==true||snapshot.browserStored)){
+          const stored=await BrowserSnapshots.page(id,{offset:0,limit:resultPageSize}).catch(()=>null);
+          if(stored){applyBrowserFinalReference(id,stored);if(persist)save();return true;}
+        }
+        const inline=Array.isArray(snapshot.devices)?snapshot.devices:[],expected=Number(snapshot.deviceCount||inline.length);
+        if(inline.length&&inline.length>=expected){state.devices=inline;state.invalid=[];state.resultDeviceCount=inline.length;state.resultInvalidCount=Number(snapshot.invalidCount||0);return true;}
+      }
+      return false;
+    })().finally(()=>{activeFinalRecoveryPromise=null;});
+    return activeFinalRecoveryPromise;
+  }
+  function clearResultReference(){state.resultSnapshotId="";state.resultBrowserSnapshotId="";state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=0;state.resultInvalidCount=0;state.resultSummary=null;browserDashboardCache=null;browserComparisonCache={key:"",data:null};backendDashboardCache=null;analyticsReportCache=null;localAnalyticsCache=null;resultResponseCache.clear();deviceDialogCache.clear();}
   function syncEnrichmentStrategyUi(value=state.enrichmentStrategy){
     const strategy=EnrichmentStrategy.normalize(value);state.enrichmentStrategy=strategy;
     if($("#strategySelect"))$("#strategySelect").value=strategy;
@@ -2493,6 +2567,7 @@
     const root=$("#analysisDashboardPanel");if(!root)return;
     const key=[state.resultBrowserSnapshotId||"",state.resultSnapshotId||"",currentDeviceCount(),state.lastAnalysis||""].join("|");
     if(state.resultBrowserSnapshotId||state.resultSnapshotId){if(analysisDashboardCache?.key===key)renderAnalysisDashboardPayload(analysisDashboardCache.payload,"Dashboard построен по полному финальному результату.");else if($("#analysisDashboardStatus"))$("#analysisDashboardStatus").textContent="Загрузка полной статистики Final…";void refreshAnalysisDashboard(key);return;}
+    if(AnalyticsLifecycle.durable(state)){if($("#analysisDashboardStatus"))$("#analysisDashboardStatus").textContent=`Восстанавливается полный Final: ${currentDeviceCount().toLocaleString("ru-RU")} устройств. Предпросмотр из ${(state.devices||[]).length.toLocaleString("ru-RU")} строк не используется.`;return;}
     const immediate=analysisDashboardLocalPayload(state.devices,state.resultSummary);renderAnalysisDashboardPayload(immediate,currentDeviceCount()?"Dashboard построен по текущему полному результату.":"Запустите анализ, чтобы построить dashboard.");
   }
   async function renderPrimaryCharts(revision=analyticsRenderRevision){
@@ -2712,7 +2787,9 @@
     const effectiveSettings={...settings,baselineSnapshotId:baselineId,comparisonSnapshotId:comparisonId,changeDateFrom:pair.dateFrom,changeDateTo:pair.dateTo};
     const fleetCacheKey=JSON.stringify({snapshots:options.map((item)=>[item.id,item.date,item.savedAt]),query:settings.query,vendor:settings.vendor,room:settings.room,showUnknown:settings.showUnknown}),cacheKey=JSON.stringify({fleetCacheKey,targetId,baselineId,comparisonId,mode:settings.changeMode,dateFrom:pair.dateFrom,dateTo:pair.dateTo});
     if(browserDashboardCache?.cacheKey===cacheKey)return{...browserDashboardCache,settings:effectiveSettings};
-    const comparison=baselineId&&comparisonId&&baselineId!==comparisonId&&BrowserSnapshots.compareSnapshots?await BrowserSnapshots.compareSnapshots(baselineId,comparisonId,{limit:MemoryGuard.limits.movementRows||5000,historySnapshots:finalDashboardSnapshots()}):null;
+    const comparisonKey=JSON.stringify({baselineId,comparisonId,history:options.map((item)=>[item.id,item.savedAt,item.date])});
+    let comparison=browserComparisonCache.key===comparisonKey?browserComparisonCache.data:null;
+    if(!comparison&&baselineId&&comparisonId&&baselineId!==comparisonId&&BrowserSnapshots.compareSnapshots){comparison=await BrowserSnapshots.compareSnapshots(baselineId,comparisonId,{limit:MemoryGuard.limits.movementRows||5000,historySnapshots:finalDashboardSnapshots()});browserComparisonCache={key:comparisonKey,data:comparison};}
     const aggregate=await BrowserSnapshots.aggregate(targetId,{limit:200,vendor:settings.vendor,room:settings.room,query:settings.query,showUnknown:settings.showUnknown});if(!aggregate)return null;
     const filterAggregate=settings.query||settings.vendor||settings.room||settings.showUnknown===false?await BrowserSnapshots.aggregate(targetId,{limit:200}):aggregate;
     const cachedFleet=state.dashboardFleetCache?.key===fleetCacheKey?state.dashboardFleetCache.value:null,fleet=cachedFleet||metadataDashboardFleet(options,aggregate);
@@ -2813,6 +2890,7 @@
     $("#snapshotMetric").textContent=finalDashboardSnapshots().length||0;$("#uniqueMacMetric").textContent=fleet.uniqueAcrossUploads||unique.size;$("#switchMetric").textContent=metrics.switches;$("#roomMetric").textContent=new Set(devices.map((device)=>device.room).filter(Boolean)).size;renderLocalAnalytics(devices);return devices;
   }
   async function loadDashboardPayload(settings=dashboardSettings(),revision=analyticsRenderRevision){
+    if(incompleteAnalyticsPreview()&&!state.resultSnapshotId)throw new Error(`Полный Final (${currentDeviceCount().toLocaleString("ru-RU")} устройств) не восстановлен; ${state.devices.length.toLocaleString("ru-RU")} строк предпросмотра не используются для аналитики.`);
     const data=await api("/dashboard",{method:"POST",body:JSON.stringify(currentDevicePayload({snapshots:state.snapshots,movements:state.movementHistory,settings,compactResult:Boolean(state.resultSnapshotId),resultPageSize:500}))});
     if(revision!==analyticsRenderRevision)return null;
     backendDashboardCache={key:analyticsSourceKey({...settings,panel:"dashboard"}),data};
@@ -3061,11 +3139,12 @@
   async function renderAnalytics(){
     const options=arguments[0]||{};
     const force=options===true||options?.force===true;
+    if(!state.resultSnapshotId&&!state.resultBrowserSnapshotId&&AnalyticsLifecycle.durable(state))await recoverActiveFinalReference({allowBackend:true}).catch(()=>false);
     const signature=[state.resultBrowserSnapshotId,state.resultSnapshotId,currentDeviceCount(),state.lastAnalysis,JSON.stringify(dashboardSettings())].join("|");
     if(!force&&analyticsRenderCache.signature===signature&&Date.now()-analyticsRenderCache.at<30000){void refreshPresenceChurn();return;}
     const revision=++analyticsRenderRevision;
     initializeAnalyticsExpanders();
-    const durable=Boolean(state.resultBrowserSnapshotId||state.resultSnapshotId);if(!durable)applyLocalDashboard(dashboardSettings());
+    const durable=AnalyticsLifecycle.durable(state);if(!durable)applyLocalDashboard(dashboardSettings());
     renderAnalysisDashboard();
     await new Promise((resolve)=>requestAnimationFrame(resolve));
     if(state.resultBrowserSnapshotId&&BrowserSnapshots?.aggregate){
@@ -4325,6 +4404,7 @@
       const folderRestored=await restoreLocalFolderHandle({preferBrowserState:restored});
       if(!folderRestored&&!restored)await restorePortableDatabaseHandle();
     }
+    await recoverActiveFinalReference({allowBackend:backendSynced,persist:true}).catch(()=>false);
     const historicalSnapshots=(state.snapshots||[]).filter((item)=>item.browserStored).map((item)=>item.id).filter(Boolean).reverse();
     await BrowserSnapshots?.backfillDeviceHistory?.(historicalSnapshots).catch(()=>0);
     await restoreWorkspaceSourceFiles();

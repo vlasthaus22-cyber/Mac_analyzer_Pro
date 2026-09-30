@@ -7622,6 +7622,9 @@ class AppHandler(BaseHTTPRequestHandler):
                     report = save_quality_report(report, as_text(payload.get("source")))
                 self.json_response({"report": report})
             elif parsed.path == "/api/dashboard/metrics":
+                if payload.get("partialPreview") is True and not as_text(payload.get("snapshotId") or payload.get("resultSnapshotId")):
+                    self.error_response("Полный Final не восстановлен: аналитика по усечённой странице предпросмотра запрещена")
+                    return
                 devices = resolve_payload_devices(payload)
                 invalid = payload.get("invalid", [])
                 snapshots = payload.get("snapshots", [])
@@ -7633,6 +7636,9 @@ class AppHandler(BaseHTTPRequestHandler):
                     invalid = []
                 self.json_response(build_dashboard_metrics_payload(devices, invalid, snapshots, settings))
             elif parsed.path == "/api/dashboard":
+                if payload.get("partialPreview") is True and not as_text(payload.get("snapshotId") or payload.get("resultSnapshotId")):
+                    self.error_response("Полный Final не восстановлен: dashboard по усечённой странице предпросмотра запрещён")
+                    return
                 snapshots = payload.get("snapshots", [])
                 settings = payload.get("settings", {})
                 if not isinstance(snapshots, list) or not isinstance(settings, dict):

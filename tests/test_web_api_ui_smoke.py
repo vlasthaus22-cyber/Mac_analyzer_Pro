@@ -688,6 +688,36 @@ def test_rest_api_and_ui_controls_smoke():
         assert dashboard_metrics["metrics"]["switches"] == 0
         assert dashboard_metrics["metrics"]["uniqueOui3"] == 1
         assert dashboard_metrics["distributions"]["vendors"][0] == {"label": "SmokeVendor", "value": 1}
+
+        status, partial_dashboard = request_json(
+            app.base_url,
+            "POST",
+            "/api/dashboard",
+            {
+                "devices": devices[:1],
+                "expectedDeviceCount": 12_249,
+                "partialPreview": True,
+                "snapshots": [],
+                "settings": {},
+            },
+        )
+        assert status == 400
+        assert "усечённой странице предпросмотра" in partial_dashboard["error"]
+
+        status, partial_metrics = request_json(
+            app.base_url,
+            "POST",
+            "/api/dashboard/metrics",
+            {
+                "devices": devices[:1],
+                "expectedDeviceCount": 12_249,
+                "partialPreview": True,
+                "snapshots": [],
+                "settings": {},
+            },
+        )
+        assert status == 400
+        assert "усечённой странице предпросмотра" in partial_metrics["error"]
         assert dashboard_metrics["distributions"]["rooms"][0] == {"label": "909", "value": 1}
         assert dashboard_metrics["distributions"]["oui3"][0] == {"label": "AABBCC", "value": 2}
 

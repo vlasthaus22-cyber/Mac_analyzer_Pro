@@ -199,14 +199,15 @@ def test_cross_browser_restore_prefers_compact_sqlite_workspace():
     assert 'const data=await api("/autosave?slot=main&compact=1")' in app
     assert 'state.backendAutosaveUpdatedAt=result.updatedAt||state.backendAutosaveUpdatedAt||"";' in app
     assert 'function shouldRestoreBootstrapAutosave(autosave)' in app
-    assert 'if(!merged.resultSnapshotId&&merged.activeSnapshotId)' in app
+    assert 'const references=AnalyticsLifecycle.restoredReferences(merged);' in app
+    assert 'await recoverActiveFinalReference({allowBackend:backendSynced,persist:true})' in app
     assert 'async function restoreInitialState()' in app
     assert 'const backendSynced=browserOnlyMode?false:await syncFromBackend();' in app
     assert 'const restored=await restoreBrowserStateFromIndexedDb();' in app
     restore_block = app.split('async function restoreInitialState(){', 1)[1].split('SmartroomUI?.initialize', 1)[0]
     assert restore_block.index('const restored=await restoreBrowserStateFromIndexedDb();') < restore_block.index('await syncFromBackend()')
     assert 'if(state.resultBrowserSnapshotId&&Number(state.resultDeviceCount||0)>0)return false;' in app
-    assert 'const backendFinals=finalSnapshotsByRecency((state.snapshots||[]).filter((item)=>item.backendStored));' in app
+    assert 'const backendFinals=AnalyticsLifecycle.finalCandidates({...state,snapshots:(state.snapshots||[]).filter((item)=>item.backendStored)});' in app
     assert 'const folderRestored=await restoreLocalFolderHandle({preferBrowserState:restored});' in app
     assert 'if(!backendSynced){' in app
     assert 'if(!folderRestored&&!restored)await restorePortableDatabaseHandle();' in app
