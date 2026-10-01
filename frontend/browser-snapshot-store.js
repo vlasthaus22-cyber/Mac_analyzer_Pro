@@ -2,7 +2,7 @@
   "use strict";
 
   const databaseName = "mac-analyzer-browser-storage-v1";
-  const databaseVersion = 11;
+  const databaseVersion = 12;
   const workspaceStore = "workspaces";
   const snapshotStore = "snapshots";
   const snapshotChunkStore = "snapshotChunks";
@@ -10,6 +10,7 @@
   const enrichmentRowStore = "enrichmentRows";
   const deviceHistoryStore = "deviceHistory";
   const resolvedDeviceStore = "DeviceInventory";
+  const finalAnalyticsStore = "FinalAnalytics";
   const snapshotChunkRows = 1_000;
   const storageArrayLimits = Object.freeze({
     aliases: 32,
@@ -171,6 +172,11 @@
           known.createIndex("by_vendor", "vendor", { unique: false });
           known.createIndex("by_updated_at", "updatedAt", { unique: false });
         }
+        if (!database.objectStoreNames.contains(finalAnalyticsStore)) {
+          const analytics = database.createObjectStore(finalAnalyticsStore, { keyPath: "id" });
+          analytics.createIndex("by_saved_at", "savedAt", { unique: false });
+          analytics.createIndex("by_previous", "previousSnapshotId", { unique: false });
+        }
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error || new Error("Не удалось открыть IndexedDB"));
@@ -216,8 +222,9 @@
     if (!snapshotId) return false;
     const database = await openDatabase();
     return new Promise((resolve, reject) => {
-      const current = database.transaction([snapshotStore, snapshotChunkStore], "readwrite");
+      const current = database.transaction([snapshotStore, snapshotChunkStore, finalAnalyticsStore], "readwrite");
       current.objectStore(snapshotStore).delete(snapshotId);
+      current.objectStore(finalAnalyticsStore).delete(snapshotId);
       const chunks = current.objectStore(snapshotChunkStore).index("snapshotId").openCursor(IDBKeyRange.only(snapshotId));
       chunks.onsuccess = () => {
         const cursor = chunks.result;
@@ -1416,9 +1423,76 @@
     return true;
   }
 
+  async function loadFinalAnalytics(id) {
+    if (!id) return null;
+    return transaction(finalAnalyticsStore, "readonly", (store) => new Promise((resolve, reject) => {
+      const request = store.get(String(id));
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error || new Error("Не удалось прочитать локальную аналитику Final"));
+    }));
+  }
+
+  async function listFinalAnalytics() {
+    return transaction(finalAnalyticsStore, "readonly", (store) => new Promise((resolve, reject) => {
+      const request = store.getAll();
+      request.onsuccess = () => resolve((request.result || []).sort((left, right) => String(left.savedAt || "").localeCompare(String(right.savedAt || ""))));
+      request.onerror = () => reject(request.error || new Error("Не удалось прочитать папку аналитики Final"));
+    }));
+  }
+
+  async function listSnapshotMetadata() {
+    return transaction(snapshotStore, "readonly", (store) => new Promise((resolve, reject) => {
+      const rows = [];
+      const request = store.openCursor();
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return resolve(rows);
+        const item = cursor.value || {};
+        if (item.complete !== false) rows.push({ ...item, devices: [], invalid: [], browserStored: true, storageFolder: item.kind === "analysis" ? "Final" : String(item.storageFolder || "") });
+        cursor.continue();
+      };
+      request.onerror = () => reject(request.error || new Error("Не удалось прочитать папку Final"));
+    }));
+  }
+
+  async function saveFinalAnalytics(snapshotId, previousSnapshotId = "", prepared = {}) {
+    const id = String(snapshotId || "");
+    if (!id) return null;
+    const metadata = await loadSnapshotMetadata(id);
+    if (!metadata) return null;
+    const aggregatePayload = prepared.aggregate || await aggregate(id, { limit: 200 });
+    if (!aggregatePayload) return null;
+    const aggregateCopy = { ...aggregatePayload };
+    delete aggregateCopy.metadata;
+    let comparison = prepared.comparison || null;
+    const previous = String(previousSnapshotId || "");
+    if (!comparison && previous && previous !== id) comparison = await compareSnapshots(previous, id, { limit: 5000, skipAnalyticsCache: true });
+    const record = {
+      id,
+      previousSnapshotId: previous,
+      name: String(metadata.name || id),
+      source: String(metadata.source || ""),
+      createdAt: String(metadata.createdAt || metadata.savedAt || ""),
+      savedAt: String(metadata.savedAt || new Date().toISOString()),
+      deviceCount: Number(metadata.deviceCount || aggregateCopy.devices || 0),
+      invalidCount: Number(metadata.invalidCount || aggregateCopy.invalid || 0),
+      storageFolder: "Final",
+      aggregate: aggregateCopy,
+      comparison,
+    };
+    await transaction(finalAnalyticsStore, "readwrite", (store) => store.put(record));
+    return record;
+  }
+
   async function aggregate(id, options = {}) {
     const requestedLimit = Math.max(8, Math.min(200, Number(options.limit || 50)));
     const cacheable = aggregateCacheable(options);
+    if (cacheable) {
+      const archived = await loadFinalAnalytics(id).catch(() => null);
+      if (archived?.aggregate && Number(archived.aggregate.devices || 0) === Number(archived.deviceCount || 0)) {
+        return { ...sliceAggregateRows(archived.aggregate, requestedLimit), metadata: { id: archived.id, name: archived.name, source: archived.source, createdAt: archived.createdAt, savedAt: archived.savedAt, deviceCount: archived.deviceCount, invalidCount: archived.invalidCount, storageFolder: "Final", analyticsStored: true } };
+      }
+    }
     const cachedMetadata = cacheable ? await loadSnapshotMetadata(id) : null;
     const cachedCount = Number(cachedMetadata?.analyticsAggregate?.devices ?? -1);
     const expectedCount = Number(cachedMetadata?.deviceCount ?? cachedCount);
@@ -1535,6 +1609,19 @@
         const source = typeof rows[index] === "string" ? { id: rows[index] } : (rows[index] || {});
         const snapshotId = String(source.id || source.snapshotId || "");
         if (!snapshotId) continue;
+        const archived = aggregateCacheable(options) ? await loadFinalAnalytics(snapshotId).catch(() => null) : null;
+        if (archived?.aggregate) {
+          const currentCount = Number(archived.aggregate.devices || archived.deviceCount || 0);
+          series.push({
+            id: snapshotId,
+            name: String(source.name || archived.name || snapshotId),
+            date: String(source.date || source.fileCreatedAt || source.createdAt || archived.createdAt || archived.savedAt || ""),
+            count: currentCount,
+            delta: currentCount - Number(series.at(-1)?.count || 0),
+          });
+          if (typeof options.onProgress === "function") options.onProgress(index + 1, rows.length);
+          continue;
+        }
         let currentCount = 0;
         const metadata = await streamSnapshot(snapshotId, async (kind, chunk) => {
           if (kind !== "device") return;
@@ -1555,7 +1642,7 @@
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
       return {
-        uniqueAcrossUploads: await countEnrichmentRows(jobId),
+        uniqueAcrossUploads: Math.max(await countEnrichmentRows(jobId), ...series.map((item) => Number(item.count || 0)), 0),
         latestCount: Number(series.at(-1)?.count || 0),
         series,
       };
@@ -1944,6 +2031,10 @@
   }
 
   async function compareSnapshots(baselineId, comparisonId, options = {}) {
+    if (!options.skipAnalyticsCache) {
+      const archived = await loadFinalAnalytics(comparisonId).catch(() => null);
+      if (archived?.comparison && String(archived.previousSnapshotId || "") === String(baselineId || "")) return archived.comparison;
+    }
     const jobId = `snapshot-compare-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const limit = Math.max(100, Math.min(20000, Number(options.limit || 5000)));
     const result = {
@@ -2142,6 +2233,10 @@
     switchChangesFromHistory,
     backfillDeviceHistory,
     saveEnrichmentSnapshot,
+    saveFinalAnalytics,
+    loadFinalAnalytics,
+    listFinalAnalytics,
+    listSnapshotMetadata,
     snapshotChunkRows,
     removeLegacyWorkspace,
     saveSourceFile,

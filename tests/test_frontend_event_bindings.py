@@ -930,7 +930,7 @@ def test_notification_runtime_is_removed_from_primary_frontend():
     assert "saveNotificationButton" not in html
     assert "уведомления" not in app.lower()
     assert "уведомления" not in html.lower()
-    assert 'app.js?v=1078' in html
+    assert 'app.js?v=1079' in html
 
 
 def test_column_auto_mapping_uses_backend_detector():
@@ -1056,22 +1056,25 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     snapshot_store = Path("frontend/browser-snapshot-store.js").read_text(encoding="utf-8")
     memory_guard = Path("frontend/memory-guard.js").read_text(encoding="utf-8")
 
-    assert '<script src="frontend/browser-snapshot-store.js?v=1066"></script>' in html
+    assert '<script src="frontend/browser-snapshot-store.js?v=1079"></script>' in html
     assert '<script src="frontend/xlsx-exporter.js?v=20260727.5"></script>' in html
     assert '<script src="frontend/full-xlsx-report.js?v=20260729.1"></script>' in html
     assert 'const browserStateRecordId = "main-v2";' in app
     assert 'async function storeLocalSnapshot(' in app
     assert 'devices:rows.slice(0,previewLimit)' in app
-    assert 'const rowBudget=MemoryGuard.limits.browserSnapshotRows||1000000,keepIds=[];' in app
-    assert 'let remainingRows=Math.max(0,rowBudget-rows.length);' in app
-    assert 'await BrowserSnapshots.prune(keepIds);' in app
-    assert app.index('await BrowserSnapshots.prune(keepIds);') < app.index('await BrowserSnapshots.save(record,(percent)=>')
+    assert 'await BrowserSnapshots.saveFinalAnalytics?.(snapshotId' in app
+    assert 'storageFolder:"Final"' in app
+    assert 'await BrowserSnapshots.prune(keepIds);' not in app
     assert 'browserSnapshotRows: 1_000_000' in memory_guard
     assert 'const snapshotStore = "snapshots";' in snapshot_store
-    assert 'const databaseVersion = 11;' in snapshot_store
+    assert 'const databaseVersion = 12;' in snapshot_store
     smartroom_store = Path("frontend/smartroom-store.js").read_text(encoding="utf-8")
     smartroom_ui = Path("frontend/smartroom-ui.js").read_text(encoding="utf-8")
-    assert 'const databaseVersion = 11;' in smartroom_store
+    assert 'const databaseVersion = 12;' in smartroom_store
+    assert 'const finalAnalyticsStore = "FinalAnalytics";' in snapshot_store
+    assert 'async function listFinalAnalytics()' in snapshot_store
+    assert 'async function listSnapshotMetadata()' in snapshot_store
+    assert 'async function saveFinalAnalytics(snapshotId, previousSnapshotId = "", prepared = {})' in snapshot_store
     assert 'const knownModelsStore = "KnownModels";' in smartroom_store
     assert '["by_smartroom", "smartroom_id"]' in smartroom_store
     assert '["by_mac", "mac"]' in smartroom_store
@@ -1100,7 +1103,7 @@ def test_browser_snapshots_are_stored_outside_live_workspace_memory():
     assert 'async function saveEnrichmentSnapshot(jobId, snapshot, invalid = [], onProgress = () => {})' in snapshot_store
     assert 'async function promoteEnrichmentChunk(jobId, snapshotId, chunkIndex)' in snapshot_store
     assert 'const current = database.transaction([enrichmentRowStore, snapshotChunkStore], "readwrite");' in snapshot_store
-    assert app.index('BrowserSnapshots.saveEnrichmentSnapshot(jobId') < app.index('await BrowserSnapshots.prune(keepIds);')
+    assert app.index('BrowserSnapshots.saveEnrichmentSnapshot(jobId') < app.index('BrowserSnapshots.saveFinalAnalytics?.(snapshotId')
     assert 'async function aggregate(id, options = {})' in snapshot_store
     assert 'async function aggregateSeries(snapshots, options = {})' in snapshot_store
     assert 'async function compareSnapshots(baselineId, comparisonId, options = {})' in snapshot_store
@@ -1862,7 +1865,7 @@ def test_analysis_tab_dashboard_and_mapping_learning_refresh_results():
         "function analysisDashboardAggregatePayload(aggregate={})",
         "function renderAnalysisDashboardPayload(payload={},statusText=\"\")",
         "async function refreshAnalysisDashboard(key)",
-        "BrowserSnapshots.aggregate(state.resultBrowserSnapshotId,{limit:20})",
+        "BrowserSnapshots.aggregate(localFinalId,{limit:20})",
         'api("/dashboard/metrics"',
         'set("#analysisMetricDevices",total)',
         'chart("#analysisRoomChart",distributions.rooms',

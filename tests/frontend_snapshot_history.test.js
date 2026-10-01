@@ -168,7 +168,7 @@ assert.deepEqual(store.comparisonHistoryIds(null, "baseline", "current"), []);
   const firstAggregate = await store.aggregate("aggregate-cache", { limit: 8 });
   assert.equal(firstAggregate.devices, 2);
   const cacheDatabase = await new Promise((resolve, reject) => {
-    const request = indexedDB.open("mac-analyzer-browser-storage-v1", 11);
+    const request = indexedDB.open("mac-analyzer-browser-storage-v1", 12);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
@@ -183,7 +183,7 @@ assert.deepEqual(store.comparisonHistoryIds(null, "baseline", "current"), []);
   assert.equal(cachedMetadata.analyticsAggregate.devices, 2);
   assert.equal((await store.aggregate("aggregate-cache", { limit: 8 })).uniqueVendors, 2);
   const staleDatabase = await new Promise((resolve, reject) => {
-    const request = indexedDB.open("mac-analyzer-browser-storage-v1", 11);
+    const request = indexedDB.open("mac-analyzer-browser-storage-v1", 12);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
@@ -216,6 +216,22 @@ assert.deepEqual(store.comparisonHistoryIds(null, "baseline", "current"), []);
   assert.equal(identityStats.matched, 1);
   assert.equal(identityStats.conflicts || 0, 0);
   await store.clearEnrichment(identityJob);
+
+  await store.save({ id: "final-folder-base", name: "Final base", kind: "analysis", savedAt: "2026-09-01T00:00:00Z", devices: [
+    { mac: "001122334499", vendor: "Cisco", room: "101" },
+    { mac: "001122334498", vendor: "Poly", room: "102" },
+  ] });
+  await store.save({ id: "final-folder-current", name: "Final current", kind: "analysis", savedAt: "2026-09-08T00:00:00Z", devices: [
+    { mac: "001122334499", vendor: "Cisco", room: "101" },
+  ] });
+  const archived = await store.saveFinalAnalytics("final-folder-current", "final-folder-base");
+  assert.equal(archived.storageFolder, "Final");
+  assert.equal(archived.aggregate.devices, 1);
+  assert.equal(archived.comparison.summary.removed, 1);
+  assert.equal((await store.listFinalAnalytics()).some((item) => item.id === "final-folder-current"), true);
+  assert.equal((await store.listSnapshotMetadata()).some((item) => item.id === "final-folder-current" && item.storageFolder === "Final"), true);
+  assert.equal((await store.aggregate("final-folder-current", { limit: 8 })).devices, 1, "dashboard reads the persisted Final analytics index");
+  assert.equal((await store.compareSnapshots("final-folder-base", "final-folder-current")).summary.removed, 1, "missing devices are restored from the persisted Final comparison");
   console.log("frontend IndexedDB snapshot history tests passed");
 })().catch((error) => {
   console.error(error);

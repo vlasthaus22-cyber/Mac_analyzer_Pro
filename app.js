@@ -133,8 +133,8 @@
   function openBrowserStateDb(){
     return new Promise((resolve,reject)=>{
       if(!("indexedDB" in window))return reject(new Error("IndexedDB недоступна"));
-      const request=indexedDB.open(browserStateDbName,11);
-      request.onupgradeneeded=()=>{const db=request.result,tx=request.transaction;if(!db.objectStoreNames.contains(browserStateStoreName))db.createObjectStore(browserStateStoreName,{keyPath:"id"});if(!db.objectStoreNames.contains("snapshots"))db.createObjectStore("snapshots",{keyPath:"id"});if(!db.objectStoreNames.contains("snapshotChunks")){const chunks=db.createObjectStore("snapshotChunks",{keyPath:"key"});chunks.createIndex("snapshotId","snapshotId",{unique:false});}if(!db.objectStoreNames.contains("sourceFiles"))db.createObjectStore("sourceFiles",{keyPath:"id"});const enrichmentRows=db.objectStoreNames.contains("enrichmentRows")?tx.objectStore("enrichmentRows"):db.createObjectStore("enrichmentRows",{keyPath:"key"});if(!enrichmentRows.indexNames.contains("jobId"))enrichmentRows.createIndex("jobId","jobId",{unique:false});if(!enrichmentRows.indexNames.contains("aliases"))enrichmentRows.createIndex("aliases","aliases",{unique:false,multiEntry:true});if(!db.objectStoreNames.contains("deviceHistory"))db.createObjectStore("deviceHistory",{keyPath:"mac"});const inventory=db.objectStoreNames.contains("DeviceInventory")?tx.objectStore("DeviceInventory"):db.createObjectStore("DeviceInventory",{keyPath:"internalDeviceId"});for(const[name,keyPath]of[["by_mac","mac"],["by_serial","serialKey"],["by_device_id","deviceIdKey"],["by_switch","switchIp"],["by_updated_at","updatedAt"]])if(!inventory.indexNames.contains(name))inventory.createIndex(name,keyPath,{unique:false});const equipment=db.objectStoreNames.contains("Equipment")?tx.objectStore("Equipment"):db.createObjectStore("Equipment",{keyPath:"id"});for(const[name,keyPath]of[["smartroom_id","smartroom_id"],["mac","mac"],["ip_switch","ip_switch"],["by_smartroom","smartroom_id"],["by_mac","mac"],["by_switch","ip_switch"]])if(!equipment.indexNames.contains(name))equipment.createIndex(name,keyPath,{unique:false});const history=db.objectStoreNames.contains("History")?tx.objectStore("History"):db.createObjectStore("History",{keyPath:"id",autoIncrement:true});for(const[name,keyPath]of[["entity_type","entity_type"],["timestamp","timestamp"],["by_timestamp","timestamp"],["by_mac","mac"],["by_smartroom","smartroom_id"]])if(!history.indexNames.contains(name))history.createIndex(name,keyPath,{unique:false});if(!db.objectStoreNames.contains("DDIO_Snapshot"))db.createObjectStore("DDIO_Snapshot",{keyPath:"date"});if(!db.objectStoreNames.contains("KnownModels")){const known=db.createObjectStore("KnownModels",{keyPath:"mac"});known.createIndex("by_vendor","vendor",{unique:false});known.createIndex("by_updated_at","updatedAt",{unique:false});}};
+      const request=indexedDB.open(browserStateDbName,12);
+      request.onupgradeneeded=()=>{const db=request.result,tx=request.transaction;if(!db.objectStoreNames.contains(browserStateStoreName))db.createObjectStore(browserStateStoreName,{keyPath:"id"});if(!db.objectStoreNames.contains("snapshots"))db.createObjectStore("snapshots",{keyPath:"id"});if(!db.objectStoreNames.contains("snapshotChunks")){const chunks=db.createObjectStore("snapshotChunks",{keyPath:"key"});chunks.createIndex("snapshotId","snapshotId",{unique:false});}if(!db.objectStoreNames.contains("sourceFiles"))db.createObjectStore("sourceFiles",{keyPath:"id"});const enrichmentRows=db.objectStoreNames.contains("enrichmentRows")?tx.objectStore("enrichmentRows"):db.createObjectStore("enrichmentRows",{keyPath:"key"});if(!enrichmentRows.indexNames.contains("jobId"))enrichmentRows.createIndex("jobId","jobId",{unique:false});if(!enrichmentRows.indexNames.contains("aliases"))enrichmentRows.createIndex("aliases","aliases",{unique:false,multiEntry:true});if(!db.objectStoreNames.contains("deviceHistory"))db.createObjectStore("deviceHistory",{keyPath:"mac"});const inventory=db.objectStoreNames.contains("DeviceInventory")?tx.objectStore("DeviceInventory"):db.createObjectStore("DeviceInventory",{keyPath:"internalDeviceId"});for(const[name,keyPath]of[["by_mac","mac"],["by_serial","serialKey"],["by_device_id","deviceIdKey"],["by_switch","switchIp"],["by_updated_at","updatedAt"]])if(!inventory.indexNames.contains(name))inventory.createIndex(name,keyPath,{unique:false});const equipment=db.objectStoreNames.contains("Equipment")?tx.objectStore("Equipment"):db.createObjectStore("Equipment",{keyPath:"id"});for(const[name,keyPath]of[["smartroom_id","smartroom_id"],["mac","mac"],["ip_switch","ip_switch"],["by_smartroom","smartroom_id"],["by_mac","mac"],["by_switch","ip_switch"]])if(!equipment.indexNames.contains(name))equipment.createIndex(name,keyPath,{unique:false});const history=db.objectStoreNames.contains("History")?tx.objectStore("History"):db.createObjectStore("History",{keyPath:"id",autoIncrement:true});for(const[name,keyPath]of[["entity_type","entity_type"],["timestamp","timestamp"],["by_timestamp","timestamp"],["by_mac","mac"],["by_smartroom","smartroom_id"]])if(!history.indexNames.contains(name))history.createIndex(name,keyPath,{unique:false});if(!db.objectStoreNames.contains("DDIO_Snapshot"))db.createObjectStore("DDIO_Snapshot",{keyPath:"date"});if(!db.objectStoreNames.contains("KnownModels")){const known=db.createObjectStore("KnownModels",{keyPath:"mac"});known.createIndex("by_vendor","vendor",{unique:false});known.createIndex("by_updated_at","updatedAt",{unique:false});}if(!db.objectStoreNames.contains("FinalAnalytics")){const analytics=db.createObjectStore("FinalAnalytics",{keyPath:"id"});analytics.createIndex("by_saved_at","savedAt",{unique:false});analytics.createIndex("by_previous","previousSnapshotId",{unique:false});}};
       request.onsuccess=()=>resolve(request.result);
       request.onerror=()=>reject(request.error||new Error("Не удалось открыть IndexedDB"));
     });
@@ -299,6 +299,7 @@
     state.resultDeviceCount=Math.max(0,Number(data.deviceCount??data.header?.counts?.devices??state.devices.length)||0);
     state.resultInvalidCount=Math.max(0,Number(data.invalidCount??data.header?.counts?.invalid??state.invalid.length)||0);
     state.lastAnalysis=data.header?.savedAt||state.lastAnalysis||new Date().toISOString();
+    await restoreLocalFinalFolderIndex();
     await recoverActiveFinalReference({allowBackend:false,persist:false});
     try{localStorage.setItem(localFolderSavedAtKey,data.header?.savedAt||"");}catch{}
     save({immediate:true,portable:false});
@@ -1395,26 +1396,22 @@
         return changed;
       });
       state.smartroomMappings=Object.fromEntries(smartroomRooms);
-      const snapshotId=crypto.randomUUID(),name="Анализ: "+source,savedAt=new Date().toISOString(),rowBudget=MemoryGuard.limits.browserSnapshotRows||1000000;
-      const metadata=await BrowserSnapshots.saveEnrichmentSnapshot(jobId,{id:snapshotId,name,source,createdAt,savedAt,kind:"analysis",signature:"stream:"+snapshotId},invalid,(count)=>onProgress(82+Math.min(14,Math.round(count/Math.max(1,storedRows)*14)),`Запись результата в локальную базу: ${count.toLocaleString("ru-RU")}`));
+      const snapshotId=crypto.randomUUID(),name="Анализ: "+source,savedAt=new Date().toISOString(),previousFinalId=String(finalDashboardSnapshots().at(-1)?.id||"");
+      const metadata=await BrowserSnapshots.saveEnrichmentSnapshot(jobId,{id:snapshotId,name,source,createdAt,savedAt,kind:"analysis",storageFolder:"Final",signature:"stream:"+snapshotId},invalid,(count)=>onProgress(82+Math.min(14,Math.round(count/Math.max(1,storedRows)*14)),`Запись результата в локальную базу Final: ${count.toLocaleString("ru-RU")}`));
       let inventorySyncError="";
       if(BrowserSnapshots?.mergeDeviceHistoryRows){
         try{await BrowserSnapshots.streamSnapshot(snapshotId,(kind,rows)=>kind==="device"?BrowserSnapshots.mergeDeviceHistoryRows(rows,source||"browser-analysis"):0);}
         catch(error){inventorySyncError=String(error?.message||error||"Inventory synchronization failed");}
       }
-      const previousBrowserSnapshots=state.snapshots.filter((entry)=>entry.browserStored),keepIds=[snapshotId];
-      let remainingRows=Math.max(0,rowBudget-Number(metadata.deviceCount||0));
-      for(const [index,item] of previousBrowserSnapshots.entries()){
-        const count=Math.max(0,Number(item.deviceCount||0)),mustKeep=index===0;
-        if(mustKeep||count<=remainingRows){keepIds.push(item.id);remainingRows=Math.max(0,remainingRows-count);}else item.browserStored=false;
-      }
-      await BrowserSnapshots.prune(keepIds);
+      let analyticsArchiveError="";
+      try{await BrowserSnapshots.saveFinalAnalytics?.(snapshotId,previousFinalId);}
+      catch(error){analyticsArchiveError=String(error?.message||error||"Не удалось сохранить аналитический индекс Final");}
       const page=await BrowserSnapshots.page(snapshotId,{offset:0,limit:resultPageSize});
-      const snapshotMetadata={id:snapshotId,name,source,createdAt,savedAt,deviceCount:Number(metadata.deviceCount||0),invalidCount:Number(metadata.invalidCount||invalidCount),devices:[],signature:metadata.signature,kind:"analysis",browserStored:true,devicesTruncated:true,backendStored:false};
+      const snapshotMetadata={id:snapshotId,name,source,createdAt,savedAt,deviceCount:Number(metadata.deviceCount||0),invalidCount:Number(metadata.invalidCount||invalidCount),devices:[],signature:metadata.signature,kind:"analysis",browserStored:true,analyticsStored:!analyticsArchiveError,storageFolder:"Final",devicesTruncated:true,backendStored:false};
       state.snapshots.unshift(snapshotMetadata);
       state.resultSnapshotId="";state.resultBrowserSnapshotId=snapshotId;state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=snapshotMetadata.deviceCount;state.resultInvalidCount=invalidCount;state.resultSummary=page?.summary||null;
       diagnosticCounts.finalUniqueDevices=snapshotMetadata.deviceCount;
-      return{streamed:true,devices:(page?.items||[]).filter((item)=>item?.valid!==false&&!item?.invalid),invalid:(page?.items||[]).filter((item)=>item?.valid===false||item?.invalid),invalidCount,deviceCount:snapshotMetadata.deviceCount,summary:page?.summary||null,diagnostics:{strategy,inventorySyncError,counts:diagnosticCounts}};
+      return{streamed:true,devices:(page?.items||[]).filter((item)=>item?.valid!==false&&!item?.invalid),invalid:(page?.items||[]).filter((item)=>item?.valid===false||item?.invalid),invalidCount,deviceCount:snapshotMetadata.deviceCount,summary:page?.summary||null,diagnostics:{strategy,inventorySyncError,analyticsArchiveError,counts:diagnosticCounts}};
     }finally{
       deviceBatch.clear();vendorCounts.clear();modelCounts.clear();switchAddressCounts.clear();switchTracker.clear();activeLocalDetectionContext=previousContext;
       await BrowserSnapshots.clearEnrichment(jobId).catch(()=>false);
@@ -1451,25 +1448,18 @@
   function devicesSignature(devices=[]){return MemoryGuard.datasetSignature(devices,["vendor","model","ip","address","room","smartroomId","switchIp","switchPort"],normalize);}
   async function storeLocalSnapshot(name,source,devices,invalid=[],createdAt=new Date().toISOString(),kind="analysis"){
     const rows=Array.isArray(devices)?devices:[],snapshotId=crypto.randomUUID(),signature=devicesSignature(rows),savedAt=new Date().toISOString();
-    const record={id:snapshotId,name,source,createdAt,savedAt,deviceCount:rows.length,devices:rows,invalid:Array.isArray(invalid)?invalid:[],signature,kind};
-    let browserStored=false;
+    const record={id:snapshotId,name,source,createdAt,savedAt,deviceCount:rows.length,devices:rows,invalid:Array.isArray(invalid)?invalid:[],signature,kind,storageFolder:kind==="analysis"?"Final":""};
+    let browserStored=false,analyticsStored=false;
     try{
       if(!BrowserSnapshots)throw new Error("Хранилище локальных снимков недоступно");
-      const rowBudget=MemoryGuard.limits.browserSnapshotRows||1000000,keepIds=[];
-      let remainingRows=Math.max(0,rowBudget-rows.length);
-      for(const item of state.snapshots.filter((entry)=>entry.browserStored)){
-        const rowsInSnapshot=Math.max(0,Number(item.deviceCount||0));
-        if(rowsInSnapshot<=remainingRows){keepIds.push(item.id);remainingRows-=rowsInSnapshot;}
-        else item.browserStored=false;
-      }
-      await BrowserSnapshots.prune(keepIds);
       await BrowserSnapshots.save(record,(percent)=>{if(activeProcessId)updateProcess(activeProcessId,90+Math.round(Math.min(100,percent)*0.06),`Сохранение снимка порциями: ${percent}%`);});
       browserStored=true;
+      if(kind==="analysis")try{analyticsStored=Boolean(await BrowserSnapshots.saveFinalAnalytics?.(snapshotId,String(finalDashboardSnapshots().at(-1)?.id||"")));}catch(error){UiFeedback?.showError(error);}
     }catch(error){
       UiFeedback?.showError(error);
     }
     const previewLimit=MemoryGuard.limits.snapshotPreviewRows||500;
-    const metadata={id:snapshotId,name,source,createdAt,savedAt,deviceCount:rows.length,devices:rows.slice(0,previewLimit),invalidCount:record.invalid.length,signature,kind,browserStored,devicesTruncated:rows.length>previewLimit,backendStored:false};
+    const metadata={id:snapshotId,name,source,createdAt,savedAt,deviceCount:rows.length,devices:rows.slice(0,previewLimit),invalidCount:record.invalid.length,signature,kind,browserStored,analyticsStored,storageFolder:kind==="analysis"?"Final":"",devicesTruncated:rows.length>previewLimit,backendStored:false};
     state.snapshots.unshift(metadata);
     if(browserStored&&kind!=="before-analysis"){state.resultSnapshotId="";state.resultBrowserSnapshotId=snapshotId;state.resultBrowserSnapshotDirty=false;state.resultDeviceCount=rows.length;state.resultInvalidCount=record.invalid.length;state.resultSummary=null;}
     return metadata;
@@ -2021,6 +2011,17 @@
     state.invalid=opened?.invalid||[];
     return Boolean(state.resultSnapshotId);
   }
+  async function restoreLocalFinalFolderIndex(){
+    if(!BrowserSnapshots?.listSnapshotMetadata)return false;
+    const stored=await BrowserSnapshots.listSnapshotMetadata().catch(()=>[]),analytics=BrowserSnapshots.listFinalAnalytics?await BrowserSnapshots.listFinalAnalytics().catch(()=>[]):[];
+    const existing=new Map((state.snapshots||[]).map((item)=>[String(item.id||item.snapshotId||""),item]).filter(([id])=>id));
+    for(const [id,item] of existing)existing.set(id,{...item,browserStored:false,analyticsStored:false});
+    for(const item of stored){const id=String(item.id||"");if(id)existing.set(id,{...(existing.get(id)||{}),...item,devices:[],invalid:[],browserStored:true,storageFolder:"Final"});}
+    for(const item of analytics){const id=String(item.id||"");if(!id)continue;const prior=existing.get(id)||{};existing.set(id,{...prior,id,name:prior.name||item.name||id,source:prior.source||item.source||"",createdAt:prior.createdAt||item.createdAt||item.savedAt||"",savedAt:prior.savedAt||item.savedAt||"",deviceCount:Number(prior.deviceCount||item.deviceCount||0),invalidCount:Number(prior.invalidCount||item.invalidCount||0),kind:prior.kind||"analysis",analyticsStored:true,storageFolder:"Final",devices:Array.isArray(prior.devices)?prior.devices:[],invalid:Array.isArray(prior.invalid)?prior.invalid:[]});}
+    const unrelated=(state.snapshots||[]).filter((item)=>{const id=String(item.id||item.snapshotId||"");return !id||!existing.has(id);});
+    state.snapshots=[...existing.values(),...unrelated].sort((left,right)=>(Date.parse(String(right.savedAt||right.createdAt||""))||0)-(Date.parse(String(left.savedAt||left.createdAt||""))||0));
+    return Boolean(stored.length||analytics.length);
+  }
   async function recoverActiveFinalReference({allowBackend=true,persist=true}={}){
     if(activeFinalRecoveryPromise)return activeFinalRecoveryPromise;
     activeFinalRecoveryPromise=(async()=>{
@@ -2544,6 +2545,7 @@
     return{metrics:{devices:Number(aggregate.devices||0),knownDevices:Number(aggregate.known||0),unknownVendor:Number(aggregate.unknown||0),knownPercent:Number(aggregate.knownPercent||0),vendors:Number(aggregate.uniqueVendors||0),models:Number(aggregate.uniqueModels||0),rooms:Number(aggregate.uniqueRooms||0),switches:Number(aggregate.uniqueSwitches||0),invalid:Number(aggregate.invalid||0),withAddress:Number(aggregate.withAddress||0),withRoom:Number(aggregate.withRoom||0),missingRoomDevices:Number(aggregate.missingRoomDevices||0),withIp:Number(aggregate.withIp||0),withSwitch:Number(aggregate.withSwitch||0),withModel:Number(aggregate.withModel||0),autoVendors:Number(aggregate.autoVendors||0),autoModels:Number(aggregate.autoModels||0),uniqueOui3:Number(aggregate.uniqueOui3||0),uniqueOui4:Number(aggregate.uniqueOui4||0),uniqueOui5:Number(aggregate.uniqueOui5||0)},distributions:{vendors:aggregate.vendors||[],models:aggregate.models||[],rooms:aggregate.rooms||[],switches:aggregate.switches||[],oui3:aggregate.oui3||[],oui4:aggregate.oui4||[],oui5:aggregate.oui5||[],missingRoomVendors:aggregate.missingRoomVendors||[],missingRoomModels:aggregate.missingRoomModels||[]}};
   }
   function analysisDashboardRows(items=[]){return(items||[]).map((item)=>Array.isArray(item)?item:[item.label,Number(item.value??item.count??0)]);}
+  function localAnalyticsFinalId(){const finals=finalDashboardSnapshots().filter((snapshot)=>snapshot.browserStored||snapshot.analyticsStored);return String(state.resultBrowserSnapshotId||finals.at(-1)?.id||"");}
   function renderAnalysisDashboardPayload(payload={},statusText=""){
     const metrics=payload.metrics||{},distributions=payload.distributions||{},total=Number(metrics.devices||0),known=Number(metrics.knownDevices||0),unknown=Number(metrics.unknownVendor??Math.max(0,total-known)),percent=Number(metrics.knownPercent??(total?Math.round(known/total*100):0)),set=(selector,value)=>{const node=$(selector);if(node)node.textContent=String(value);},chart=(selector,items,empty)=>{const node=$(selector);if(node)node.innerHTML=localChartHtml(analysisDashboardRows(items),empty);},coverage=[["Производитель",known],["Модель",Number(metrics.withModel||0)],["Адрес помещения",Number(metrics.withAddress||0)],["Помещение",Number(metrics.withRoom||0)],["IP устройства",Number(metrics.withIp||0)],["IP коммутатора",Number(metrics.withSwitch||0)]].map(([label,count])=>[`${label} · ${total?Math.round(count/total*100):0}%`,count]);
     set("#analysisMetricDevices",total);set("#analysisMetricKnown",`${known} / ${percent}%`);set("#analysisMetricUnknown",unknown);set("#analysisMetricVendors",Number(metrics.vendors||0));set("#analysisMetricModels",Number(metrics.models||0));set("#analysisMetricRooms",Number(metrics.rooms||0));set("#analysisMetricMissingRoom",Number(metrics.missingRoomDevices??Math.max(0,total-Number(metrics.withRoom||0))));set("#analysisMetricSwitches",Number(metrics.switches||0));set("#analysisMetricInvalid",Number(metrics.invalid||0));if($("#analysisDashboardStatus"))$("#analysisDashboardStatus").textContent=statusText||(total?"Dashboard построен по полному финальному результату.":"Запустите анализ, чтобы построить dashboard.");
@@ -2556,7 +2558,8 @@
     const revision=++analysisDashboardRevision;analysisDashboardPromiseKey=key;
     analysisDashboardPromise=(async()=>{
       let payload=null;
-      if(state.resultBrowserSnapshotId&&BrowserSnapshots?.aggregate){const aggregate=await BrowserSnapshots.aggregate(state.resultBrowserSnapshotId,{limit:20});if(aggregate)payload=analysisDashboardAggregatePayload(aggregate);}
+      const localFinalId=localAnalyticsFinalId();
+      if(localFinalId&&BrowserSnapshots?.aggregate){const aggregate=await BrowserSnapshots.aggregate(localFinalId,{limit:20});if(aggregate)payload=analysisDashboardAggregatePayload(aggregate);}
       else if(state.resultSnapshotId){const data=await api("/dashboard/metrics",{method:"POST",body:JSON.stringify(currentDevicePayload({invalid:state.invalid,snapshots:state.snapshots,settings:{vendor:"",room:"",chartLimit:20,showUnknown:true}}))});if(data?.metrics)data.metrics.invalid=Math.max(Number(data.metrics.invalid||0),Number(state.resultInvalidCount||0));payload=data||null;}
       if(payload&&revision===analysisDashboardRevision){analysisDashboardCache={key,payload};renderAnalysisDashboardPayload(payload,"Dashboard построен по полному финальному результату.");}
       return payload;
@@ -2565,8 +2568,8 @@
   }
   function renderAnalysisDashboard(){
     const root=$("#analysisDashboardPanel");if(!root)return;
-    const key=[state.resultBrowserSnapshotId||"",state.resultSnapshotId||"",currentDeviceCount(),state.lastAnalysis||""].join("|");
-    if(state.resultBrowserSnapshotId||state.resultSnapshotId){if(analysisDashboardCache?.key===key)renderAnalysisDashboardPayload(analysisDashboardCache.payload,"Dashboard построен по полному финальному результату.");else if($("#analysisDashboardStatus"))$("#analysisDashboardStatus").textContent="Загрузка полной статистики Final…";void refreshAnalysisDashboard(key);return;}
+    const localFinalId=localAnalyticsFinalId(),key=[localFinalId,state.resultSnapshotId||"",currentDeviceCount(),state.lastAnalysis||""].join("|");
+    if(localFinalId||state.resultSnapshotId){if(analysisDashboardCache?.key===key)renderAnalysisDashboardPayload(analysisDashboardCache.payload,"Dashboard построен по полному финальному результату.");else if($("#analysisDashboardStatus"))$("#analysisDashboardStatus").textContent="Загрузка полной статистики Final…";void refreshAnalysisDashboard(key);return;}
     if(AnalyticsLifecycle.durable(state)){if($("#analysisDashboardStatus"))$("#analysisDashboardStatus").textContent=`Восстанавливается полный Final: ${currentDeviceCount().toLocaleString("ru-RU")} устройств. Предпросмотр из ${(state.devices||[]).length.toLocaleString("ru-RU")} строк не используется.`;return;}
     const immediate=analysisDashboardLocalPayload(state.devices,state.resultSummary);renderAnalysisDashboardPayload(immediate,currentDeviceCount()?"Dashboard построен по текущему полному результату.":"Запустите анализ, чтобы построить dashboard.");
   }
@@ -2782,8 +2785,8 @@
     return browserFleetRefreshPromise;
   }
   async function loadBrowserDashboardCache(settings=dashboardSettings()){
-    if(!state.resultBrowserSnapshotId||!BrowserSnapshots?.aggregate)return null;
-    const options=dashboardSnapshotOptions(),activeId=state.resultBrowserSnapshotId,pair=dashboardSnapshotPair(settings,options),baselineId=pair.baselineId,comparisonId=pair.comparisonId,targetId=comparisonId||activeId;
+    if(!BrowserSnapshots?.aggregate)return null;
+    const options=dashboardSnapshotOptions(),activeId=state.resultBrowserSnapshotId||options.at(-1)?.id||"";if(!activeId)return null;const pair=dashboardSnapshotPair(settings,options),baselineId=pair.baselineId,comparisonId=pair.comparisonId,targetId=comparisonId||activeId;
     const effectiveSettings={...settings,baselineSnapshotId:baselineId,comparisonSnapshotId:comparisonId,changeDateFrom:pair.dateFrom,changeDateTo:pair.dateTo};
     const fleetCacheKey=JSON.stringify({snapshots:options.map((item)=>[item.id,item.date,item.savedAt]),query:settings.query,vendor:settings.vendor,room:settings.room,showUnknown:settings.showUnknown}),cacheKey=JSON.stringify({fleetCacheKey,targetId,baselineId,comparisonId,mode:settings.changeMode,dateFrom:pair.dateFrom,dateTo:pair.dateTo});
     if(browserDashboardCache?.cacheKey===cacheKey)return{...browserDashboardCache,settings:effectiveSettings};
@@ -2792,6 +2795,8 @@
     if(!comparison&&baselineId&&comparisonId&&baselineId!==comparisonId&&BrowserSnapshots.compareSnapshots){comparison=await BrowserSnapshots.compareSnapshots(baselineId,comparisonId,{limit:MemoryGuard.limits.movementRows||5000,historySnapshots:finalDashboardSnapshots()});browserComparisonCache={key:comparisonKey,data:comparison};}
     const aggregate=await BrowserSnapshots.aggregate(targetId,{limit:200,vendor:settings.vendor,room:settings.room,query:settings.query,showUnknown:settings.showUnknown});if(!aggregate)return null;
     const filterAggregate=settings.query||settings.vendor||settings.room||settings.showUnknown===false?await BrowserSnapshots.aggregate(targetId,{limit:200}):aggregate;
+    const targetSnapshot=finalDashboardSnapshots().find((snapshot,index)=>dashboardSnapshotId(snapshot,index)===targetId);
+    if(targetSnapshot?.browserStored&&!targetSnapshot.analyticsStored&&filterAggregate){try{await BrowserSnapshots.saveFinalAnalytics?.(targetId,baselineId,{aggregate:filterAggregate,comparison});targetSnapshot.analyticsStored=true;}catch(error){if($("#analysisDashboardStatus"))$("#analysisDashboardStatus").textContent=`Dashboard рассчитан, но индекс Final не сохранён: ${error.message}`;} }
     const cachedFleet=state.dashboardFleetCache?.key===fleetCacheKey?state.dashboardFleetCache.value:null,fleet=cachedFleet||metadataDashboardFleet(options,aggregate);
     const changeAnalysis=comparison?browserSnapshotChangeAnalysis(comparison,options,effectiveSettings):localDashboardChangeAnalysis(effectiveSettings),roomRows=(aggregate.rooms||[]).map((item)=>({label:item.label,count:item.value,percentOfAssigned:Number((item.value/Math.max(1,aggregate.withRoom)*100).toFixed(1)),percentOfAll:Number((item.value/Math.max(1,aggregate.devices)*100).toFixed(1))}));
     changeAnalysis.summary=mergeReliableChangeSummary(changeAnalysis.summary,changeAnalysis.changes||[]);
@@ -3147,7 +3152,7 @@
     const durable=AnalyticsLifecycle.durable(state);if(!durable)applyLocalDashboard(dashboardSettings());
     renderAnalysisDashboard();
     await new Promise((resolve)=>requestAnimationFrame(resolve));
-    if(state.resultBrowserSnapshotId&&BrowserSnapshots?.aggregate){
+    if(BrowserSnapshots?.aggregate&&finalDashboardSnapshots().some((snapshot)=>snapshot.browserStored||snapshot.analyticsStored)){
       try{
         const cache=await loadBrowserDashboardCache(dashboardSettings());
         if(revision===analyticsRenderRevision&&renderBrowserDashboardCache(cache)){
@@ -4398,6 +4403,7 @@
   async function restoreInitialState(){
     await BrowserSnapshots?.pruneEnrichmentRows?.().catch(()=>0);
     const restored=await restoreBrowserStateFromIndexedDb();
+    await restoreLocalFinalFolderIndex().catch(()=>false);
     if(restored){applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});renderEngineeringState();renderAll();renderColumnPreferences();const status=$("#autosaveStatus");if(status)status.textContent="Последние данные отображены из локального кэша; проверяется постоянная база.";}
     const backendSynced=browserOnlyMode?false:await syncFromBackend();
     if(!backendSynced){
