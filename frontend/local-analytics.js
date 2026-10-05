@@ -62,6 +62,128 @@
       .map(([label, value]) => ({ label, value }));
   }
 
+  function roomDescriptor(device = {}) {
+    const smartroomId = text(device.smartroomId || device.smartroom_id);
+    const room = text(device.room || device.room_name);
+    const address = text(device.address || device.physicalAddress);
+    const parsed = typeof window !== "undefined" && window.MacAnalyzerRoomLocation?.parse
+      ? window.MacAnalyzerRoomLocation.parse(device)
+      : { tb: text(device.tb), city: text(device.city), site: text(device.site), floor: text(device.floor), room };
+    const locationKey = [parsed.tb, parsed.city, parsed.site, parsed.floor, parsed.room || room, address]
+      .map((value) => text(value).toLocaleLowerCase("ru-RU"))
+      .filter(Boolean)
+      .join("\u0000");
+    return {
+      key: smartroomId ? `smartroom:${smartroomId.toLocaleLowerCase("ru-RU")}` : (locationKey ? `room:${locationKey}` : ""),
+      smartroomId,
+      room: text(parsed.room || room),
+      address,
+      tb: text(parsed.tb),
+      city: text(parsed.city),
+      site: text(parsed.site),
+      floor: text(parsed.floor),
+    };
+  }
+
+  function compactRoomSwitchDevice(device = {}, switchIp = "") {
+    return {
+      mac: normalizeMac(device.mac || device.macFormatted || device.mac_formatted),
+      vendor: text(device.vendor),
+      model: text(device.model),
+      deviceType: text(device.deviceType || device.device_type || device.modelType || device.model_type || device.type),
+      ip: text(device.ip),
+      switchIp,
+      switchPort: text(device.switchPort || device.switch_port),
+      hostname: text(device.hostname || device.host_name),
+      deviceId: text(device.deviceId || device.device_id),
+      deviceName: text(device.deviceName || device.device_name || device.name),
+    };
+  }
+
+  function finishRoomSwitchAnomalies(roomSwitchRows) {
+    const rooms = [];
+    let analyzedRooms = 0;
+    for (const row of roomSwitchRows.values()) {
+      const switches = Array.from(row.switches.entries())
+        .map(([switchIp, value]) => ({ switchIp, count: value.count, devices: value.devices }))
+        .sort((left, right) => right.count - left.count || left.switchIp.localeCompare(right.switchIp, "ru"));
+      const knownSwitchDevices = switches.reduce((total, item) => total + item.count, 0);
+      if (knownSwitchDevices >= 3) analyzedRooms += 1;
+      const dominant = switches[0];
+      const runnerUp = switches[1];
+      // A deviation requires a unique strict majority. A 1:1 split is a
+      // conflict without enough evidence to call either switch the expected one.
+      if (!dominant || !runnerUp || knownSwitchDevices < 3 || dominant.count < 2
+          || dominant.count <= runnerUp.count || dominant.count <= knownSwitchDevices / 2) continue;
+      const deviations = switches.slice(1).flatMap((item) => item.devices);
+      rooms.push({
+        key: row.key,
+        smartroomId: row.smartroomId,
+        room: row.room,
+        address: row.address,
+        tb: row.tb,
+        city: row.city,
+        site: row.site,
+        floor: row.floor,
+        totalDevices: row.totalDevices,
+        knownSwitchDevices,
+        missingSwitchDevices: row.missingSwitchDevices,
+        expectedSwitchIp: dominant.switchIp,
+        expectedCount: dominant.count,
+        deviationCount: knownSwitchDevices - dominant.count,
+        switchIps: switches.map(({ switchIp, count }) => ({ switchIp, count })),
+        deviations,
+        devicesTruncated: deviations.length < knownSwitchDevices - dominant.count,
+      });
+    }
+    rooms.sort((left, right) => right.deviationCount - left.deviationCount
+      || (left.room || left.smartroomId).localeCompare(right.room || right.smartroomId, "ru"));
+    return { totalRooms: roomSwitchRows.size, analyzedRooms, anomalyRoomCount: rooms.length, rooms };
+  }
+
+  function createRoomSwitchIpAnomalyCollector(options = {}) {
+    const rows = new Map();
+    const roomDeviceSampleLimit = Math.max(20, Math.min(2_000, Number(options.roomDeviceSampleLimit || 500)));
+    const totalDeviceSampleLimit = Math.max(500, Math.min(100_000, Number(options.roomDeviceTotalSampleLimit || 5_000)));
+    let sampledDevices = 0;
+    function acceptOne(device) {
+      if (!device || typeof device !== "object") return;
+      const descriptor = roomDescriptor(device);
+      if (!descriptor.key) return;
+      let roomSwitch = rows.get(descriptor.key);
+      if (!roomSwitch) {
+        roomSwitch = { ...descriptor, totalDevices: 0, missingSwitchDevices: 0, switches: new Map() };
+        rows.set(descriptor.key, roomSwitch);
+      }
+      roomSwitch.totalDevices += 1;
+      const switchIp = text(device.switchIp || device.switch_ip);
+      if (!switchIp) {
+        roomSwitch.missingSwitchDevices += 1;
+        return;
+      }
+      let switchRow = roomSwitch.switches.get(switchIp);
+      if (!switchRow) {
+        switchRow = { count: 0, devices: [] };
+        roomSwitch.switches.set(switchIp, switchRow);
+      }
+      switchRow.count += 1;
+      if (switchRow.devices.length < roomDeviceSampleLimit && sampledDevices < totalDeviceSampleLimit) {
+        switchRow.devices.push(compactRoomSwitchDevice(device, switchIp));
+        sampledDevices += 1;
+      }
+    }
+    function accept(devices = []) {
+      for (const device of Array.isArray(devices) ? devices : []) acceptOne(device);
+    }
+    return Object.freeze({ accept, acceptOne, finish: () => finishRoomSwitchAnomalies(rows) });
+  }
+
+  function analyzeRoomSwitchIpAnomalies(devices = [], options = {}) {
+    const collector = createRoomSwitchIpAnomalyCollector(options);
+    collector.accept(devices);
+    return collector.finish();
+  }
+
   function createCollector(options = {}) {
     const vendors = new Map();
     const models = new Map();
@@ -71,6 +193,7 @@
     const switchCounts = new Map();
     const clusterMap = new Map();
     const topologyMap = new Map();
+    const roomSwitchCollector = createRoomSwitchIpAnomalyCollector(options);
     const clusterFields = Array.isArray(options.clusterFields) && options.clusterFields.length
       ? options.clusterFields
       : ["vendor", "room", "switchIp"];
@@ -116,6 +239,8 @@
         if (text(device.address)) withAddress += 1;
         if (switchIp) withSwitch += 1;
         if (model) withModel += 1;
+
+        roomSwitchCollector.acceptOne(device);
 
         const clusterValues = Object.fromEntries(clusterFields.map((field) => [field, deviceValue(device, field)]));
         const clusterKey = clusterFields.map((field) => clusterValues[field]).join("\u0000");
@@ -211,6 +336,7 @@
             unassignedDevices: Math.max(0, devices - withSwitch),
           },
         },
+        switchIpAnomalies: roomSwitchCollector.finish(),
       };
     }
 
@@ -356,7 +482,9 @@
 
   window.MacAnalyzerLocalAnalytics = Object.freeze({
     createCollector,
+    createRoomSwitchIpAnomalyCollector,
     build,
+    analyzeRoomSwitchIpAnomalies,
     barHtml,
     renderOverview,
     renderClusters,

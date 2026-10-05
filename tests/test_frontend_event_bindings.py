@@ -210,7 +210,8 @@ def test_cross_browser_restore_prefers_compact_sqlite_workspace():
     assert 'const backendFinals=AnalyticsLifecycle.finalCandidates({...state,snapshots:(state.snapshots||[]).filter((item)=>item.backendStored)});' in app
     assert 'const folderRestored=await restoreLocalFolderHandle({preferBrowserState:restored});' in app
     assert 'if(!backendSynced){' in app
-    assert 'if(!folderRestored&&!restored)await restorePortableDatabaseHandle();' in app
+    assert 'if(!folderRestored)await restorePortableDatabaseHandle({preferBrowserState:restored});' in app
+    assert 'if(!folderRestored&&!restored)await restorePortableDatabaseHandle();' not in app
     assert 'document.documentElement.dataset.macAnalyzerApp="ready";scheduleViewContent(activeViewName());' in app
     assert '"autosave": load_autosave_state("main", hydrate=False)' in server
     assert 'state = load_autosave_state(query.get("slot", ["main"])[0], hydrate=not compact)' in server
@@ -930,7 +931,7 @@ def test_notification_runtime_is_removed_from_primary_frontend():
     assert "saveNotificationButton" not in html
     assert "уведомления" not in app.lower()
     assert "уведомления" not in html.lower()
-    assert 'app.js?v=1079' in html
+    assert 'app.js?v=1080' in html
 
 
 def test_column_auto_mapping_uses_backend_detector():
@@ -2225,6 +2226,9 @@ def test_search_dashboard_smartroom_and_unified_exports_are_wired():
         'data-dashboard-card-toggle="changedRooms"',
         'id="dashboardAllChangedRoomsButton"', 'id="dashboardAllChangedRoomsMetric"',
         'id="dashboardAllChangedRoomsDialog"', 'data-dashboard-card-toggle="allChangedRooms"',
+        'id="dashboardSwitchIpAnomalyRoomsButton"', 'id="dashboardSwitchIpAnomalyRoomsMetric"',
+        'id="dashboardSwitchIpAnomalyRoomsDialog"', 'data-dashboard-card-toggle="switchIpAnomalyRooms"',
+        'class="new-indicator">NEW</',
         'id="analysisMetricMissingRoom"', 'id="analysisMissingRoomVendorChart"',
         'id="analysisMissingRoomModelChart"',
         'class="analytics-group"',
@@ -2237,6 +2241,8 @@ def test_search_dashboard_smartroom_and_unified_exports_are_wired():
         "async function exportFullJson()", "FullJsonReport.createReport({",
         "function initializeAnalyticsExpanders()",
         "function renderDashboardAllChangedRooms()", "function showDashboardAllChangedRooms()",
+        "function renderDashboardSwitchIpAnomalyRooms()", "function showDashboardSwitchIpAnomalyRooms()",
+        "LocalAnalytics?.analyzeRoomSwitchIpAnomalies?.(scope.all)",
         "dashboardChangesVisibleLimit=100", "data-load-more-dashboard-changes",
         "dashboardChangesVisibleLimit+=100",
         'data-dashboard-room="${esc(item.smartroomId||"")}"',
@@ -2493,7 +2499,9 @@ def test_autonomous_file_database_is_streamed_and_connected_to_workspace_saves()
         "function portableDatabasePayload()",
         "async function persistPortableDatabase(options={})",
         "function isPortableFileSystemWriteError(error)",
-        "async function restorePortableDatabaseHandle()",
+        "async function restorePortableDatabaseHandle({preferBrowserState=false}={})",
+        "function shouldKeepRestoredBrowserDatabase(header,preferBrowserState)",
+        "async function resumeRememberedLocalDatabase()",
         "await flushPortableDatabaseSave().catch(()=>{})",
         'if(!autonomousHtmlMode&&backendAvailable)',
     ):
@@ -2517,6 +2525,7 @@ def test_browser_only_mode_uses_a_structured_local_folder():
     folder_store = Path("frontend/local-folder-store.js").read_text(encoding="utf-8")
     for marker in (
         'id="chooseLocalFolderButton"',
+        'id="resumeLocalDatabaseButton"',
         'id="importPortableFolderButton"',
         'id="localFolderStatus"',
         '<script src="frontend/local-folder-store.js?v=1059"></script>',
@@ -2532,9 +2541,11 @@ def test_browser_only_mode_uses_a_structured_local_folder():
         'setBackendStatus(false,"Локальная файловая база подключена · backend не используется")',
         'const localFolderSavedAtKey = key+"-folder-saved-at";',
         'const header=await PortableDatabase.readHeader(structure.databaseHandle);',
-        'if(preferBrowserState&&browserHasRestorableData&&knownSavedAt>=fileSavedAt)',
+        'if(shouldKeepRestoredBrowserDatabase(header,preferBrowserState))',
         "async function importPortableFolderFiles(files)",
         "portableDatabaseRestoreOptions(importedSnapshotIds)",
+        'showRememberedDatabaseAction(true,"Разрешить доступ к базе")',
+        '$("#resumeLocalDatabaseButton")?.addEventListener("click",resumeRememberedLocalDatabase)',
     ):
         assert marker in app
     assert 'setInterval(()=>{if(browserOnlyMode){if(portableDatabaseHandle)schedulePortableDatabaseSave(0);}' not in app

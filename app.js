@@ -76,7 +76,7 @@
   const engineeringPermissionList=["delete:history","delete:snapshots","delete:mappings","delete:tasks","delete:ip-mappings","delete:api-cache","write:settings","write:migration"];
   const engineeringPermissionLabels={"delete:history":"Удаление истории","delete:snapshots":"Удаление снимков","delete:mappings":"Удаление справочников","delete:tasks":"Управление задачами","delete:ip-mappings":"Удаление IP-маппинга","delete:api-cache":"Очистка API-кэша","write:settings":"Изменение настроек","write:migration":"Миграция Python/SQLite"};
   const engineeringOnlyViews=new Set(["single","compare","data","automation","settings"]);
-  const empty = () => ({files:[],ddioFile:null,ddioOverlay:{},ddioSummary:null,devices:[],invalid:[],snapshots:[],movementHistory:[],importErrors:[],ipMappings:[],smartroomMappings:{},localVendorMappings:{},localModelMappings:{},dashboardFleetCache:null,activeMappingFileId:"",mappingDisplayMode:"name",enrichmentStrategy:"NO_EXPANSION",batchSettings:{pairingMode:"nearest",toleranceHours:24,enrichmentStrategy:"NO_EXPANSION"},theme:"light",engineeringMode:false,engineeringToken:"",engineeringExpiresAt:"",engineeringPermissions:[],ouiLength:3,ouiStyle:"plain",vendorDetectorSettings:{enabled:true,useOui3:true,useMac5:true,useText:true,useInference:true,confidenceThreshold:0.6},historyEnrichmentSettings:{enabled:true,priorityHistory:true,useOuiMatch:true,useMac5Match:true},externalApiSettings:{enabled:false,provider:"macvendors",endpoint:"",rateLimit:25,cacheTtlDays:30,onlyUnknown:true},dashboardSettings:{query:"",vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true,missingRoom:true,changedRooms:true,allChangedRooms:true,codecChanges:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true,presenceChurn:true},autoRefresh:true,refreshInterval:60,changeMode:"snapshots",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},customColumns:[],customColumnMappings:{},columnWidths:{...defaultColumnWidths},visibleColumns:["macFormatted","oui","vendor","model","deviceType","ip","address","room","smartroomId","switchIp","switchPort","authenticationTime","hostname","serialNumber","deviceId","deviceName","source"],columnOrder:["macFormatted","oui","vendor","model","deviceType","ip","address","room","smartroomId","switchIp","switchPort","authenticationTime","hostname","serialNumber","deviceId","deviceName","source"],resultSnapshotId:"",resultBrowserSnapshotId:"",resultBrowserSnapshotDirty:false,resultDeviceCount:0,resultInvalidCount:0,resultSummary:null,lastAnalysis:null});
+  const empty = () => ({files:[],ddioFile:null,ddioOverlay:{},ddioSummary:null,devices:[],invalid:[],snapshots:[],movementHistory:[],importErrors:[],ipMappings:[],smartroomMappings:{},localVendorMappings:{},localModelMappings:{},dashboardFleetCache:null,activeMappingFileId:"",mappingDisplayMode:"name",enrichmentStrategy:"NO_EXPANSION",batchSettings:{pairingMode:"nearest",toleranceHours:24,enrichmentStrategy:"NO_EXPANSION"},theme:"light",engineeringMode:false,engineeringToken:"",engineeringExpiresAt:"",engineeringPermissions:[],ouiLength:3,ouiStyle:"plain",vendorDetectorSettings:{enabled:true,useOui3:true,useMac5:true,useText:true,useInference:true,confidenceThreshold:0.6},historyEnrichmentSettings:{enabled:true,priorityHistory:true,useOuiMatch:true,useMac5Match:true},externalApiSettings:{enabled:false,provider:"macvendors",endpoint:"",rateLimit:25,cacheTtlDays:30,onlyUnknown:true},dashboardSettings:{query:"",vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true,missingRoom:true,changedRooms:true,allChangedRooms:true,codecChanges:true,switchIpAnomalyRooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true,presenceChurn:true},autoRefresh:true,refreshInterval:60,changeMode:"snapshots",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},customColumns:[],customColumnMappings:{},columnWidths:{...defaultColumnWidths},visibleColumns:["macFormatted","oui","vendor","model","deviceType","ip","address","room","smartroomId","switchIp","switchPort","authenticationTime","hostname","serialNumber","deviceId","deviceName","source"],columnOrder:["macFormatted","oui","vendor","model","deviceType","ip","address","room","smartroomId","switchIp","switchPort","authenticationTime","hostname","serialNumber","deviceId","deviceName","source"],resultSnapshotId:"",resultBrowserSnapshotId:"",resultBrowserSnapshotDirty:false,resultDeviceCount:0,resultInvalidCount:0,resultSummary:null,lastAnalysis:null});
   let state;
   try { const old = JSON.parse(localStorage.getItem(key)); state = {...empty(),...old}; } catch { state = empty(); }
   state.importErrors=[];
@@ -189,6 +189,18 @@
     if(!target)return;
     target.textContent=message;
     target.dataset.status=status;
+  }
+  function showRememberedDatabaseAction(show,label="Загрузить локальную базу"){
+    const button=$("#resumeLocalDatabaseButton");
+    if(!button)return;
+    button.hidden=!show;
+    button.textContent=label;
+  }
+  function browserHasRestorableDatabase(){return Boolean(state.resultBrowserSnapshotId)||(state.devices||[]).length>0;}
+  function shouldKeepRestoredBrowserDatabase(header,preferBrowserState){
+    if(!preferBrowserState||!browserHasRestorableDatabase())return false;
+    const fileSavedAt=Date.parse(header?.savedAt||"")||0,knownFileSavedAt=Date.parse(localStorage.getItem(localFolderSavedAtKey)||"")||0;
+    return fileSavedAt>0&&knownFileSavedAt>=fileSavedAt;
   }
   function portableDatabasePayload(){
     const compact=StatePersistence.compactLocalState(state);
@@ -377,6 +389,7 @@
       await PortableDatabase.saveHandle(handle).catch(()=>false);
       await applyPortableDatabase(data,handle.name||"mac-analyzer-data.madb");
       portableDatabaseSaveRevision=portableDatabasePersistedRevision=0;
+      showRememberedDatabaseAction(false);
       finishProcess(processId,"Файловая база подключена");
       return true;
     }catch(error){for(const id of importedSnapshotIds)await BrowserSnapshots?.removeSnapshot?.(id).catch(()=>{});failProcess(processId,error);portableDatabaseStatus(error.message,"error");throw error;}
@@ -416,17 +429,26 @@
     try{await persistPortableDatabase({tolerateFileSystemFailure:false});finishProcess(processId,"Файловая база обновлена");}
     catch(error){failProcess(processId,error);toast(error.message);}
   }
-  async function restorePortableDatabaseHandle(){
+  async function restorePortableDatabaseHandle({preferBrowserState=false}={}){
     if(!PortableDatabase)return false;
     const handle=await PortableDatabase.loadHandle();
     if(!handle)return false;
+    portableDatabaseHandle=handle;
     const access=await PortableDatabase.permission(handle,"read");
     if(access!=="granted"){
-      portableDatabaseHandle=handle;
-      portableDatabaseStatus("Файл базы найден. Нажмите «Подключить существующую», чтобы разрешить чтение.","warning");
+      showRememberedDatabaseAction(true,"Разрешить доступ к базе");
+      portableDatabaseStatus(`База ${handle.name||"mac-analyzer-data.madb"} найдена. Браузеру требуется одно подтверждение доступа в шапке.`,"warning");
       return false;
     }
-    return readPortableDatabaseHandle(handle).catch(()=>false);
+    try{
+      const header=await PortableDatabase.readHeader(handle);
+      if(shouldKeepRestoredBrowserDatabase(header,preferBrowserState)){
+        showRememberedDatabaseAction(false);
+        portableDatabaseStatus(`База ${handle.name||"mac-analyzer-data.madb"} подключена автоматически · актуальные данные уже восстановлены из IndexedDB`);
+        return true;
+      }
+      return await readPortableDatabaseHandle(handle);
+    }catch(error){showRememberedDatabaseAction(true,"Повторить загрузку базы");portableDatabaseStatus(`Не удалось автоматически загрузить базу: ${error.message}`,"error");return false;}
   }
   async function attachLocalFolder(handle,{request=true,preferBrowserState=false}={}){
     if(!LocalFolderStore||!PortableDatabase)throw new Error("Модуль локальной папки не загружен");
@@ -441,9 +463,7 @@
     const databaseFile=await structure.databaseHandle.getFile();
     if(databaseFile.size>0){
       const header=await PortableDatabase.readHeader(structure.databaseHandle);
-      const fileSavedAt=Date.parse(header?.savedAt||"")||0,knownSavedAt=Date.parse(localStorage.getItem(localFolderSavedAtKey)||"")||0;
-      const browserHasRestorableData=currentDeviceCount()>0||Boolean(state.resultBrowserSnapshotId)||(state.snapshots||[]).some((item)=>item?.browserStored);
-      if(preferBrowserState&&browserHasRestorableData&&knownSavedAt>=fileSavedAt){
+      if(shouldKeepRestoredBrowserDatabase(header,preferBrowserState)){
         portableDatabaseSaveRevision=portableDatabaseQueuedRevision=portableDatabasePersistedRevision=0;
         portableDatabaseStatus(`Файловая база уже синхронизирована · устройств ${Number(header?.counts?.devices||currentDeviceCount()).toLocaleString("ru-RU")}`);
       }else{
@@ -456,6 +476,7 @@
     }
     await LocalFolderStore.writeManifest(structure,{connectedAt:new Date().toISOString()}).catch(()=>false);
     await LocalFolderStore.writeLog(structure,"folder-connected",{database:`database/${LocalFolderStore.databaseFileName}`}).catch(()=>false);
+    showRememberedDatabaseAction(false);
     localFolderStatus(`Папка подключена: ${handle.name||"MAC Analyzer Data"} · database, imports, exports, settings, logs, backups`);
     setBackendStatus(false,"Локальная файловая база подключена · backend не используется");
     return true;
@@ -478,10 +499,28 @@
     const access=await LocalFolderStore.permission(handle,"readwrite");
     if(access!=="granted"&&access!=="unsupported"){
       localFolderHandle=handle;
-      localFolderStatus(`Найдена папка ${handle.name||"MAC Analyzer Data"}. Нажмите «Выбрать локальную папку», чтобы разрешить доступ.`,"warning");
+      showRememberedDatabaseAction(true,"Разрешить доступ к базе");
+      localFolderStatus(`Найдена папка ${handle.name||"MAC Analyzer Data"}. После перезапуска браузер требует одно подтверждение доступа в шапке.`,"warning");
       return false;
     }
     return attachLocalFolder(handle,{request:false,preferBrowserState}).catch((error)=>{localFolderStatus(error.message,"error");return false;});
+  }
+  async function resumeRememberedLocalDatabase(){
+    const button=$("#resumeLocalDatabaseButton");if(button)button.disabled=true;
+    try{
+      if(localFolderHandle&&LocalFolderStore){
+        const granted=await LocalFolderStore.requestPermission(localFolderHandle,"readwrite");
+        if(granted)return await attachLocalFolder(localFolderHandle,{request:false,preferBrowserState:false});
+      }
+      if(portableDatabaseHandle&&PortableDatabase){
+        const granted=await PortableDatabase.requestPermission(portableDatabaseHandle,"read");
+        if(granted)return await readPortableDatabaseHandle(portableDatabaseHandle);
+      }
+      showRememberedDatabaseAction(false);
+      if(LocalFolderStore?.supportsDirectoryPicker?.())return await connectLocalFolder();
+      return await connectPortableDatabase();
+    }catch(error){showRememberedDatabaseAction(true,"Повторить загрузку базы");portableDatabaseStatus(error.message,"error");toast(error.message);return false;}
+    finally{if(button)button.disabled=false;}
   }
   const save = (options={}) => {
     resultStateRevision+=1;
@@ -576,6 +615,7 @@
   let dashboardFilteredDevices = null;
   let dashboardRefreshTimer = null;
   let dashboardChangeAnalysis = {summary:{total:0,critical:0,added:0,removed:0,modified:0},changes:[],snapshotOptions:[]};
+  let dashboardSwitchIpAnomalies = {totalRooms:0,analyzedRooms:0,anomalyRoomCount:0,rooms:[]};
   let dashboardChangeTypeFilter = "all";
   let dashboardCodecOnly = false;
   let browserDashboardCache = null;
@@ -614,6 +654,7 @@
     analyticsReportCache=null;
     localAnalyticsCache=null;
     dashboardChangeAnalysis={summary:{total:0,critical:0,added:0,removed:0,modified:0},changes:[],snapshotOptions:[]};
+    dashboardSwitchIpAnomalies={totalRooms:0,analyzedRooms:0,anomalyRoomCount:0,rooms:[]};
     historyPanelPromise=null;
     analyticsPanelPromise=null;
     contextTableRow=null;
@@ -2599,7 +2640,7 @@
     }
   }
   function normalizeDashboardSettings(settings={}){
-    const defaults={query:"",vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true,missingRoom:true,changedRooms:true,allChangedRooms:true,codecChanges:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true,presenceChurn:true},autoRefresh:true,refreshInterval:60,changeMode:"snapshots",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},source=settings&&typeof settings==="object"?settings:{};
+    const defaults={query:"",vendor:"",room:"",status:"all",chartLimit:8,showUnknown:true,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true,missingRoom:true,changedRooms:true,allChangedRooms:true,codecChanges:true,switchIpAnomalyRooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true,presenceChurn:true},autoRefresh:true,refreshInterval:60,changeMode:"snapshots",changeDateFrom:"",changeDateTo:"",baselineSnapshotId:"",comparisonSnapshotId:""},source=settings&&typeof settings==="object"?settings:{};
     const changeMode=source.changeMode==="period"?"period":"snapshots";
     return{...defaults,...source,changeMode,visibleCards:{...defaults.visibleCards,...(source.visibleCards||{})},visibleCharts:{...defaults.visibleCharts,...(source.visibleCharts||{})},autoRefresh:source.autoRefresh!==false,refreshInterval:Math.max(10,Math.min(300,Number(source.refreshInterval||60)))};
   }
@@ -2810,7 +2851,7 @@
     const optionHtml=(emptyLabel,rows,selected)=>`<option value="">${emptyLabel}</option>`+(rows||[]).map((item)=>`<option value="${esc(item.label)}" ${item.label===selected?"selected":""}>${esc(item.label)}</option>`).join("");$("#dashboardVendorFilter").innerHTML=optionHtml("Все производители",filterAggregate.vendors,settings.vendor);$("#dashboardRoomFilter").innerHTML=optionHtml("Все помещения",filterAggregate.rooms,settings.room);
     const modifiedDevices=Number(summary.modifiedDevices??summary.modified??0),addedDevices=Number(summary.added||0),unchangedDevices=Math.max(0,Number(aggregate.devices||0)-modifiedDevices-addedDevices),fieldCounts=new Map();for(const item of changeAnalysis.changes||[]){const label=item.fieldLabel||item.field||"Устройство";fieldCounts.set(label,(fieldCounts.get(label)||0)+1);}const derivedFields=[...fieldCounts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,20).map(([label,value])=>({label,value}));
     const metrics={devices:aggregate.devices,total:Number(aggregate.devices||0),totalAcross:Number(fleet.uniqueAcrossUploads||aggregate.uniqueMacs),changed:modifiedDevices,missing:Number(summary.removed||0),unchanged:unchangedDevices,vendors:aggregate.uniqueVendors,rooms:aggregate.uniqueRooms,missingRoomDevices:Number(aggregate.missingRoomDevices||0),uniqueMacs:Number(fleet.uniqueAcrossUploads||aggregate.uniqueMacs),switches:aggregate.uniqueSwitches},statusCharts={dynamics:(fleet.series||[]).map((item)=>({label:String(item.name||item.date||item.id).slice(0,28),value:Number(item.count||0)})),vendors:vendorRows,fields:comparison?.fieldCounts||changeAnalysis.fieldCounts||derivedFields,missing:comparison?.missingVendors||vendorCounts(changeDevices("removed")),missingRoomVendors:aggregate.missingRoomVendors||[],missingRoomModels:aggregate.missingRoomModels||[]};
-    renderDashboardStatus({metrics,settings:state.dashboardSettings,changeAnalysis,statusCharts});$("#snapshotMetric").textContent=finalDashboardSnapshots().length;$("#uniqueMacMetric").textContent=fleet.uniqueAcrossUploads||aggregate.uniqueMacs;$("#switchMetric").textContent=aggregate.uniqueSwitches;$("#roomMetric").textContent=aggregate.uniqueRooms;
+    renderDashboardStatus({metrics,settings:state.dashboardSettings,changeAnalysis,statusCharts,switchIpAnomalies:aggregate.switchIpAnomalies});$("#snapshotMetric").textContent=finalDashboardSnapshots().length;$("#uniqueMacMetric").textContent=fleet.uniqueAcrossUploads||aggregate.uniqueMacs;$("#switchMetric").textContent=aggregate.uniqueSwitches;$("#roomMetric").textContent=aggregate.uniqueRooms;
     $("#vendorChart").innerHTML=localChartHtml((aggregate.vendors||[]).slice(0,20).map((item)=>[item.label,item.value]));$("#modelChart").innerHTML=localChartHtml((aggregate.models||[]).slice(0,20).map((item)=>[item.label,item.value]),"Нет данных моделей.");$("#qualityChart").innerHTML=localChartHtml([["Опознано",aggregate.known],["Unknown",aggregate.unknown],["Ошибки",aggregate.invalid]].filter((item)=>item[1]>0));$("#timelineChart").innerHTML=localChartHtml((fleet.series||[]).slice(-20).map((item)=>[String(item.name||item.date||item.id).slice(0,28),Number(item.count||0)]));renderAnalyticsReport(report,"local");
     const overview=[["Устройств",aggregate.devices],["Производителей",aggregate.uniqueVendors],["Моделей",aggregate.uniqueModels],["Помещений",aggregate.uniqueRooms],["Коммутаторов",aggregate.uniqueSwitches]];$("#backendChartsPanel").innerHTML=localChartHtml(overview);$("#backendStatisticsChart").innerHTML=localChartHtml([["Финальных снимков",finalDashboardSnapshots().length],["Текущих устройств",aggregate.devices],["Изменений",Number(summary.total||0)]]);$("#temporalStatisticsChart").innerHTML=localChartHtml(dashboardSnapshotOptions().slice(-12).map((item)=>[item.date?.slice(0,10)||item.name,Number(finalDashboardSnapshots().find((snapshot,index)=>dashboardSnapshotId(snapshot,index)===item.id)?.deviceCount||0)]),"Снимков пока нет.");$("#clusterChart").innerHTML=localChartHtml((aggregate.rooms||[]).slice(0,12).map((item)=>[item.label,item.value]),"Нет данных для кластеров помещений.");$("#topologyGraph").innerHTML=localChartHtml([["Коммутаторов",aggregate.uniqueSwitches],["Устройств с коммутатором",aggregate.withSwitch],["Без коммутатора",Math.max(0,aggregate.devices-aggregate.withSwitch)]]);$("#qualityInsights").innerHTML=localChartHtml([["Не определён производитель",aggregate.unknown],["Нет IP",Math.max(0,aggregate.devices-aggregate.withIp)],["Нет помещения",Math.max(0,aggregate.devices-aggregate.withRoom)],["Ошибки MAC",aggregate.invalid]].filter((item)=>item[1]>0),"Проблем качества не найдено.");$("#qualityReportsList").innerHTML='<p class="muted">Показан потоковый анализ текущего финального снимка.</p>';return true;
   }
@@ -2840,6 +2881,17 @@
     body.innerHTML=rows.length?rows.map((item)=>`<tr><td>${esc(item.smartroomId||"—")}</td><td>${esc(item.tb||"—")}</td><td>${esc(item.city||"—")}</td><td>${esc(item.site||"—")}</td><td>${esc(item.floor||"—")}</td><td>${esc(item.room||item.smartroomId||"—")}</td><td>${esc(item.address||"—")}</td><td><strong>${Number(item.changed||0).toLocaleString("ru-RU")} / ${Number(item.total||0).toLocaleString("ru-RU")}</strong></td><td>${Number(item.added||0).toLocaleString("ru-RU")}</td><td>${Number(item.removed||0).toLocaleString("ru-RU")}</td><td>${Number(item.modified||0).toLocaleString("ru-RU")}</td><td><button type="button" class="link-button" data-dashboard-room="${esc(item.smartroomId||"")}" ${item.smartroomId?"":"disabled"}>Открыть хронологию</button></td></tr>`).join(""):'<tr><td colspan="12" class="empty-state">Нет переговорных, где между выбранными Final изменилось всё оборудование.</td></tr>';
   }
   function showDashboardAllChangedRooms(){renderDashboardAllChangedRooms();const dialog=$("#dashboardAllChangedRoomsDialog");if(dialog&&!dialog.open)dialog.showModal();}
+  function renderDashboardSwitchIpAnomalyRooms(){
+    const body=$("#dashboardSwitchIpAnomalyRoomsBody"),summary=$("#dashboardSwitchIpAnomalyRoomsSummary"),rows=dashboardSwitchIpAnomalies.rooms||[];
+    if(summary)summary.textContent=`Проанализировано переговорных с тремя и более известными привязками: ${Number(dashboardSwitchIpAnomalies.analyzedRooms||0).toLocaleString("ru-RU")}. Отклонений: ${Number(dashboardSwitchIpAnomalies.anomalyRoomCount||0).toLocaleString("ru-RU")}.`;
+    if(!body)return;
+    body.innerHTML=rows.length?rows.map((item)=>{
+      const switches=(item.switchIps||[]).map((entry)=>`${entry.switchIp} (${Number(entry.count||0).toLocaleString("ru-RU")})`).join(", ");
+      const deviations=(item.deviations||[]).map((device)=>{const mac=normalize(device.mac||device.macFormatted);return `<div class="switch-ip-deviation-device">${mac?`<button type="button" class="link-button" data-mac="${esc(mac)}">${esc(formatMac(mac))}</button>`:"<strong>Без MAC</strong>"}<span>${esc(device.model||device.deviceName||device.hostname||"Устройство")} · ${esc(device.switchIp||"—")}${device.switchPort?` · порт ${esc(device.switchPort)}`:""}</span></div>`;}).join("");
+      return `<tr class="switch-ip-anomaly-row"><td>${esc(item.smartroomId||"—")}</td><td>${esc(item.room||item.smartroomId||"—")}</td><td>${esc(item.address||[item.tb,item.city,item.site,item.floor].filter(Boolean).join(", ")||"—")}</td><td><strong>${esc(item.expectedSwitchIp||"—")}</strong><small>${Number(item.expectedCount||0).toLocaleString("ru-RU")} устройств</small></td><td>${esc(switches||"—")}</td><td>${Number(item.totalDevices||0).toLocaleString("ru-RU")}</td><td><strong class="switch-ip-anomaly-count">${Number(item.deviationCount||0).toLocaleString("ru-RU")}</strong></td><td><details><summary>Показать устройства</summary>${deviations||'<span class="muted">Детали не сохранены.</span>'}${item.devicesTruncated?'<p class="muted">Показана ограниченная выборка; счётчик включает все отклонения.</p>':""}</details></td></tr>`;
+    }).join(""):'<tr><td colspan="8" class="empty-state">Переговорных с подтверждённым отклонением IP коммутатора не найдено.</td></tr>';
+  }
+  function showDashboardSwitchIpAnomalyRooms(){renderDashboardSwitchIpAnomalyRooms();const dialog=$("#dashboardSwitchIpAnomalyRoomsDialog");if(dialog&&!dialog.open)dialog.showModal();}
   function syncDashboardChangeTabState(){
     const active=DashboardChangeTabs.tabForFilters($("#dashboardChangeSeverityFilter")?.value,$("#dashboardChangeTypeFilter")?.value);
     $$('[data-dashboard-change-type]').forEach((button)=>{const selected=Boolean(active)&&button.dataset.dashboardChangeType===active;button.classList.toggle("active-filter",selected);button.setAttribute("aria-selected",String(selected));button.tabIndex=selected?0:-1;});
@@ -2878,7 +2930,8 @@
   function renderDashboardStatus(payload={}){
     const metrics=payload.metrics||{},total=Number(metrics.total||0),changeSummary=payload.changeAnalysis?.summary,changed=Number(changeSummary?.modified??metrics.changed??0),missing=Number(changeSummary?.removed??metrics.missing??0),added=Number(changeSummary?.added||0),unchanged=changeSummary?Math.max(0,total-changed-added):Number(metrics.unchanged||0),settings=payload.settings||dashboardSettings(),charts=payload.statusCharts||{};
     const set=(selector,value)=>{const node=$(selector);if(node)node.textContent=value;};
-    set("#dashboardTotalMetric",metrics.totalAcross!==undefined?`${Number(metrics.totalAcross||0).toLocaleString("ru-RU")} / ${total.toLocaleString("ru-RU")}`:total.toLocaleString("ru-RU"));set("#dashboardChangedMetric",changed.toLocaleString("ru-RU"));set("#dashboardMissingMetric",missing.toLocaleString("ru-RU"));set("#dashboardUnchangedMetric",unchanged.toLocaleString("ru-RU"));set("#dashboardVendorMetric",Number(metrics.vendors||0).toLocaleString("ru-RU"));set("#dashboardRoomCountMetric",Number(metrics.rooms||0).toLocaleString("ru-RU"));set("#dashboardMissingRoomMetric",Number(metrics.missingRoomDevices??0).toLocaleString("ru-RU"));set("#dashboardChangedRoomMetric",Number(payload.changeAnalysis?.summary?.changedRooms||0).toLocaleString("ru-RU"));set("#dashboardAllChangedRoomsMetric",Number(payload.changeAnalysis?.roomCoverage?.allChangedRoomCount||0).toLocaleString("ru-RU"));
+    if(payload.switchIpAnomalies&&typeof payload.switchIpAnomalies==="object")dashboardSwitchIpAnomalies=payload.switchIpAnomalies;
+    set("#dashboardTotalMetric",metrics.totalAcross!==undefined?`${Number(metrics.totalAcross||0).toLocaleString("ru-RU")} / ${total.toLocaleString("ru-RU")}`:total.toLocaleString("ru-RU"));set("#dashboardChangedMetric",changed.toLocaleString("ru-RU"));set("#dashboardMissingMetric",missing.toLocaleString("ru-RU"));set("#dashboardUnchangedMetric",unchanged.toLocaleString("ru-RU"));set("#dashboardVendorMetric",Number(metrics.vendors||0).toLocaleString("ru-RU"));set("#dashboardRoomCountMetric",Number(metrics.rooms||0).toLocaleString("ru-RU"));set("#dashboardMissingRoomMetric",Number(metrics.missingRoomDevices??0).toLocaleString("ru-RU"));set("#dashboardChangedRoomMetric",Number(payload.changeAnalysis?.summary?.changedRooms||0).toLocaleString("ru-RU"));set("#dashboardAllChangedRoomsMetric",Number(payload.changeAnalysis?.roomCoverage?.allChangedRoomCount||0).toLocaleString("ru-RU"));set("#dashboardSwitchIpAnomalyRoomsMetric",Number(dashboardSwitchIpAnomalies.anomalyRoomCount||0).toLocaleString("ru-RU"));
     const critical=Number(payload.changeAnalysis?.summary?.critical||0);set("#dashboardChangedHint",`${total?Math.round(changed/total*100):0}% от всех · критических: ${critical}`);set("#dashboardUnchangedHint",`${total?Math.round(unchanged/total*100):0}% от всех`);
     $$("[data-dashboard-status]").forEach((button)=>button.classList.toggle("active-filter",button.dataset.dashboardStatus===(settings.status||"all")));
     const draw=(selector,items,empty)=>{const node=$(selector);if(node)node.innerHTML=localChartHtml((items||[]).map((item)=>Array.isArray(item)?item:[item.label,item.value]),empty);};
@@ -2891,7 +2944,8 @@
     dashboardFilteredDevices=scope[settings.status]||scope.all;
     const devices=dashboardFilteredDevices,unique=new Set(devices.map((device)=>normalize(device.mac||device.macFormatted)).filter(Boolean)),fleet=localDashboardFleet(),added=Number(analysis.summary.added||0),changed=Number(analysis.summary.modified||0),missingRoomRows=scope.all.filter((device)=>!String(device.room||"").trim()),metrics={devices:devices.length,total:scope.all.length,totalAcross:fleet.uniqueAcrossUploads||scope.all.length,changed,missing:Number(analysis.summary.removed||0),unchanged:Math.max(0,scope.all.length-changed-added),vendors:new Set(scope.all.map((device)=>device.vendor).filter((value)=>value&&value!=="Unknown")).size,rooms:new Set(scope.all.map((device)=>device.room).filter((value)=>value&&value!=="Unknown")).size,missingRoomDevices:missingRoomRows.length,switches:new Set(devices.map((device)=>device.switchIp||device.switch_ip).filter(Boolean)).size};
     const chartRows=dashboardMovementCharts(devices,scope.missing,settings.chartLimit),statusCharts=Object.fromEntries(Object.entries(chartRows).map(([key,items])=>[key,items.map(([label,value])=>({label,value}))]));statusCharts.dynamics=fleet.series.map((item)=>({label:String(item.name||item.date).slice(0,28),value:item.count}));statusCharts.missingRoomVendors=localTally(missingRoomRows,"vendor").map(([label,value])=>({label,value}));statusCharts.missingRoomModels=localTally(missingRoomRows,"model").map(([label,value])=>({label,value}));
-    browserDashboardCache={fleet,changeAnalysis:analysis,settings,local:true};renderDashboardStatus({metrics,settings,changeAnalysis:analysis,statusCharts});
+    const switchIpAnomalies=LocalAnalytics?.analyzeRoomSwitchIpAnomalies?.(scope.all)||{totalRooms:0,analyzedRooms:0,anomalyRoomCount:0,rooms:[]};
+    browserDashboardCache={fleet,changeAnalysis:analysis,settings,local:true,switchIpAnomalies};renderDashboardStatus({metrics,settings,changeAnalysis:analysis,statusCharts,switchIpAnomalies});
     $("#snapshotMetric").textContent=finalDashboardSnapshots().length||0;$("#uniqueMacMetric").textContent=fleet.uniqueAcrossUploads||unique.size;$("#switchMetric").textContent=metrics.switches;$("#roomMetric").textContent=new Set(devices.map((device)=>device.room).filter(Boolean)).size;renderLocalAnalytics(devices);return devices;
   }
   async function loadDashboardPayload(settings=dashboardSettings(),revision=analyticsRenderRevision){
@@ -4157,6 +4211,7 @@
   $("#helpButton").addEventListener("click",()=>$("#helpDialog").showModal());
   $("#closeHelpDialog").addEventListener("click",()=>$("#helpDialog").close());
   $("#portableDatabaseButton")?.addEventListener("click",()=>$("#portableDatabaseDialog")?.showModal());
+  $("#resumeLocalDatabaseButton")?.addEventListener("click",resumeRememberedLocalDatabase);
   $("#closePortableDatabaseDialog")?.addEventListener("click",()=>$("#portableDatabaseDialog")?.close());
   $("#chooseLocalFolderButton")?.addEventListener("click",connectLocalFolder);
   $("#importPortableFolderButton")?.addEventListener("click",()=>$("#portableFolderInput")?.click());
@@ -4377,7 +4432,10 @@
   $("#closeDashboardChangesDialog").addEventListener("click",()=>$("#dashboardChangesDialog").close());
   $("#dashboardAllChangedRoomsButton").addEventListener("click",showDashboardAllChangedRooms);
   $("#dashboardCodecChangesButton").addEventListener("click",()=>showDashboardChangesDialog("all",true));
+  $("#dashboardSwitchIpAnomalyRoomsButton").addEventListener("click",showDashboardSwitchIpAnomalyRooms);
   $("#closeDashboardAllChangedRoomsDialog").addEventListener("click",()=>$("#dashboardAllChangedRoomsDialog").close());
+  $("#closeDashboardSwitchIpAnomalyRoomsDialog").addEventListener("click",()=>$("#dashboardSwitchIpAnomalyRoomsDialog").close());
+  $("#dashboardSwitchIpAnomalyRoomsBody").addEventListener("click",(event)=>{const button=event.target.closest("[data-mac]");if(button)showDevice(button.dataset.mac);});
   $("#dashboardAllChangedRoomsBody").addEventListener("click",async(event)=>{const button=event.target.closest("[data-dashboard-room]");if(!button||!button.dataset.dashboardRoom)return;$("#dashboardAllChangedRoomsDialog").close();const opened=await SmartroomUI?.openRoom?.(button.dataset.dashboardRoom);if(!opened)UiFeedback?.showError(new Error("Хронология выбранной переговорной не найдена в финальных выгрузках."));});
   $("#closeDashboardDynamicsDialog").addEventListener("click",()=>$("#dashboardDynamicsDialog").close());
   $("#openPresenceChurnButton")?.addEventListener("click",openPresenceChurn);
@@ -4387,7 +4445,7 @@
   $("#saveDashboardSettingsButton").addEventListener("click",showDashboardSettingsDialog);
   $$('[data-dashboard-settings-tab]').forEach((button)=>button.addEventListener("click",()=>selectDashboardSettingsTab(button.dataset.dashboardSettingsTab)));
   $("#applyDashboardSettingsButton").addEventListener("click",()=>saveDashboardSettings(dashboardDialogSettings()));
-  $("#resetDashboardSettingsButton").addEventListener("click",()=>{const current=dashboardSettings();fillDashboardSettingsDialog({...current,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true,missingRoom:true,changedRooms:true,allChangedRooms:true,codecChanges:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true,presenceChurn:true},autoRefresh:true,refreshInterval:60});saveDashboardSettings(dashboardDialogSettings());});
+  $("#resetDashboardSettingsButton").addEventListener("click",()=>{const current=dashboardSettings();fillDashboardSettingsDialog({...current,visibleCards:{total:true,changed:true,missing:true,unchanged:true,vendors:true,rooms:true,missingRoom:true,changedRooms:true,allChangedRooms:true,codecChanges:true,switchIpAnomalyRooms:true},visibleCharts:{dynamics:true,vendors:true,fields:true,missing:true,presenceChurn:true},autoRefresh:true,refreshInterval:60});saveDashboardSettings(dashboardDialogSettings());});
   $("#closeDashboardSettingsDialog").addEventListener("click",()=>$("#dashboardSettingsDialog").close());
   $("#cancelDashboardSettingsButton").addEventListener("click",()=>$("#dashboardSettingsDialog").close());
   $("#exportDashboardButton").addEventListener("click",(event)=>{event.preventDefault();event.stopImmediatePropagation();exportDashboard();},true);
@@ -4404,11 +4462,11 @@
     await BrowserSnapshots?.pruneEnrichmentRows?.().catch(()=>0);
     const restored=await restoreBrowserStateFromIndexedDb();
     await restoreLocalFinalFolderIndex().catch(()=>false);
-    if(restored){applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});renderEngineeringState();renderAll();renderColumnPreferences();const status=$("#autosaveStatus");if(status)status.textContent="Последние данные отображены из локального кэша; проверяется постоянная база.";}
+    if(restored){applyTheme(state.theme);applyVendorDetectorSettings(state.vendorDetectorSettings||{});applyHistoryEnrichmentSettings(state.historyEnrichmentSettings||{});renderEngineeringState();renderAll();renderColumnPreferences();const status=$("#autosaveStatus");if(status)status.textContent="Последние данные автоматически загружены из локальной IndexedDB; проверяется файловая база.";portableDatabaseStatus("Данные автоматически восстановлены из IndexedDB этого браузера; проверяется MADB.");}
     const backendSynced=browserOnlyMode?false:await syncFromBackend();
     if(!backendSynced){
       const folderRestored=await restoreLocalFolderHandle({preferBrowserState:restored});
-      if(!folderRestored&&!restored)await restorePortableDatabaseHandle();
+      if(!folderRestored)await restorePortableDatabaseHandle({preferBrowserState:restored});
     }
     await recoverActiveFinalReference({allowBackend:backendSynced,persist:true}).catch(()=>false);
     const historicalSnapshots=(state.snapshots||[]).filter((item)=>item.browserStored).map((item)=>item.id).filter(Boolean).reverse();

@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
   <meta name="application-build" content="2026.09.13.1">
-  <meta name="application-version" content="1.0.80">
+  <meta name="application-version" content="1.0.81">
   <link rel="stylesheet" href="styles.css?v=1064">
 </head>
 <body>
@@ -87,6 +87,7 @@
               <button type="button" data-export-action="exportParityReportButton">Статус переноса JSON</button>
             </div>
           </details>
+          <button class="button primary" id="resumeLocalDatabaseButton" type="button" title="Подтвердить доступ к ранее выбранной локальной базе" hidden>Загрузить локальную базу</button>
           <button class="button secondary" id="portableDatabaseButton" type="button" title="Папка с локальной базой автономного HTML">Локальная база</button>
           <button class="mode-badge user-mode" id="appModeButton" type="button" title="Переключить режим"><span id="appModeIcon">USER</span><strong id="appModeLabel">Пользовательский режим</strong><small id="appModeHint">Просмотр и поиск</small></button>
           <button class="icon-button" id="helpButton" title="Справка" aria-label="Справка">?</button>
@@ -347,6 +348,7 @@
           <article class="metric" data-dashboard-card="changedRooms"><span>Помещений с изменениями</span><strong id="dashboardChangedRoomMetric">0</strong><small>За выбранный интервал</small></article>
           <button type="button" class="metric dashboard-kpi room-coverage-kpi" id="dashboardAllChangedRoomsButton" data-dashboard-card="allChangedRooms"><span>Изменилось всё оборудование</span><strong id="dashboardAllChangedRoomsMetric">0</strong><small>Переговорных · открыть список</small></button>
           <button type="button" class="metric dashboard-kpi" id="dashboardCodecChangesButton" data-dashboard-card="codecChanges"><span>Изменения кодеков</span><strong id="dashboardCodecChangesMetric">0</strong><small>Тип: Video Conference · открыть</small></button>
+          <button type="button" class="metric dashboard-kpi switch-ip-anomaly-kpi" id="dashboardSwitchIpAnomalyRoomsButton" data-dashboard-card="switchIpAnomalyRooms"><span>Отклонения IP коммутатора <b class="new-indicator">NEW</b></span><strong id="dashboardSwitchIpAnomalyRoomsMetric">0</strong><small>Переговорных · открыть список</small></button>
         </section>
         <section class="metrics analytics-metrics">
           <article class="metric"><span>Снимков</span><strong id="snapshotMetric">0</strong></article>
@@ -862,6 +864,11 @@
     <p class="room-coverage-explanation">В список попадают только помещения, где каждое учтённое устройство было добавлено, удалено, перемещено или имело подтверждённое изменение непустого значения. Простое заполнение ранее пустого поля изменением оборудования не считается.</p>
     <div class="table-wrap dashboard-changes-table"><table><thead><tr><th>Smartroom ID</th><th>ТБ</th><th>Город</th><th>Площадка</th><th>Этаж</th><th>Помещение</th><th>Адрес</th><th>Изменилось</th><th>Добавлено</th><th>Отсутствует</th><th>Изменено</th><th>Детали</th></tr></thead><tbody id="dashboardAllChangedRoomsBody"><tr><td colspan="12" class="empty-state">Нет помещений, где изменилось всё оборудование.</td></tr></tbody></table></div>
   </dialog>
+  <dialog class="device-dialog dashboard-changes-dialog" id="dashboardSwitchIpAnomalyRoomsDialog">
+    <div class="dialog-head"><div><h2>Переговорные с отклонением IP коммутатора <span class="new-indicator">NEW</span></h2><p class="muted" id="dashboardSwitchIpAnomalyRoomsSummary">Анализируется текущая выбранная финальная выгрузка.</p></div><button class="icon-button" id="closeDashboardSwitchIpAnomalyRoomsDialog" type="button" aria-label="Закрыть">×</button></div>
+    <p class="room-coverage-explanation">Отклонение фиксируется, когда в переговорной не менее трёх устройств с известным IP коммутатора, один IP имеет строгое большинство, а одно или несколько устройств подключены к другому IP. Пустой IP и равное распределение 1:1 отклонением не считаются.</p>
+    <div class="table-wrap dashboard-changes-table"><table><thead><tr><th>Smartroom ID</th><th>Помещение</th><th>Адрес</th><th>Ожидаемый IP</th><th>Все IP коммутаторов</th><th>Устройств</th><th>Отклонений</th><th>Оборудование с отклонением</th></tr></thead><tbody id="dashboardSwitchIpAnomalyRoomsBody"><tr><td colspan="8" class="empty-state">Отклонений не найдено.</td></tr></tbody></table></div>
+  </dialog>
   <dialog class="device-dialog room-chronology-dialog" id="roomChronologyDialog">
     <div class="dialog-head"><div><h2 id="roomChronologyDialogTitle">Хронология помещения</h2><p id="roomChronologyDialogSubtitle" class="muted"></p></div><button class="icon-button" id="closeRoomChronologyDialog" aria-label="Закрыть">×</button></div>
     <div class="room-timeline room-timeline-horizontal" id="roomChronologyDialogTimeline"></div>
@@ -895,6 +902,8 @@
         <label class="check"><input type="checkbox" data-dashboard-card-toggle="missingRoom">Без помещения</label>
         <label class="check"><input type="checkbox" data-dashboard-card-toggle="changedRooms">Помещений с изменениями</label>
         <label class="check"><input type="checkbox" data-dashboard-card-toggle="allChangedRooms">Всё оборудование изменилось</label>
+        <label class="check"><input type="checkbox" data-dashboard-card-toggle="codecChanges">Изменения кодеков</label>
+        <label class="check"><input type="checkbox" data-dashboard-card-toggle="switchIpAnomalyRooms">Отклонения IP коммутатора (NEW)</label>
       </div></fieldset>
     </section>
     <section class="dashboard-settings-panel" data-dashboard-settings-panel="charts" role="tabpanel" hidden>
@@ -924,7 +933,7 @@
     </div>
     <div class="portable-database-status" id="localFolderStatus" role="status" aria-live="polite">Выберите папку. Программа создаст database, imports, exports, settings, logs и backups.</div>
     <div class="portable-database-status" id="portableDatabaseStatus" role="status" aria-live="polite">До выбора папки используется IndexedDB текущего браузера.</div>
-    <div class="portable-database-help"><strong>Перенос между компьютерами и браузерами</strong><span>Выберите одну и ту же папку программы. Будет прочитан <code>database/mac-analyzer-data.madb</code>, а полная история восстановится в локальное хранилище нового браузера.</span></div>
+    <div class="portable-database-help"><strong>Автозагрузка и перенос</strong><span>Один раз подключите папку программы. При следующих открытиях HTML база <code>database/mac-analyzer-data.madb</code> загрузится автоматически. Если браузер сбросил разрешение, в шапке появится одна кнопка подтверждения без повторного выбора файла.</span></div>
     <p class="muted">Chrome и Edge могут читать и обновлять папку после разрешения. В остальных браузерах кнопка «Прочитать папку в браузере» импортирует MADB только для чтения; после изменений сохраните новый MADB вручную. SQLite-файлы из data/databases браузер напрямую не открывает.</p>
   </dialog>
   <dialog class="device-dialog" id="helpDialog">
@@ -969,7 +978,7 @@
   <script src="frontend/room-location.js?v=1058"></script>
   <script src="frontend/smartroom-ui.js?v=1064"></script>
   <script src="frontend/table-sorter.js?v=1055"></script>
-  <script src="app.js?v=1079"></script>
+  <script src="app.js?v=1080"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;
@@ -1000,7 +1009,7 @@
       const fallbackBrowserRecordId = "fallback-v2";
       const fallbackEngineeringOnlyViews = new Set(["single", "compare", "data", "automation", "settings"]);
       const fallbackEngineeringPermissions = ["delete:history", "delete:snapshots", "delete:mappings", "delete:tasks", "delete:ip-mappings", "delete:api-cache", "write:settings", "write:migration"];
-      const fallbackState = { files: [], devices: [], invalid: [], snapshots: [], movementHistory: [], ipMappings: [], localVendorMappings: {}, localModelMappings: {}, activeMappingFileId: "", mappingDisplayMode: "name", theme: localStorage.getItem("mac-analyzer-theme") || "light", engineeringMode: false, engineeringExpiresAt: "", engineeringPermissions: [], ouiLength: 3, ouiStyle: "plain", vendorDetectorSettings: { enabled: true, useOui3: true, useMac5: true, useText: true, useInference: true, confidenceThreshold: 0.6 }, historyEnrichmentSettings: { enabled: true, priorityHistory: true,useOuiMatch: true, useMac5Match: true }, externalApiSettings: { enabled: false, provider: "macvendors", endpoint: "", rateLimit: 25, cacheTtlDays: 30, onlyUnknown: true }, dashboardSettings: { vendor: "", room: "", status: "all", chartLimit: 8, showUnknown: true, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true, missingRoom: true, changedRooms: true, allChangedRooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60, changeMode: "snapshots", changeDateFrom: "", changeDateTo: "", baselineSnapshotId: "", comparisonSnapshotId: "" } };
+      const fallbackState = { files: [], devices: [], invalid: [], snapshots: [], movementHistory: [], ipMappings: [], localVendorMappings: {}, localModelMappings: {}, activeMappingFileId: "", mappingDisplayMode: "name", theme: localStorage.getItem("mac-analyzer-theme") || "light", engineeringMode: false, engineeringExpiresAt: "", engineeringPermissions: [], ouiLength: 3, ouiStyle: "plain", vendorDetectorSettings: { enabled: true, useOui3: true, useMac5: true, useText: true, useInference: true, confidenceThreshold: 0.6 }, historyEnrichmentSettings: { enabled: true, priorityHistory: true,useOuiMatch: true, useMac5Match: true }, externalApiSettings: { enabled: false, provider: "macvendors", endpoint: "", rateLimit: 25, cacheTtlDays: 30, onlyUnknown: true }, dashboardSettings: { vendor: "", room: "", status: "all", chartLimit: 8, showUnknown: true, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true, missingRoom: true, changedRooms: true, allChangedRooms: true, codecChanges: true, switchIpAnomalyRooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60, changeMode: "snapshots", changeDateFrom: "", changeDateTo: "", baselineSnapshotId: "", comparisonSnapshotId: "" } };
       let fallbackDashboardRefreshTimer = null;
       let fallbackActiveProcessId = "";
       let fallbackProcessHideTimer = null;
@@ -2079,7 +2088,7 @@
       }
 
       function normalizeFallbackDashboardSettings(settings = {}) {
-        const defaults = { vendor: "", room: "", status: "all", chartLimit: 8, showUnknown: true, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true, missingRoom: true, changedRooms: true, allChangedRooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60, changeMode: "snapshots", changeDateFrom: "", changeDateTo: "", baselineSnapshotId: "", comparisonSnapshotId: "" };
+        const defaults = { vendor: "", room: "", status: "all", chartLimit: 8, showUnknown: true, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true, missingRoom: true, changedRooms: true, allChangedRooms: true, codecChanges: true, switchIpAnomalyRooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60, changeMode: "snapshots", changeDateFrom: "", changeDateTo: "", baselineSnapshotId: "", comparisonSnapshotId: "" };
         return { ...defaults, ...settings, visibleCards: { ...defaults.visibleCards, ...(settings.visibleCards || {}) }, visibleCharts: { ...defaults.visibleCharts, ...(settings.visibleCharts || {}) }, autoRefresh: settings.autoRefresh !== false, refreshInterval: Math.max(10, Math.min(300, Number(settings.refreshInterval || 60))) };
       }
 
@@ -2234,6 +2243,10 @@
         metric("#dashboardRoomCountMetric", new Set(classify.all.map((device) => device.room).filter(Boolean)).size);
         const missingRoomDevices = classify.all.filter((device) => !String(device.room || "").trim());
         metric("#dashboardMissingRoomMetric", missingRoomDevices.length);
+        const switchIpAnomalies = window.MacAnalyzerLocalAnalytics?.analyzeRoomSwitchIpAnomalies?.(classify.all) || { analyzedRooms: 0, anomalyRoomCount: 0, rooms: [] };
+        metric("#dashboardSwitchIpAnomalyRoomsMetric", switchIpAnomalies.anomalyRoomCount || 0);
+        if ($("#dashboardSwitchIpAnomalyRoomsSummary")) $("#dashboardSwitchIpAnomalyRoomsSummary").textContent = `Проанализировано переговорных с тремя и более известными привязками: ${switchIpAnomalies.analyzedRooms || 0}. Отклонений: ${switchIpAnomalies.anomalyRoomCount || 0}.`;
+        if ($("#dashboardSwitchIpAnomalyRoomsBody")) $("#dashboardSwitchIpAnomalyRoomsBody").innerHTML = switchIpAnomalies.rooms.length ? switchIpAnomalies.rooms.map((item) => `<tr class="switch-ip-anomaly-row"><td>${esc(item.smartroomId || "—")}</td><td>${esc(item.room || "—")}</td><td>${esc(item.address || "—")}</td><td><strong>${esc(item.expectedSwitchIp || "—")}</strong><small>${item.expectedCount || 0} устройств</small></td><td>${esc((item.switchIps || []).map((entry) => `${entry.switchIp} (${entry.count})`).join(", "))}</td><td>${item.totalDevices || 0}</td><td><strong class="switch-ip-anomaly-count">${item.deviationCount || 0}</strong></td><td>${(item.deviations || []).map((device) => `<div class="switch-ip-deviation-device"><button type="button" class="link-button" data-mac="${esc(device.mac || "")}">${esc(normalizeMac(device.mac || "") || "Без MAC")}</button><span>${esc(device.model || device.deviceName || "Устройство")} · ${esc(device.switchIp || "—")}</span></div>`).join("")}</td></tr>`).join("") : '<tr><td colspan="8" class="empty-state">Переговорных с подтверждённым отклонением IP коммутатора не найдено.</td></tr>';
         metric("#dashboardChangedHint", `${classify.all.length ? Math.round(classify.changed.length / classify.all.length * 100) : 0}% от всех`);
         metric("#dashboardUnchangedHint", `${classify.all.length ? Math.round(classify.unchanged.length / classify.all.length * 100) : 0}% от всех`);
         $$("[data-dashboard-status]").forEach((button) => button.classList.toggle("active-filter", button.dataset.dashboardStatus === settings.status));
@@ -2707,13 +2720,16 @@
       $(".dashboard-change-metrics")?.addEventListener("keydown", (event) => { const button = event.target.closest("[data-dashboard-change-type]"); if (!button || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return; event.preventDefault(); selectFallbackDashboardChangeTab(window.MacAnalyzerDashboardChangeTabs.nextTab(button.dataset.dashboardChangeType, event.key), true); });
       $("#closeDashboardChangesDialog")?.addEventListener("click", () => $("#dashboardChangesDialog").close());
       $("#dashboardAllChangedRoomsButton")?.addEventListener("click", () => { renderFallbackChanges(); if (!$("#dashboardAllChangedRoomsDialog").open) $("#dashboardAllChangedRoomsDialog").showModal(); });
+      $("#dashboardSwitchIpAnomalyRoomsButton")?.addEventListener("click", () => { renderFallbackAnalytics(); if (!$("#dashboardSwitchIpAnomalyRoomsDialog").open) $("#dashboardSwitchIpAnomalyRoomsDialog").showModal(); });
       $("#closeDashboardAllChangedRoomsDialog")?.addEventListener("click", () => $("#dashboardAllChangedRoomsDialog").close());
+      $("#closeDashboardSwitchIpAnomalyRoomsDialog")?.addEventListener("click", () => $("#dashboardSwitchIpAnomalyRoomsDialog").close());
+      $("#dashboardSwitchIpAnomalyRoomsBody")?.addEventListener("click", (event) => { const button = event.target.closest("[data-mac]"); if (button?.dataset.mac) showDevice(button.dataset.mac); });
       $("#dashboardAllChangedRoomsBody")?.addEventListener("click", async (event) => { const button = event.target.closest("[data-dashboard-room]"); if (!button?.dataset.dashboardRoom) return; $("#dashboardAllChangedRoomsDialog")?.close(); const opened = await window.MacAnalyzerSmartroomUI?.openRoom?.(button.dataset.dashboardRoom); if (!opened) toast("Хронология выбранной переговорной не найдена."); });
       $("#saveDashboardSettingsButton")?.addEventListener("click", showFallbackDashboardSettingsDialog);
       $$('[data-dashboard-settings-tab]').forEach((button) => button.addEventListener("click", () => selectFallbackDashboardSettingsTab(button.dataset.dashboardSettingsTab)));
       $("#applyDashboardSettingsButton")?.addEventListener("click", () => saveFallbackDashboardSettings());
       $("#resetDashboardSettingsButton")?.addEventListener("click", () => {
-        fillFallbackDashboardSettingsDialog({ ...fallbackState.dashboardSettings, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true, missingRoom: true, changedRooms: true, allChangedRooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60 });
+        fillFallbackDashboardSettingsDialog({ ...fallbackState.dashboardSettings, visibleCards: { total: true, changed: true, missing: true, unchanged: true, vendors: true, rooms: true, missingRoom: true, changedRooms: true, allChangedRooms: true, codecChanges: true, switchIpAnomalyRooms: true }, visibleCharts: { dynamics: true, vendors: true, fields: true, missing: true }, autoRefresh: true, refreshInterval: 60 });
         saveFallbackDashboardSettings();
       });
       $("#closeDashboardSettingsDialog")?.addEventListener("click", () => $("#dashboardSettingsDialog").close());

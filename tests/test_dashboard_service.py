@@ -3,7 +3,7 @@ from io import BytesIO
 
 from PIL import Image
 
-from dashboard_service import analyze_dashboard_changes, analyze_room_change_coverage, build_dashboard_metrics_payload, build_dashboard_payload, export_dashboard_html, export_dashboard_png, filter_dashboard_devices, normalize_dashboard_settings
+from dashboard_service import analyze_dashboard_changes, analyze_room_change_coverage, analyze_room_switch_ip_anomalies, build_dashboard_metrics_payload, build_dashboard_payload, export_dashboard_html, export_dashboard_png, filter_dashboard_devices, normalize_dashboard_settings
 
 
 DEVICES = [
@@ -256,6 +256,28 @@ def test_dashboard_reports_rooms_where_every_device_changed():
     assert coverage["allChangedRoomCount"] == 1
     assert next(row for row in coverage["rooms"] if row["smartroomId"] == "SR-1")["allChanged"] is False
     assert next(row for row in coverage["rooms"] if row["smartroomId"] == "SR-2")["allChanged"] is True
+
+
+def test_dashboard_reports_room_switch_ip_outliers_only_with_a_strict_majority():
+    devices = [
+        {"mac": "001122330001", "smartroomId": "SR-500", "room": "Переговорная 500", "switchIp": "10.10.0.1"},
+        {"mac": "001122330002", "smartroomId": "SR-500", "room": "Переговорная 500", "switchIp": "10.10.0.1"},
+        {"mac": "001122330003", "smartroomId": "SR-500", "room": "Переговорная 500", "switchIp": "10.10.0.1"},
+        {"mac": "001122330004", "smartroomId": "SR-500", "room": "Переговорная 500", "switchIp": "10.10.0.99", "model": "Codec"},
+        {"mac": "001122330101", "smartroomId": "SR-TIE", "room": "Без большинства", "switchIp": "10.20.0.1"},
+        {"mac": "001122330102", "smartroomId": "SR-TIE", "room": "Без большинства", "switchIp": "10.20.0.2"},
+    ]
+
+    result = analyze_room_switch_ip_anomalies(devices)
+    assert result["anomalyRoomCount"] == 1
+    assert result["rooms"][0]["smartroomId"] == "SR-500"
+    assert result["rooms"][0]["expectedSwitchIp"] == "10.10.0.1"
+    assert result["rooms"][0]["deviationCount"] == 1
+    assert result["rooms"][0]["deviations"][0]["mac"] == "001122330004"
+
+    payload = build_dashboard_payload(devices, [], {})
+    assert payload["switchIpAnomalies"]["anomalyRoomCount"] == 1
+    assert payload["settings"]["visibleCards"]["switchIpAnomalyRooms"] is True
 
 
 def test_dashboard_pairs_changed_mac_by_stable_device_id_and_keeps_full_final_context():

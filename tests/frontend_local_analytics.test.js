@@ -44,6 +44,21 @@ assert.equal(payload.topology.summary.linkedDevices, 3);
 assert.equal(payload.topology.summary.unassignedDevices, 1);
 assert.equal(payload.topology.nodes[0].switchIp, "10.0.0.1");
 assert.equal(payload.topology.nodes[0].ports.length, 2);
+assert.equal(payload.switchIpAnomalies.anomalyRoomCount, 0);
+
+const switchAnomalies = analytics.analyzeRoomSwitchIpAnomalies([
+  { mac: "001122000101", smartroomId: "SR-500", room: "Переговорная 500", switchIp: "10.10.0.1" },
+  { mac: "001122000102", smartroomId: "SR-500", room: "Переговорная 500", switchIp: "10.10.0.1" },
+  { mac: "001122000103", smartroomId: "SR-500", room: "Переговорная 500", switchIp: "10.10.0.1" },
+  { mac: "001122000104", smartroomId: "SR-500", room: "Переговорная 500", switchIp: "10.10.0.99", model: "Codec" },
+  { mac: "001122000201", smartroomId: "SR-TIE", room: "Переговорная без большинства", switchIp: "10.20.0.1" },
+  { mac: "001122000202", smartroomId: "SR-TIE", room: "Переговорная без большинства", switchIp: "10.20.0.2" },
+]);
+assert.equal(switchAnomalies.anomalyRoomCount, 1);
+assert.equal(switchAnomalies.rooms[0].smartroomId, "SR-500");
+assert.equal(switchAnomalies.rooms[0].expectedSwitchIp, "10.10.0.1");
+assert.equal(switchAnomalies.rooms[0].deviationCount, 1);
+assert.equal(switchAnomalies.rooms[0].deviations[0].mac, "001122000104");
 
 const filtered = analytics.build(devices, { vendor: "Cisco", room: "101" });
 assert.equal(filtered.summary.devices, 2);

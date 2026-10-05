@@ -1,6 +1,6 @@
 {
   "name": "mac-analyzer-pro",
-  "version": "1.0.80",
+  "version": "1.0.81",
   "private": true,
   "packageManager": "pnpm@11.16.0",
   "scripts": {

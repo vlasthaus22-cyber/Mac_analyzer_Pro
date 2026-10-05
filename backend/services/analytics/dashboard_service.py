@@ -45,7 +45,7 @@ def normalize_dashboard_settings(settings: dict[str, Any] | None = None) -> dict
         "showUnknown": bool(settings.get("showUnknown", True)),
         "visibleCards": {
             key: bool(card_settings.get(key, True))
-            for key in ("total", "changed", "missing", "unchanged", "vendors", "rooms", "missingRoom", "changedRooms", "allChangedRooms", "codecChanges")
+            for key in ("total", "changed", "missing", "unchanged", "vendors", "rooms", "missingRoom", "changedRooms", "allChangedRooms", "codecChanges", "switchIpAnomalyRooms")
         },
         "visibleCharts": {
             key: bool(chart_settings.get(key, True))
@@ -246,6 +246,80 @@ def _room_descriptor(device: dict[str, Any] | None) -> dict[str, str]:
         "site": site,
         "floor": floor,
         "address": address or path,
+    }
+
+
+def analyze_room_switch_ip_anomalies(devices: list[dict[str, Any]]) -> dict[str, Any]:
+    """Find rooms where one switch IP is the strict majority and another is an outlier.
+
+    Empty switch values are reported but never treated as a conflicting switch.
+    A 1:1 split is intentionally not classified because there is no reliable
+    expected switch without a unique majority.
+    """
+    grouped: dict[str, dict[str, Any]] = {}
+    sampled_devices = 0
+    for device in devices:
+        if not isinstance(device, dict):
+            continue
+        descriptor = _room_descriptor(device)
+        if not descriptor["smartroomId"] and descriptor["room"]:
+            location_key = "|".join(
+                _text(descriptor.get(field)).casefold()
+                for field in ("tb", "city", "site", "floor", "room", "address")
+            )
+            descriptor["key"] = f"room:{location_key}"
+        if not descriptor["key"]:
+            continue
+        row = grouped.setdefault(descriptor["key"], {
+            **descriptor, "totalDevices": 0, "missingSwitchDevices": 0, "switches": {},
+        })
+        row["totalDevices"] += 1
+        switch_ip = _text(device.get("switchIp") or device.get("switch_ip"))
+        if not switch_ip:
+            row["missingSwitchDevices"] += 1
+            continue
+        switch_row = row["switches"].setdefault(switch_ip, {"count": 0, "devices": []})
+        switch_row["count"] += 1
+        if len(switch_row["devices"]) < 500 and sampled_devices < DASHBOARD_ROOM_DETAIL_LIMIT:
+            switch_row["devices"].append(_device_context(device) or {})
+            sampled_devices += 1
+
+    results: list[dict[str, Any]] = []
+    analyzed_rooms = 0
+    for row in grouped.values():
+        switches = sorted(
+            (
+                {"switchIp": switch_ip, "count": value["count"], "devices": value["devices"]}
+                for switch_ip, value in row["switches"].items()
+            ),
+            key=lambda item: (-item["count"], item["switchIp"]),
+        )
+        known_count = sum(item["count"] for item in switches)
+        if known_count >= 3:
+            analyzed_rooms += 1
+        if len(switches) < 2 or known_count < 3:
+            continue
+        dominant, runner_up = switches[0], switches[1]
+        if dominant["count"] < 2 or dominant["count"] <= runner_up["count"] or dominant["count"] <= known_count / 2:
+            continue
+        deviations = [device for item in switches[1:] for device in item["devices"]]
+        deviation_count = known_count - dominant["count"]
+        results.append({
+            **{key: value for key, value in row.items() if key != "switches"},
+            "knownSwitchDevices": known_count,
+            "expectedSwitchIp": dominant["switchIp"],
+            "expectedCount": dominant["count"],
+            "deviationCount": deviation_count,
+            "switchIps": [{"switchIp": item["switchIp"], "count": item["count"]} for item in switches],
+            "deviations": deviations,
+            "devicesTruncated": len(deviations) < deviation_count,
+        })
+    results.sort(key=lambda item: (-item["deviationCount"], (item["room"] or item["smartroomId"]).casefold()))
+    return {
+        "totalRooms": len(grouped),
+        "analyzedRooms": analyzed_rooms,
+        "anomalyRoomCount": len(results),
+        "rooms": results,
     }
 
 
@@ -821,6 +895,7 @@ def build_dashboard_payload(
     }
     filtered = status_devices[normalized["status"]]
     missing_room_scope = [device for device in current_scope if not _text(device.get("room") or device.get("room_name"))]
+    switch_ip_anomalies = analyze_room_switch_ip_anomalies(current_scope)
     chart_payload = build_chart_payload(filtered, snapshots or [])
     fleet = upload_fleet or dashboard_upload_fleet(snapshots or [])
     status_charts = _status_charts({**classified, "missing": missing_scope}, filtered, normalized["chartLimit"])
@@ -899,6 +974,7 @@ def build_dashboard_payload(
         "statusCounts": {key: len(value) for key, value in status_devices.items()},
         "uploadFleet": fleet,
         "changeAnalysis": change_analysis,
+        "switchIpAnomalies": switch_ip_anomalies,
         "statusCharts": status_charts,
         "charts": [
             {**chart, "items": (chart.get("items") or [])[:normalized["chartLimit"]]}

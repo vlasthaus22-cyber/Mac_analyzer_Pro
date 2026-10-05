@@ -4,6 +4,8 @@ require("fake-indexeddb/auto");
 global.window = globalThis;
 global.document = { documentElement: { dataset: {} } };
 require("../frontend/device-identity.js");
+require("../frontend/room-location.js");
+require("../frontend/local-analytics.js");
 require("../frontend/browser-snapshot-store.js");
 const store = global.MacAnalyzerBrowserSnapshots;
 const device = (model, extra = {}) => ({ mac: "001122334455", deviceId: "codec-1", model, ...extra });
@@ -179,7 +181,7 @@ assert.deepEqual(store.comparisonHistoryIds(null, "baseline", "current"), []);
     request.onerror = () => reject(request.error);
   });
   cacheDatabase.close();
-  assert.equal(cachedMetadata.analyticsAggregateVersion, 2);
+  assert.equal(cachedMetadata.analyticsAggregateVersion, 3);
   assert.equal(cachedMetadata.analyticsAggregate.devices, 2);
   assert.equal((await store.aggregate("aggregate-cache", { limit: 8 })).uniqueVendors, 2);
   const staleDatabase = await new Promise((resolve, reject) => {
@@ -189,7 +191,7 @@ assert.deepEqual(store.comparisonHistoryIds(null, "baseline", "current"), []);
   });
   await new Promise((resolve, reject) => {
     const transaction = staleDatabase.transaction("snapshots", "readwrite");
-    transaction.objectStore("snapshots").put({ ...cachedMetadata, analyticsAggregateVersion: 2, analyticsAggregate: { ...cachedMetadata.analyticsAggregate, devices: 0, vendors: [], models: [], rooms: [] } });
+    transaction.objectStore("snapshots").put({ ...cachedMetadata, analyticsAggregateVersion: 3, analyticsAggregate: { ...cachedMetadata.analyticsAggregate, devices: 0, vendors: [], models: [], rooms: [] } });
     transaction.oncomplete = resolve;
     transaction.onerror = () => reject(transaction.error);
   });
@@ -199,6 +201,15 @@ assert.deepEqual(store.comparisonHistoryIds(null, "baseline", "current"), []);
     { mac: "001122330003", vendor: "Cisco", room: "103" },
   ] });
   assert.equal((await store.aggregate("aggregate-cache", { limit: 8 })).devices, 1, "rewriting a snapshot invalidates its aggregate cache");
+  await store.save({ id: "switch-anomaly-cache", kind: "analysis", devices: [
+    { mac: "001122330011", smartroomId: "SR-500", room: "Room 500", switchIp: "10.10.0.1" },
+    { mac: "001122330012", smartroomId: "SR-500", room: "Room 500", switchIp: "10.10.0.1" },
+    { mac: "001122330013", smartroomId: "SR-500", room: "Room 500", switchIp: "10.10.0.1" },
+    { mac: "001122330014", smartroomId: "SR-500", room: "Room 500", switchIp: "10.10.0.99" },
+  ] });
+  const switchAggregate = await store.aggregate("switch-anomaly-cache", { limit: 8 });
+  assert.equal(switchAggregate.switchIpAnomalies.anomalyRoomCount, 1);
+  assert.equal(switchAggregate.switchIpAnomalies.rooms[0].deviationCount, 1);
 
   // A current row with a stable internal ID must not become a duplicate merely
   // because a stale secondary identifier still points to another old device.

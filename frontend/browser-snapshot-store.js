@@ -1418,7 +1418,7 @@
     if (!metadata?.id || !payload) return false;
     const cached = { ...payload };
     delete cached.metadata;
-    const updated = { ...metadata, devices: [], invalid: [], analyticsAggregateVersion: 2, analyticsAggregate: cached };
+    const updated = { ...metadata, devices: [], invalid: [], analyticsAggregateVersion: 3, analyticsAggregate: cached };
     await transaction(snapshotStore, "readwrite", (store) => store.put(updated));
     return true;
   }
@@ -1489,7 +1489,7 @@
     const cacheable = aggregateCacheable(options);
     if (cacheable) {
       const archived = await loadFinalAnalytics(id).catch(() => null);
-      if (archived?.aggregate && Number(archived.aggregate.devices || 0) === Number(archived.deviceCount || 0)) {
+      if (archived?.aggregate?.switchIpAnomalies && Number(archived.aggregate.devices || 0) === Number(archived.deviceCount || 0)) {
         return { ...sliceAggregateRows(archived.aggregate, requestedLimit), metadata: { id: archived.id, name: archived.name, source: archived.source, createdAt: archived.createdAt, savedAt: archived.savedAt, deviceCount: archived.deviceCount, invalidCount: archived.invalidCount, storageFolder: "Final", analyticsStored: true } };
       }
     }
@@ -1497,7 +1497,7 @@
     const cachedCount = Number(cachedMetadata?.analyticsAggregate?.devices ?? -1);
     const expectedCount = Number(cachedMetadata?.deviceCount ?? cachedCount);
     const cacheIsComplete = cachedCount >= 0 && expectedCount >= 0 && cachedCount === expectedCount;
-    if (cachedMetadata?.analyticsAggregateVersion === 2 && cachedMetadata.analyticsAggregate && cacheIsComplete) {
+    if (cachedMetadata?.analyticsAggregateVersion === 3 && cachedMetadata.analyticsAggregate?.switchIpAnomalies && cacheIsComplete) {
       return {
         ...sliceAggregateRows(cachedMetadata.analyticsAggregate, requestedLimit),
         metadata: { ...cachedMetadata, devices: [], invalid: [] },
@@ -1524,6 +1524,7 @@
     let missingRoomDevices = 0;
     let autoVendors = 0;
     let autoModels = 0;
+    const roomSwitchCollector = window.MacAnalyzerLocalAnalytics?.createRoomSwitchIpAnomalyCollector?.({ roomDeviceSampleLimit: 500 });
     const unknown = new Set(["", "unknown", "не определено", "неизвестный вендор", "unknown vendor"]);
     const metadata = await streamSnapshot(id, async (kind, rows) => {
       if (kind !== "device") return;
@@ -1533,6 +1534,7 @@
         const room = String(device?.room || "").trim();
         const smartroomId = String(device?.smartroomId || device?.smartroom_id || "").trim();
         if (!matchesDashboardFilter(device, options)) continue;
+        roomSwitchCollector?.acceptOne(device);
         devices += 1;
         const switchIp = String(device?.switchIp || device?.switch_ip || "").trim();
         const mac = String(device?.mac || device?.macFormatted || device?.mac_formatted || device?.oui || "").replace(/[^0-9a-f]/gi, "").toUpperCase();
@@ -1593,6 +1595,7 @@
       oui5: rankedRows(oui5Rows, limit),
       missingRoomVendors: rankedRows(missingRoomVendors, limit),
       missingRoomModels: rankedRows(missingRoomModels, limit),
+      switchIpAnomalies: roomSwitchCollector?.finish() || { totalRooms: roomIdentities.size, analyzedRooms: 0, anomalyRoomCount: 0, rooms: [] },
       metadata: { ...metadata, devices: [], invalid: [] },
     };
     if (cacheable) await saveAggregateCache(metadata, result).catch(() => false);

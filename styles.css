@@ -60,6 +60,14 @@ fieldset { border:1px solid var(--line); border-radius:5px; margin:14px 0; } leg
 .dashboard-status-metrics .metric small { color:var(--muted); display:block; margin-top:6px; }
 .dashboard-kpi { appearance:none; color:inherit; cursor:pointer; font:inherit; width:100%; }
 .dashboard-kpi:hover { border-color:var(--accent); }
+.switch-ip-anomaly-kpi { border-color:color-mix(in srgb,#d97706 58%,var(--line)); background:color-mix(in srgb,#fef3c7 24%,var(--surface)); }
+.switch-ip-anomaly-kpi:hover { border-color:#d97706; }
+.new-indicator { display:inline-block; margin-left:5px; padding:2px 5px; border-radius:999px; color:#fff; background:#b45309; font-size:9px; font-weight:800; line-height:1.2; letter-spacing:.05em; vertical-align:middle; }
+.switch-ip-anomaly-row td { background:color-mix(in srgb,#fef3c7 30%,var(--surface)); }
+.switch-ip-anomaly-count { color:#b45309; }
+.switch-ip-anomaly-row small { display:block; margin-top:3px; color:var(--muted); }
+.switch-ip-deviation-device { display:grid; grid-template-columns:max-content minmax(180px,1fr); gap:8px; align-items:center; padding:4px 0; }
+.switch-ip-deviation-device + .switch-ip-deviation-device { border-top:1px solid var(--line); }
 .dashboard-kpi.active-filter { border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 18%,transparent); }
 .dashboard-change-toolbar { display:grid; grid-template-columns:minmax(150px,.7fr) minmax(280px,1.4fr) auto auto; gap:10px; align-items:end; margin:0 0 14px; padding:12px 14px; border:1px solid var(--line); background:var(--surface-soft); }
 .dashboard-change-toolbar label,.dashboard-change-filters label { margin:0; }
