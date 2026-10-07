@@ -181,7 +181,7 @@ assert.deepEqual(store.comparisonHistoryIds(null, "baseline", "current"), []);
     request.onerror = () => reject(request.error);
   });
   cacheDatabase.close();
-  assert.equal(cachedMetadata.analyticsAggregateVersion, 3);
+  assert.equal(cachedMetadata.analyticsAggregateVersion, 4);
   assert.equal(cachedMetadata.analyticsAggregate.devices, 2);
   assert.equal((await store.aggregate("aggregate-cache", { limit: 8 })).uniqueVendors, 2);
   const staleDatabase = await new Promise((resolve, reject) => {
@@ -191,7 +191,7 @@ assert.deepEqual(store.comparisonHistoryIds(null, "baseline", "current"), []);
   });
   await new Promise((resolve, reject) => {
     const transaction = staleDatabase.transaction("snapshots", "readwrite");
-    transaction.objectStore("snapshots").put({ ...cachedMetadata, analyticsAggregateVersion: 3, analyticsAggregate: { ...cachedMetadata.analyticsAggregate, devices: 0, vendors: [], models: [], rooms: [] } });
+    transaction.objectStore("snapshots").put({ ...cachedMetadata, analyticsAggregateVersion: 4, analyticsAggregate: { ...cachedMetadata.analyticsAggregate, devices: 0, vendors: [], models: [], rooms: [] } });
     transaction.oncomplete = resolve;
     transaction.onerror = () => reject(transaction.error);
   });
@@ -237,6 +237,7 @@ assert.deepEqual(store.comparisonHistoryIds(null, "baseline", "current"), []);
   ] });
   const archived = await store.saveFinalAnalytics("final-folder-current", "final-folder-base");
   assert.equal(archived.storageFolder, "Final");
+  assert.equal(archived.aggregateVersion, 4);
   assert.equal(archived.aggregate.devices, 1);
   assert.equal(archived.comparison.summary.removed, 1);
   assert.equal((await store.listFinalAnalytics()).some((item) => item.id === "final-folder-current"), true);

@@ -3,7 +3,11 @@
 
   const text = (value) => String(value ?? "").trim();
   const normalizeMac = (value) => {
-    let mac = text(value).toUpperCase().replace(/[^0-9A-F]/g, "");
+    const raw = text(value).toUpperCase();
+    const separated = raw.match(/(?:^|[^0-9A-F])((?:[0-9A-F]{2}[:-]){5}[0-9A-F]{2})(?=$|[^0-9A-F])/);
+    const dotted = raw.match(/(?:^|[^0-9A-F])([0-9A-F]{4}(?:\.[0-9A-F]{4}){2})(?=$|[^0-9A-F])/);
+    const compact = raw.match(/(?:^|[^0-9A-F])([0-9A-F]{12})(?=$|[^0-9A-F])/);
+    let mac = (separated?.[1] || dotted?.[1] || compact?.[1] || raw).replace(/[^0-9A-F]/g, "");
     if (mac.length === 10) mac = "00" + mac;
     if (mac.length === 11) mac = "0" + mac;
     if (mac.length === 8) mac = "0000" + mac;

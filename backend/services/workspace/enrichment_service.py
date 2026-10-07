@@ -57,7 +57,12 @@ def normalize_source_role(value: Any, fallback: str = "primary") -> str:
 
 
 def normalize_mac(value: Any) -> str:
-    normalized = re.sub(r"[^0-9A-Fa-f]", "", str(value or "")).upper()
+    raw = str(value or "").strip().upper()
+    separated = re.search(r"(?<![0-9A-F])((?:[0-9A-F]{2}[:-]){5}[0-9A-F]{2})(?![0-9A-F])", raw)
+    dotted = re.search(r"(?<![0-9A-F])([0-9A-F]{4}(?:\.[0-9A-F]{4}){2})(?![0-9A-F])", raw)
+    compact = re.search(r"(?<![0-9A-F])([0-9A-F]{12})(?![0-9A-F])", raw)
+    candidate = next((match.group(1) for match in (separated, dotted, compact) if match), raw)
+    normalized = re.sub(r"[^0-9A-F]", "", candidate)
     if len(normalized) == 10:
         normalized = "00" + normalized
     if len(normalized) == 11:

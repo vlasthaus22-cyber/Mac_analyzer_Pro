@@ -280,6 +280,21 @@ def test_dashboard_reports_room_switch_ip_outliers_only_with_a_strict_majority()
     assert payload["settings"]["visibleCards"]["switchIpAnomalyRooms"] is True
 
 
+def test_switch_ip_outlier_details_include_all_room_devices_and_bridge_one_missing_id():
+    address = "ЦА, Москва, Кутузовский, 3, Переговорная 500"
+    devices = [
+        {"mac": "001122330001", "smartroomId": "SR-500", "room": "Переговорная 500", "address": address, "switchIp": "10.10.0.1", "ip": "192.0.2.1"},
+        {"mac": "001122330002", "smartroomId": "SR-500", "room": "Переговорная 500", "address": address, "switchIp": "10.10.0.1", "ip": "192.0.2.2"},
+        {"mac": "001122330003", "smartroomId": "SR-500", "room": "Переговорная 500", "address": address, "switchIp": "10.10.0.1", "ip": "192.0.2.3"},
+        {"mac": "001122330004", "room": "Переговорная 500", "address": address, "switchIp": "10.10.0.99", "ip": "192.0.2.4", "hostname": "codec-500"},
+    ]
+    result = analyze_room_switch_ip_anomalies(devices)
+    assert result["anomalyRoomCount"] == 1
+    assert result["rooms"][0]["smartroomId"] == "SR-500"
+    assert len(result["rooms"][0]["devices"]) == 4
+    assert next(item for item in result["rooms"][0]["devices"] if item["mac"] == "001122330004")["hostname"] == "codec-500"
+
+
 def test_dashboard_pairs_changed_mac_by_stable_device_id_and_keeps_full_final_context():
     snapshots = [
         {
@@ -625,6 +640,8 @@ if __name__ == "__main__":
     test_newly_filled_switch_ip_is_not_a_false_critical_change()
     test_dashboard_change_analysis_compares_selected_snapshots()
     test_dashboard_reports_rooms_where_every_device_changed()
+    test_dashboard_reports_room_switch_ip_outliers_only_with_a_strict_majority()
+    test_switch_ip_outlier_details_include_all_room_devices_and_bridge_one_missing_id()
     test_dashboard_period_compares_the_final_snapshots_at_its_boundaries()
     test_dashboard_uses_previous_and_current_final_snapshots_for_all_status_metrics()
     test_dashboard_does_not_mark_a_stable_device_missing_when_its_mac_changes()

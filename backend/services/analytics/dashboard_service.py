@@ -16,6 +16,7 @@ from .chart_service import build_chart_payload
 DASHBOARD_FILTER_OPTION_LIMIT = 1000
 DASHBOARD_CHANGE_DETAIL_LIMIT = 5000
 DASHBOARD_ROOM_DETAIL_LIMIT = 5000
+DASHBOARD_SWITCH_DEVICE_DETAIL_LIMIT = 50000
 
 
 def _text(value: Any) -> str:
@@ -202,6 +203,7 @@ def _device_context(device: dict[str, Any] | None) -> dict[str, Any] | None:
         "smartroomId": _text(device.get("smartroomId") or device.get("smartroom_id")),
         "switchIp": _text(device.get("switchIp") or device.get("switch_ip")),
         "switchPort": _text(device.get("switchPort") or device.get("switch_port")),
+        "authenticationTime": _text(device.get("authenticationTime") or device.get("authentication_time")),
         "hostname": _text(device.get("hostname") or device.get("host_name")),
         "serialNumber": _text(device.get("serialNumber") or device.get("serial_number") or device.get("serial")),
         "deviceId": _text(device.get("deviceId") or device.get("device_id")),
@@ -236,9 +238,18 @@ def _room_descriptor(device: dict[str, Any] | None) -> dict[str, str]:
         floor = floor or parts[3]
         if not room or room == path:
             room = ", ".join(parts[4:]).strip()
-    key = f"smartroom:{smartroom_id.casefold()}" if smartroom_id else (f"room:{room.casefold()}" if room else "")
+    hierarchy = [re.sub(r"\s+", " ", value).casefold() for value in (tb, city, site, floor)]
+    normalized_room = re.sub(r"\s+", " ", room).casefold()
+    normalized_address = re.sub(r"\s+", " ", address).casefold()
+    # Address alone frequently identifies an entire site. A fallback room
+    # identity is valid only when a room name can also be derived.
+    location_context = hierarchy if any(hierarchy) else [normalized_address]
+    location_key = f"location:{chr(0).join([*location_context, normalized_room])}" if normalized_room else ""
+    smartroom_key = f"smartroom:{smartroom_id.casefold()}" if smartroom_id else ""
     return {
-        "key": key,
+        "key": smartroom_key or location_key,
+        "smartroomKey": smartroom_key,
+        "locationKey": location_key,
         "smartroomId": smartroom_id,
         "room": room,
         "tb": tb,
@@ -257,36 +268,61 @@ def analyze_room_switch_ip_anomalies(devices: list[dict[str, Any]]) -> dict[str,
     expected switch without a unique majority.
     """
     grouped: dict[str, dict[str, Any]] = {}
+    location_smartrooms: dict[str, set[str]] = {}
     sampled_devices = 0
     for device in devices:
         if not isinstance(device, dict):
             continue
         descriptor = _room_descriptor(device)
-        if not descriptor["smartroomId"] and descriptor["room"]:
-            location_key = "|".join(
-                _text(descriptor.get(field)).casefold()
-                for field in ("tb", "city", "site", "floor", "room", "address")
-            )
-            descriptor["key"] = f"room:{location_key}"
         if not descriptor["key"]:
             continue
+        if descriptor["smartroomKey"] and descriptor["locationKey"]:
+            location_smartrooms.setdefault(descriptor["locationKey"], set()).add(descriptor["smartroomKey"])
         row = grouped.setdefault(descriptor["key"], {
-            **descriptor, "totalDevices": 0, "missingSwitchDevices": 0, "switches": {},
+            **descriptor, "totalDevices": 0, "missingSwitchDevices": 0, "missingDevices": [], "switches": {},
         })
         row["totalDevices"] += 1
         switch_ip = _text(device.get("switchIp") or device.get("switch_ip"))
         if not switch_ip:
             row["missingSwitchDevices"] += 1
+            if len(row["missingDevices"]) < 2000 and sampled_devices < DASHBOARD_SWITCH_DEVICE_DETAIL_LIMIT:
+                row["missingDevices"].append(_device_context(device) or {})
+                sampled_devices += 1
             continue
         switch_row = row["switches"].setdefault(switch_ip, {"count": 0, "devices": []})
         switch_row["count"] += 1
-        if len(switch_row["devices"]) < 500 and sampled_devices < DASHBOARD_ROOM_DETAIL_LIMIT:
+        if len(switch_row["devices"]) < 2000 and sampled_devices < DASHBOARD_SWITCH_DEVICE_DETAIL_LIMIT:
             switch_row["devices"].append(_device_context(device) or {})
             sampled_devices += 1
 
+    reconciled: dict[str, dict[str, Any]] = {}
+    for row in grouped.values():
+        target_key = row["key"]
+        if not row["smartroomId"] and row["locationKey"]:
+            smartroom_keys = location_smartrooms.get(row["locationKey"], set())
+            if len(smartroom_keys) == 1:
+                target_key = next(iter(smartroom_keys))
+            elif len(smartroom_keys) > 1:
+                row["ambiguousSmartroomIds"] = sorted(smartroom_keys)
+        target = reconciled.get(target_key)
+        if target is None:
+            row["key"] = target_key
+            reconciled[target_key] = row
+            continue
+        target["totalDevices"] += row["totalDevices"]
+        target["missingSwitchDevices"] += row["missingSwitchDevices"]
+        target["missingDevices"].extend(row["missingDevices"])
+        for field in ("smartroomId", "room", "address", "tb", "city", "site", "floor", "smartroomKey", "locationKey"):
+            if not target.get(field) and row.get(field):
+                target[field] = row[field]
+        for switch_ip, source_switch in row["switches"].items():
+            target_switch = target["switches"].setdefault(switch_ip, {"count": 0, "devices": []})
+            target_switch["count"] += source_switch["count"]
+            target_switch["devices"].extend(source_switch["devices"])
+
     results: list[dict[str, Any]] = []
     analyzed_rooms = 0
-    for row in grouped.values():
+    for row in reconciled.values():
         switches = sorted(
             (
                 {"switchIp": switch_ip, "count": value["count"], "devices": value["devices"]}
@@ -295,6 +331,8 @@ def analyze_room_switch_ip_anomalies(devices: list[dict[str, Any]]) -> dict[str,
             key=lambda item: (-item["count"], item["switchIp"]),
         )
         known_count = sum(item["count"] for item in switches)
+        if row.get("ambiguousSmartroomIds"):
+            continue
         if known_count >= 3:
             analyzed_rooms += 1
         if len(switches) < 2 or known_count < 3:
@@ -303,20 +341,26 @@ def analyze_room_switch_ip_anomalies(devices: list[dict[str, Any]]) -> dict[str,
         if dominant["count"] < 2 or dominant["count"] <= runner_up["count"] or dominant["count"] <= known_count / 2:
             continue
         deviations = [device for item in switches[1:] for device in item["devices"]]
+        all_devices = [
+            {**device, "isDeviation": item["switchIp"] != dominant["switchIp"]}
+            for item in switches for device in item["devices"]
+        ] + [{**device, "isDeviation": False, "missingSwitchIp": True} for device in row["missingDevices"]]
         deviation_count = known_count - dominant["count"]
         results.append({
-            **{key: value for key, value in row.items() if key != "switches"},
+            **{key: value for key, value in row.items() if key not in {"switches", "missingDevices"}},
             "knownSwitchDevices": known_count,
             "expectedSwitchIp": dominant["switchIp"],
             "expectedCount": dominant["count"],
             "deviationCount": deviation_count,
             "switchIps": [{"switchIp": item["switchIp"], "count": item["count"]} for item in switches],
+            "devices": all_devices,
             "deviations": deviations,
-            "devicesTruncated": len(deviations) < deviation_count,
+            "devicesTruncated": len(all_devices) < row["totalDevices"],
+            "identitySource": "smartroom-id" if row["smartroomId"] else "location",
         })
     results.sort(key=lambda item: (-item["deviationCount"], (item["room"] or item["smartroomId"]).casefold()))
     return {
-        "totalRooms": len(grouped),
+        "totalRooms": len(reconciled),
         "analyzedRooms": analyzed_rooms,
         "anomalyRoomCount": len(results),
         "rooms": results,

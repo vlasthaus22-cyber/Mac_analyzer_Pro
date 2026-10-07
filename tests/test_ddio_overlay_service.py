@@ -184,6 +184,24 @@ def test_ddio_ip_fallback_is_independent_of_switch_ip_and_prefers_mac_identity()
     assert conflicting["ip"] == ""
 
 
+def test_ddio_ip_fallback_accepts_embedded_mac_and_one_unambiguous_possible_ip():
+    embedded = build_ddio_device_index(
+        [["Calling-Station-ID=00:11:22:33:44:55@radius", "192.168.60.10"]],
+        {"leaseMac": 0, "leaseIp": 1},
+    )
+    device = {"mac": "00-11-22-33-44-55", "ip": "Не определено"}
+    assert apply_ddio_ip_fallback([device], embedded) == 1
+    assert device["ip"] == "192.168.60.10"
+
+    possible = build_ddio_device_index(
+        [["00:11:22:33:44:66", "192.168.61.10"]],
+        {"mac": 0, "possibleIps": 1},
+    )
+    possible_device = {"mac": "001122334466", "ip": ""}
+    assert apply_ddio_ip_fallback([possible_device], possible) == 1
+    assert possible_device["ip"] == "192.168.61.10"
+
+
 def test_enrichment_fills_blanks_without_overwriting_primary_values():
     enriched = enrich_files(
         [
@@ -215,5 +233,6 @@ if __name__ == "__main__":
     test_ddio_ip_fallback_replaces_non_ip_placeholders()
     test_ddio_ip_fallback_matches_smartroom_secondary_interface_mac()
     test_ddio_ip_fallback_is_independent_of_switch_ip_and_prefers_mac_identity()
+    test_ddio_ip_fallback_accepts_embedded_mac_and_one_unambiguous_possible_ip()
     test_enrichment_fills_blanks_without_overwriting_primary_values()
     print("DDIO overlay service test passed")

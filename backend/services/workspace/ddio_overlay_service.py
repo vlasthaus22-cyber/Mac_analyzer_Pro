@@ -39,8 +39,11 @@ def validate_ddio_mapping(mapping: Any) -> dict[str, int]:
     reservation_complete = "reservationMac" in result and ("reservationIp" in result or "ip" in result)
     lease_complete = "leaseMac" in result and ("leaseIp" in result or "ip" in result)
     generic_complete = "mac" in result and "ip" in result
+    possible_complete = "possibleIps" in result and any(
+        field in result for field in ("mac", "reservationMac", "leaseMac")
+    )
     device_complete = "deviceId" in result and any(field in result for field in ("reservationIp", "leaseIp", "ip", "possibleIps"))
-    if not generic_complete and not reservation_complete and not lease_complete and not device_complete:
+    if not generic_complete and not reservation_complete and not lease_complete and not device_complete and not possible_complete:
         raise ValueError(
             "DDIO: выберите полную пару MAC/IP резервации и/или полную пару MAC/IP аренды"
         )
@@ -129,16 +132,25 @@ def apply_ddio_ip_fallback(
             *[normalize_mac(value) for value in (device.get("alternateMacs") or []) if value],
         ))))
         device_id = str(device.get("deviceId") or device.get("device_id") or "").strip().casefold()
-        matched_mac = next((mac for mac in macs if index.get(mac, {}).get("ip")), "")
+        def has_confirmed_ip(identity: str) -> bool:
+            candidate = index.get(identity, {})
+            possible = list(dict.fromkeys(filter(None, candidate.get("possibleIps") or [])))
+            return bool(candidate.get("ip") or len(possible) == 1)
+
+        matched_mac = next((mac for mac in macs if has_confirmed_ip(mac)), "")
         matched_identity = matched_mac or ("device-id:" + device_id if not macs and device_id else "")
         candidate = index.get(matched_identity) if matched_identity else None
         # Possible IPs are diagnostic alternatives, not a confirmed current IP.
-        if not candidate or not candidate.get("ip"):
+        possible_ips = list(dict.fromkeys(filter(None, candidate.get("possibleIps") or []))) if candidate else []
+        selected_ip = candidate.get("ip") if candidate else ""
+        if not selected_ip and len(possible_ips) == 1:
+            selected_ip = possible_ips[0]
+        if not candidate or not selected_ip:
             continue
-        device["ip"] = candidate["ip"]
+        device["ip"] = selected_ip
         device["ipSource"] = "ddio"
         device.setdefault("fieldSources", {})["ip"] = "DDIO"
-        device["possibleIps"] = list(candidate.get("possibleIps") or [candidate["ip"]])
+        device["possibleIps"] = possible_ips or [selected_ip]
         device["ddioIpMatch"] = candidate.get("match") or "mac/ip"
         if matched_mac:
             device["ddioIpMatchedMac"] = matched_mac

@@ -11,6 +11,7 @@
   const deviceHistoryStore = "deviceHistory";
   const resolvedDeviceStore = "DeviceInventory";
   const finalAnalyticsStore = "FinalAnalytics";
+  const analyticsAggregateVersion = 4;
   const snapshotChunkRows = 1_000;
   const storageArrayLimits = Object.freeze({
     aliases: 32,
@@ -1418,7 +1419,7 @@
     if (!metadata?.id || !payload) return false;
     const cached = { ...payload };
     delete cached.metadata;
-    const updated = { ...metadata, devices: [], invalid: [], analyticsAggregateVersion: 3, analyticsAggregate: cached };
+    const updated = { ...metadata, devices: [], invalid: [], analyticsAggregateVersion, analyticsAggregate: cached };
     await transaction(snapshotStore, "readwrite", (store) => store.put(updated));
     return true;
   }
@@ -1477,6 +1478,7 @@
       deviceCount: Number(metadata.deviceCount || aggregateCopy.devices || 0),
       invalidCount: Number(metadata.invalidCount || aggregateCopy.invalid || 0),
       storageFolder: "Final",
+      aggregateVersion: analyticsAggregateVersion,
       aggregate: aggregateCopy,
       comparison,
     };
@@ -1489,7 +1491,7 @@
     const cacheable = aggregateCacheable(options);
     if (cacheable) {
       const archived = await loadFinalAnalytics(id).catch(() => null);
-      if (archived?.aggregate?.switchIpAnomalies && Number(archived.aggregate.devices || 0) === Number(archived.deviceCount || 0)) {
+      if (archived?.aggregateVersion === analyticsAggregateVersion && archived?.aggregate?.switchIpAnomalies && Number(archived.aggregate.devices || 0) === Number(archived.deviceCount || 0)) {
         return { ...sliceAggregateRows(archived.aggregate, requestedLimit), metadata: { id: archived.id, name: archived.name, source: archived.source, createdAt: archived.createdAt, savedAt: archived.savedAt, deviceCount: archived.deviceCount, invalidCount: archived.invalidCount, storageFolder: "Final", analyticsStored: true } };
       }
     }
@@ -1497,7 +1499,7 @@
     const cachedCount = Number(cachedMetadata?.analyticsAggregate?.devices ?? -1);
     const expectedCount = Number(cachedMetadata?.deviceCount ?? cachedCount);
     const cacheIsComplete = cachedCount >= 0 && expectedCount >= 0 && cachedCount === expectedCount;
-    if (cachedMetadata?.analyticsAggregateVersion === 3 && cachedMetadata.analyticsAggregate?.switchIpAnomalies && cacheIsComplete) {
+    if (cachedMetadata?.analyticsAggregateVersion === analyticsAggregateVersion && cachedMetadata.analyticsAggregate?.switchIpAnomalies && cacheIsComplete) {
       return {
         ...sliceAggregateRows(cachedMetadata.analyticsAggregate, requestedLimit),
         metadata: { ...cachedMetadata, devices: [], invalid: [] },

@@ -69,14 +69,24 @@
     const parsed = typeof window !== "undefined" && window.MacAnalyzerRoomLocation?.parse
       ? window.MacAnalyzerRoomLocation.parse(device)
       : { tb: text(device.tb), city: text(device.city), site: text(device.site), floor: text(device.floor), room };
-    const locationKey = [parsed.tb, parsed.city, parsed.site, parsed.floor, parsed.room || room, address]
-      .map((value) => text(value).toLocaleLowerCase("ru-RU"))
-      .filter(Boolean)
-      .join("\u0000");
+    const resolvedRoom = text(parsed.room || room);
+    const hierarchy = [parsed.tb, parsed.city, parsed.site, parsed.floor]
+      .map((value) => text(value).replace(/\s+/g, " ").toLocaleLowerCase("ru-RU"));
+    const normalizedRoom = resolvedRoom.replace(/\s+/g, " ").toLocaleLowerCase("ru-RU");
+    const normalizedAddress = address.replace(/\s+/g, " ").toLocaleLowerCase("ru-RU");
+    // A room name is mandatory for a fallback identity. Address alone often
+    // names a whole site and must never merge all rooms of that site.
+    const locationContext = hierarchy.some(Boolean) ? hierarchy : [normalizedAddress];
+    const locationKey = normalizedRoom
+      ? `location:${[...locationContext, normalizedRoom].join("\u0000")}`
+      : "";
+    const smartroomKey = smartroomId ? `smartroom:${smartroomId.toLocaleLowerCase("ru-RU")}` : "";
     return {
-      key: smartroomId ? `smartroom:${smartroomId.toLocaleLowerCase("ru-RU")}` : (locationKey ? `room:${locationKey}` : ""),
+      key: smartroomKey || locationKey,
+      smartroomKey,
+      locationKey,
       smartroomId,
-      room: text(parsed.room || room),
+      room: resolvedRoom,
       address,
       tb: text(parsed.tb),
       city: text(parsed.city),
@@ -94,10 +104,48 @@
       ip: text(device.ip),
       switchIp,
       switchPort: text(device.switchPort || device.switch_port),
+      authenticationTime: text(device.authenticationTime || device.authentication_time),
       hostname: text(device.hostname || device.host_name),
+      serialNumber: text(device.serialNumber || device.serial_number || device.serial),
       deviceId: text(device.deviceId || device.device_id),
       deviceName: text(device.deviceName || device.device_name || device.name),
+      source: text(device.source || (Array.isArray(device.sourceFiles) ? device.sourceFiles.join(" + ") : "")),
     };
+  }
+
+  function mergeRoomSwitchRow(target, source) {
+    if (!target) return source;
+    target.totalDevices += source.totalDevices;
+    target.missingSwitchDevices += source.missingSwitchDevices;
+    target.missingDevices.push(...source.missingDevices);
+    for (const field of ["smartroomId", "room", "address", "tb", "city", "site", "floor", "locationKey", "smartroomKey"])
+      if (!target[field] && source[field]) target[field] = source[field];
+    for (const [switchIp, sourceSwitch] of source.switches.entries()) {
+      const targetSwitch = target.switches.get(switchIp) || { count: 0, devices: [] };
+      targetSwitch.count += sourceSwitch.count;
+      targetSwitch.devices.push(...sourceSwitch.devices);
+      target.switches.set(switchIp, targetSwitch);
+    }
+    return target;
+  }
+
+  function reconcileRoomSwitchRows(roomSwitchRows, locationSmartroomKeys) {
+    const reconciled = new Map();
+    for (const row of roomSwitchRows.values()) {
+      let targetKey = row.key;
+      if (!row.smartroomId && row.locationKey) {
+        const smartroomKeys = locationSmartroomKeys.get(row.locationKey) || new Set();
+        // Missing IDs are attached only when the physical room location maps
+        // to exactly one observed Smartroom ID. Ambiguous rows remain isolated.
+        if (smartroomKeys.size === 1) targetKey = smartroomKeys.values().next().value;
+        else if (smartroomKeys.size > 1) row.ambiguousSmartroomIds = Array.from(smartroomKeys);
+      }
+      const existing = reconciled.get(targetKey);
+      const merged = mergeRoomSwitchRow(existing, row);
+      merged.key = targetKey;
+      reconciled.set(targetKey, merged);
+    }
+    return reconciled;
   }
 
   function finishRoomSwitchAnomalies(roomSwitchRows) {
@@ -108,6 +156,9 @@
         .map(([switchIp, value]) => ({ switchIp, count: value.count, devices: value.devices }))
         .sort((left, right) => right.count - left.count || left.switchIp.localeCompare(right.switchIp, "ru"));
       const knownSwitchDevices = switches.reduce((total, item) => total + item.count, 0);
+      // Several Smartroom IDs at the same fallback location make anonymous
+      // devices impossible to assign safely. Do not manufacture an anomaly.
+      if ((row.ambiguousSmartroomIds || []).length) continue;
       if (knownSwitchDevices >= 3) analyzedRooms += 1;
       const dominant = switches[0];
       const runnerUp = switches[1];
@@ -116,6 +167,10 @@
       if (!dominant || !runnerUp || knownSwitchDevices < 3 || dominant.count < 2
           || dominant.count <= runnerUp.count || dominant.count <= knownSwitchDevices / 2) continue;
       const deviations = switches.slice(1).flatMap((item) => item.devices);
+      const devices = switches.flatMap((item) => item.devices.map((device) => ({
+        ...device,
+        isDeviation: item.switchIp !== dominant.switchIp,
+      }))).concat(row.missingDevices.map((device) => ({ ...device, isDeviation: false, missingSwitchIp: true })));
       rooms.push({
         key: row.key,
         smartroomId: row.smartroomId,
@@ -132,8 +187,11 @@
         expectedCount: dominant.count,
         deviationCount: knownSwitchDevices - dominant.count,
         switchIps: switches.map(({ switchIp, count }) => ({ switchIp, count })),
+        devices,
         deviations,
-        devicesTruncated: deviations.length < knownSwitchDevices - dominant.count,
+        devicesTruncated: devices.length < row.totalDevices,
+        identitySource: row.smartroomId ? "smartroom-id" : "location",
+        ambiguousSmartroomIds: row.ambiguousSmartroomIds || [],
       });
     }
     rooms.sort((left, right) => right.deviationCount - left.deviationCount
@@ -143,22 +201,32 @@
 
   function createRoomSwitchIpAnomalyCollector(options = {}) {
     const rows = new Map();
+    const locationSmartroomKeys = new Map();
     const roomDeviceSampleLimit = Math.max(20, Math.min(2_000, Number(options.roomDeviceSampleLimit || 500)));
-    const totalDeviceSampleLimit = Math.max(500, Math.min(100_000, Number(options.roomDeviceTotalSampleLimit || 5_000)));
+    const totalDeviceSampleLimit = Math.max(500, Math.min(100_000, Number(options.roomDeviceTotalSampleLimit || 50_000)));
     let sampledDevices = 0;
     function acceptOne(device) {
       if (!device || typeof device !== "object") return;
       const descriptor = roomDescriptor(device);
       if (!descriptor.key) return;
+      if (descriptor.smartroomKey && descriptor.locationKey) {
+        const keys = locationSmartroomKeys.get(descriptor.locationKey) || new Set();
+        keys.add(descriptor.smartroomKey);
+        locationSmartroomKeys.set(descriptor.locationKey, keys);
+      }
       let roomSwitch = rows.get(descriptor.key);
       if (!roomSwitch) {
-        roomSwitch = { ...descriptor, totalDevices: 0, missingSwitchDevices: 0, switches: new Map() };
+        roomSwitch = { ...descriptor, totalDevices: 0, missingSwitchDevices: 0, missingDevices: [], switches: new Map() };
         rows.set(descriptor.key, roomSwitch);
       }
       roomSwitch.totalDevices += 1;
       const switchIp = text(device.switchIp || device.switch_ip);
       if (!switchIp) {
         roomSwitch.missingSwitchDevices += 1;
+        if (roomSwitch.missingDevices.length < roomDeviceSampleLimit && sampledDevices < totalDeviceSampleLimit) {
+          roomSwitch.missingDevices.push(compactRoomSwitchDevice(device, ""));
+          sampledDevices += 1;
+        }
         return;
       }
       let switchRow = roomSwitch.switches.get(switchIp);
@@ -175,7 +243,11 @@
     function accept(devices = []) {
       for (const device of Array.isArray(devices) ? devices : []) acceptOne(device);
     }
-    return Object.freeze({ accept, acceptOne, finish: () => finishRoomSwitchAnomalies(rows) });
+    return Object.freeze({
+      accept,
+      acceptOne,
+      finish: () => finishRoomSwitchAnomalies(reconcileRoomSwitchRows(rows, locationSmartroomKeys)),
+    });
   }
 
   function analyzeRoomSwitchIpAnomalies(devices = [], options = {}) {

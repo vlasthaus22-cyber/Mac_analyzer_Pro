@@ -181,4 +181,20 @@ assert.strictEqual(DDIO.applyIpFallback(genericDevices, genericIndex), 1);
 assert.equal(genericDevices[0].ip, "192.168.50.10");
 assert.equal(genericDevices[0].fieldSources.ip, "DDIO");
 
+const embeddedMacIndex = DDIO.buildPossibleIpIndex(
+  [["Calling-Station-ID=00:11:22:33:44:55@radius", "192.168.60.10"]],
+  { leaseMac: 0, leaseIp: 1 },
+);
+const embeddedMacDevice = [{ mac: "00-11-22-33-44-55", ip: "Не определено" }];
+assert.strictEqual(DDIO.applyIpFallback(embeddedMacDevice, embeddedMacIndex), 1);
+assert.strictEqual(embeddedMacDevice[0].ip, "192.168.60.10");
+
+const singlePossibleIndex = DDIO.buildPossibleIpIndex(
+  [["00:11:22:33:44:66", "192.168.61.10"]],
+  { mac: 0, possibleIps: 1 },
+);
+const singlePossibleDevice = [{ mac: "001122334466", ip: "" }];
+assert.strictEqual(DDIO.applyIpFallback(singlePossibleDevice, singlePossibleIndex), 1);
+assert.strictEqual(singlePossibleDevice[0].ip, "192.168.61.10");
+
 console.log("frontend_ddio_overlay.test.js: ok");

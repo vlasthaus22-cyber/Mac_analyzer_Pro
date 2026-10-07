@@ -31,9 +31,11 @@
   }
 
   function normalizeMac(value) {
-    let normalized = text(value)
-      .toUpperCase()
-      .replace(/[^0-9A-F]/g, "");
+    const raw = text(value).toUpperCase();
+    const separated = raw.match(/(?:^|[^0-9A-F])((?:[0-9A-F]{2}[:-]){5}[0-9A-F]{2})(?=$|[^0-9A-F])/);
+    const dotted = raw.match(/(?:^|[^0-9A-F])([0-9A-F]{4}(?:\.[0-9A-F]{4}){2})(?=$|[^0-9A-F])/);
+    const compact = raw.match(/(?:^|[^0-9A-F])([0-9A-F]{12})(?=$|[^0-9A-F])/);
+    let normalized = (separated?.[1] || dotted?.[1] || compact?.[1] || raw).replace(/[^0-9A-F]/g, "");
     if (normalized.length === 10) normalized = "00" + normalized;
     if (normalized.length === 11) normalized = "0" + normalized;
     if (normalized.length === 8) normalized = "0000" + normalized;
@@ -157,6 +159,8 @@
     const leaseComplete =
       compiled.leaseMac !== undefined && (compiled.leaseIp !== undefined || compiled.ip !== undefined);
     const genericComplete = compiled.mac !== undefined && compiled.ip !== undefined;
+    const possibleComplete = compiled.possibleIps !== undefined &&
+      (compiled.mac !== undefined || compiled.reservationMac !== undefined || compiled.leaseMac !== undefined);
     const deviceComplete =
       compiled.deviceId !== undefined &&
       (compiled.reservationIp !== undefined ||
@@ -164,13 +168,14 @@
         compiled.ip !== undefined ||
         compiled.possibleIps !== undefined);
     return {
-      valid: genericComplete || reservationComplete || leaseComplete || deviceComplete,
+      valid: genericComplete || reservationComplete || leaseComplete || deviceComplete || possibleComplete,
       hasIp: compiled.reservationIp !== undefined || compiled.leaseIp !== undefined || compiled.ip !== undefined,
       hasMac: compiled.mac !== undefined || compiled.reservationMac !== undefined || compiled.leaseMac !== undefined,
       genericComplete,
       reservationComplete,
       leaseComplete,
       deviceComplete,
+      possibleComplete,
       mapping: compiled,
     };
   }
@@ -301,6 +306,7 @@
     const leaseMac = compiled.leaseMac === undefined ? "" : normalizeMac(row[compiled.leaseMac]);
     const genericMac = compiled.mac === undefined ? "" : normalizeMac(row[compiled.mac]);
     const genericIp = compiled.ip === undefined ? "" : row[compiled.ip];
+    const explicitPossible = compiled.possibleIps === undefined ? [] : parsePossibleIps(row[compiled.possibleIps]);
     const reservationIp = row[compiled.reservationIp ?? compiled.ip];
     const leaseIp = row[compiled.leaseIp ?? compiled.ip];
     add(deviceId, reservationIp);
@@ -308,6 +314,13 @@
     add(reservationMac, reservationIp);
     add(leaseMac, leaseIp);
     add(genericMac, genericIp);
+    // A single validated Possible_IPs value is deterministic enough for a
+    // blank-IP recovery, but never overrides reservation/lease evidence.
+    if (explicitPossible.length === 1) {
+      for (const mac of [reservationMac, leaseMac, genericMac]) {
+        if (mac && !index.has(mac)) add(mac, explicitPossible[0]);
+      }
+    }
     // Possible IPs are intentionally excluded from the fallback index: they
     // are diagnostic alternatives and never become the current device IP.
     return index.size;

@@ -47,10 +47,10 @@ assert.equal(payload.topology.nodes[0].ports.length, 2);
 assert.equal(payload.switchIpAnomalies.anomalyRoomCount, 0);
 
 const switchAnomalies = analytics.analyzeRoomSwitchIpAnomalies([
-  { mac: "001122000101", smartroomId: "SR-500", room: "Переговорная 500", switchIp: "10.10.0.1" },
-  { mac: "001122000102", smartroomId: "SR-500", room: "Переговорная 500", switchIp: "10.10.0.1" },
-  { mac: "001122000103", smartroomId: "SR-500", room: "Переговорная 500", switchIp: "10.10.0.1" },
-  { mac: "001122000104", smartroomId: "SR-500", room: "Переговорная 500", switchIp: "10.10.0.99", model: "Codec" },
+  { mac: "001122000101", smartroomId: "SR-500", room: "Переговорная 500", address: "ЦА, Москва, Площадка, 3, Переговорная 500", switchIp: "10.10.0.1", ip: "192.0.2.1", vendor: "Cisco", model: "Codec A" },
+  { mac: "001122000102", smartroomId: "SR-500", room: "Переговорная 500", address: "ЦА, Москва, Площадка, 3, Переговорная 500", switchIp: "10.10.0.1", ip: "192.0.2.2" },
+  { mac: "001122000103", smartroomId: "SR-500", room: "Переговорная 500", address: "ЦА, Москва, Площадка, 3, Переговорная 500", switchIp: "10.10.0.1", ip: "192.0.2.3" },
+  { mac: "001122000104", smartroomId: "", room: "Переговорная 500", address: "ЦА, Москва, Площадка, 3, Переговорная 500", switchIp: "10.10.0.99", ip: "192.0.2.4", model: "Codec", hostname: "codec-500" },
   { mac: "001122000201", smartroomId: "SR-TIE", room: "Переговорная без большинства", switchIp: "10.20.0.1" },
   { mac: "001122000202", smartroomId: "SR-TIE", room: "Переговорная без большинства", switchIp: "10.20.0.2" },
 ]);
@@ -59,6 +59,18 @@ assert.equal(switchAnomalies.rooms[0].smartroomId, "SR-500");
 assert.equal(switchAnomalies.rooms[0].expectedSwitchIp, "10.10.0.1");
 assert.equal(switchAnomalies.rooms[0].deviationCount, 1);
 assert.equal(switchAnomalies.rooms[0].deviations[0].mac, "001122000104");
+assert.equal(switchAnomalies.rooms[0].devices.length, 4, "the dialog receives the full room equipment list");
+assert.equal(switchAnomalies.rooms[0].devices.find((device) => device.mac === "001122000104").hostname, "codec-500");
+assert.equal(switchAnomalies.rooms[0].identitySource, "smartroom-id", "a missing ID is bridged by one unambiguous location");
+
+const ambiguousMissingId = analytics.analyzeRoomSwitchIpAnomalies([
+  { mac: "001122001001", smartroomId: "SR-A", room: "Общая", address: "ЦА, Москва, Площадка, 3, Общая", switchIp: "10.30.0.1" },
+  { mac: "001122001002", smartroomId: "SR-B", room: "Общая", address: "ЦА, Москва, Площадка, 3, Общая", switchIp: "10.30.0.2" },
+  { mac: "001122001003", room: "Общая", address: "ЦА, Москва, Площадка, 3, Общая", switchIp: "10.30.0.1" },
+  { mac: "001122001004", room: "Общая", address: "ЦА, Москва, Площадка, 3, Общая", switchIp: "10.30.0.1" },
+  { mac: "001122001005", room: "Общая", address: "ЦА, Москва, Площадка, 3, Общая", switchIp: "10.30.0.2" },
+]);
+assert.equal(ambiguousMissingId.anomalyRoomCount, 0, "missing IDs are not guessed when a location maps to multiple Smartroom IDs");
 
 const filtered = analytics.build(devices, { vendor: "Cisco", room: "101" });
 assert.equal(filtered.summary.devices, 2);

@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title>MAC Analyzer Pro Web</title>
-  <meta name="application-build" content="2026.09.13.1">
-  <meta name="application-version" content="1.0.81">
+  <meta name="application-build" content="2026.10.07.1">
+  <meta name="application-version" content="1.0.82">
   <link rel="stylesheet" href="styles.css?v=1064">
 </head>
 <body>
@@ -867,7 +867,7 @@
   <dialog class="device-dialog dashboard-changes-dialog" id="dashboardSwitchIpAnomalyRoomsDialog">
     <div class="dialog-head"><div><h2>Переговорные с отклонением IP коммутатора <span class="new-indicator">NEW</span></h2><p class="muted" id="dashboardSwitchIpAnomalyRoomsSummary">Анализируется текущая выбранная финальная выгрузка.</p></div><button class="icon-button" id="closeDashboardSwitchIpAnomalyRoomsDialog" type="button" aria-label="Закрыть">×</button></div>
     <p class="room-coverage-explanation">Отклонение фиксируется, когда в переговорной не менее трёх устройств с известным IP коммутатора, один IP имеет строгое большинство, а одно или несколько устройств подключены к другому IP. Пустой IP и равное распределение 1:1 отклонением не считаются.</p>
-    <div class="table-wrap dashboard-changes-table"><table><thead><tr><th>Smartroom ID</th><th>Помещение</th><th>Адрес</th><th>Ожидаемый IP</th><th>Все IP коммутаторов</th><th>Устройств</th><th>Отклонений</th><th>Оборудование с отклонением</th></tr></thead><tbody id="dashboardSwitchIpAnomalyRoomsBody"><tr><td colspan="8" class="empty-state">Отклонений не найдено.</td></tr></tbody></table></div>
+    <div class="table-wrap dashboard-changes-table"><table><thead><tr><th>Smartroom ID</th><th>Помещение</th><th>Адрес</th><th>Ожидаемый IP</th><th>Все IP коммутаторов</th><th>Устройств</th><th>Отклонений</th><th>Полный состав переговорной</th></tr></thead><tbody id="dashboardSwitchIpAnomalyRoomsBody"><tr><td colspan="8" class="empty-state">Отклонений не найдено.</td></tr></tbody></table></div>
   </dialog>
   <dialog class="device-dialog room-chronology-dialog" id="roomChronologyDialog">
     <div class="dialog-head"><div><h2 id="roomChronologyDialogTitle">Хронология помещения</h2><p id="roomChronologyDialogSubtitle" class="muted"></p></div><button class="icon-button" id="closeRoomChronologyDialog" aria-label="Закрыть">×</button></div>
@@ -949,14 +949,14 @@
   <script src="frontend/file-readers.js?v=1064"></script>
   <script src="frontend/state-persistence.js?v=1062"></script>
   <script src="frontend/record-validation.js?v=1053"></script>
-  <script src="frontend/device-identity.js?v=1066"></script>
+  <script src="frontend/device-identity.js?v=1082"></script>
   <script src="frontend/column-presets.js?v=1071"></script>
   <script src="frontend/enrichment-strategy.js?v=1050"></script>
-  <script src="frontend/browser-snapshot-store.js?v=1079"></script>
+  <script src="frontend/browser-snapshot-store.js?v=1082"></script>
   <script src="frontend/time-utils.js?v=1047"></script>
   <script src="frontend/mac-chronology.js?v=1066"></script>
   <script src="frontend/presence-churn.js?v=1071"></script>
-  <script src="frontend/local-analytics.js?v=20260729.3"></script>
+  <script src="frontend/local-analytics.js?v=20261007.1"></script>
   <script src="frontend/analytics-lifecycle.js?v=1079"></script>
   <script src="frontend/xlsx-exporter.js?v=20260727.5"></script>
   <script src="frontend/full-xlsx-report.js?v=20260729.1"></script>
@@ -965,7 +965,7 @@
   <script src="frontend/local-folder-store.js?v=1059"></script>
   <script src="frontend/batch-enrichment.js?v=1068"></script>
   <script src="frontend/workspace-file-lifecycle.js?v=20260722.7"></script>
-  <script src="frontend/ddio-overlay.js?v=1066"></script>
+  <script src="frontend/ddio-overlay.js?v=1082"></script>
   <script src="frontend/dashboard-change-tabs.js?v=20260803.1"></script>
   <script src="frontend/guide.js?v=20260722.7"></script>
   <script src="frontend/ui-feedback.js?v=1055"></script>
@@ -978,7 +978,7 @@
   <script src="frontend/room-location.js?v=1058"></script>
   <script src="frontend/smartroom-ui.js?v=1064"></script>
   <script src="frontend/table-sorter.js?v=1055"></script>
-  <script src="app.js?v=1080"></script>
+  <script src="app.js?v=1082"></script>
   <script>
     window.addEventListener("DOMContentLoaded", () => {
       if (window.MacAnalyzerAppBootstrapped || window.MacAnalyzerAppReady) return;
@@ -2246,7 +2246,10 @@
         const switchIpAnomalies = window.MacAnalyzerLocalAnalytics?.analyzeRoomSwitchIpAnomalies?.(classify.all) || { analyzedRooms: 0, anomalyRoomCount: 0, rooms: [] };
         metric("#dashboardSwitchIpAnomalyRoomsMetric", switchIpAnomalies.anomalyRoomCount || 0);
         if ($("#dashboardSwitchIpAnomalyRoomsSummary")) $("#dashboardSwitchIpAnomalyRoomsSummary").textContent = `Проанализировано переговорных с тремя и более известными привязками: ${switchIpAnomalies.analyzedRooms || 0}. Отклонений: ${switchIpAnomalies.anomalyRoomCount || 0}.`;
-        if ($("#dashboardSwitchIpAnomalyRoomsBody")) $("#dashboardSwitchIpAnomalyRoomsBody").innerHTML = switchIpAnomalies.rooms.length ? switchIpAnomalies.rooms.map((item) => `<tr class="switch-ip-anomaly-row"><td>${esc(item.smartroomId || "—")}</td><td>${esc(item.room || "—")}</td><td>${esc(item.address || "—")}</td><td><strong>${esc(item.expectedSwitchIp || "—")}</strong><small>${item.expectedCount || 0} устройств</small></td><td>${esc((item.switchIps || []).map((entry) => `${entry.switchIp} (${entry.count})`).join(", "))}</td><td>${item.totalDevices || 0}</td><td><strong class="switch-ip-anomaly-count">${item.deviationCount || 0}</strong></td><td>${(item.deviations || []).map((device) => `<div class="switch-ip-deviation-device"><button type="button" class="link-button" data-mac="${esc(device.mac || "")}">${esc(normalizeMac(device.mac || "") || "Без MAC")}</button><span>${esc(device.model || device.deviceName || "Устройство")} · ${esc(device.switchIp || "—")}</span></div>`).join("")}</td></tr>`).join("") : '<tr><td colspan="8" class="empty-state">Переговорных с подтверждённым отклонением IP коммутатора не найдено.</td></tr>';
+        if ($("#dashboardSwitchIpAnomalyRoomsBody")) $("#dashboardSwitchIpAnomalyRoomsBody").innerHTML = switchIpAnomalies.rooms.length ? switchIpAnomalies.rooms.map((item) => {
+          const deviceRows = (item.devices || item.deviations || []).map((device) => { const mac = normalizeMac(device.mac || ""), switchIp = String(device.switchIp || "").trim(), outlier = Boolean(device.isDeviation || (switchIp && switchIp !== item.expectedSwitchIp)); return `<tr class="${outlier ? "switch-ip-device-outlier" : ""}"><td>${outlier ? "Отклонение" : (device.missingSwitchIp ? "IP не указан" : "Основной IP")}</td><td>${mac ? `<button type="button" class="link-button" data-mac="${esc(mac)}">${esc(mac.match(/../g).join(":"))}</button>` : "—"}</td><td>${esc(device.ip || "—")}</td><td>${esc(switchIp || "—")}${device.switchPort ? `<small>Порт: ${esc(device.switchPort)}</small>` : ""}</td><td>${esc([device.vendor, device.model, device.deviceType].filter(Boolean).join(" · ") || "Устройство")}</td><td>${esc([device.hostname, device.deviceId, device.serialNumber].filter(Boolean).join(" · ") || "—")}</td><td>${esc(device.authenticationTime || "—")}</td><td>${esc(device.source || "—")}</td></tr>`; }).join("");
+          return `<tr class="switch-ip-anomaly-row"><td>${esc(item.smartroomId || "Нет ID")}<small>${item.smartroomId ? "Smartroom ID" : "Составной ключ: адрес и помещение"}</small></td><td>${esc(item.room || "—")}</td><td>${esc(item.address || "—")}</td><td><strong>${esc(item.expectedSwitchIp || "—")}</strong><small>${item.expectedCount || 0} устройств</small></td><td>${esc((item.switchIps || []).map((entry) => `${entry.switchIp} (${entry.count})`).join(", "))}</td><td>${item.totalDevices || 0}</td><td><strong class="switch-ip-anomaly-count">${item.deviationCount || 0}</strong></td><td><details><summary>Все устройства (${item.totalDevices || 0})</summary><div class="switch-ip-room-devices"><table><thead><tr><th>Статус</th><th>MAC</th><th>IP устройства</th><th>IP коммутатора</th><th>Оборудование</th><th>Идентификаторы</th><th>Аутентификация</th><th>Источник</th></tr></thead><tbody>${deviceRows}</tbody></table></div></details></td></tr>`;
+        }).join("") : '<tr><td colspan="8" class="empty-state">Переговорных с подтверждённым отклонением IP коммутатора не найдено.</td></tr>';
         metric("#dashboardChangedHint", `${classify.all.length ? Math.round(classify.changed.length / classify.all.length * 100) : 0}% от всех`);
         metric("#dashboardUnchangedHint", `${classify.all.length ? Math.round(classify.unchanged.length / classify.all.length * 100) : 0}% от всех`);
         $$("[data-dashboard-status]").forEach((button) => button.classList.toggle("active-filter", button.dataset.dashboardStatus === settings.status));
